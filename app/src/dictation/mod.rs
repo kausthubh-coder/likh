@@ -38,6 +38,7 @@ pub enum Input {
     /// The mic couldn't open.
     MicFailed(String),
     /// The transcriber can't listen (Windows speech switched off, say).
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows speech listens live"))]
     CantListen(Failure),
     Transcribed(Result<String, Failure>),
     /// Sent every 250ms while recording, for the countdown and the cap.
