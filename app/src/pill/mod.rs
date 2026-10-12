@@ -5,6 +5,10 @@
 //! paints it into a pixmap. Both are platform-free and tested here. The
 //! window that shows the pixmap lives in `windows.rs`; it never takes focus,
 //! lets clicks through, and draws nothing while the pill is hidden.
+#![cfg_attr(
+    not(target_os = "windows"),
+    allow(dead_code, reason = "macOS (alpha) has no pill window yet; the drawing is tested on every platform")
+)]
 
 use crate::shared::spring::{self, Spring};
 use crate::shared::theme::{self, palette};
