@@ -156,14 +156,20 @@ fn record(
                 }
             };
             let _ = ready.send(Ok(()));
-            // Feed the file as if a mic were hearing it: one 30ms chunk every 30ms.
+            // Feed the file as if a mic were hearing it: one 30ms chunk every 30ms,
+            // kept to the clock. Sleeping 30ms per chunk drifted badly on slow
+            // machines (each sleep overshoots), so a long file came out short.
             let chunk = window_for(rate);
-            for piece in samples.chunks(chunk) {
+            let started = std::time::Instant::now();
+            for (i, piece) in samples.chunks(chunk).enumerate() {
                 if stop.load(Ordering::SeqCst) {
                     return;
                 }
+                let due = started + WINDOW * i as u32;
+                if let Some(wait) = due.checked_duration_since(std::time::Instant::now()) {
+                    std::thread::sleep(wait);
+                }
                 keep(rate, piece);
-                std::thread::sleep(WINDOW);
             }
             while !stop.load(Ordering::SeqCst) {
                 std::thread::sleep(Duration::from_millis(10));
