@@ -11,8 +11,9 @@ use crate::onboarding::{self, Onboarding};
 use crate::panel::{self, Panel};
 use crate::settings::Settings;
 use crate::shared::{icon, theme};
-use iced::futures::channel::mpsc::Sender;
+use iced::futures::channel::mpsc::{Sender, UnboundedReceiver};
 use iced::{Element, Subscription, Task, Theme, window};
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -47,8 +48,18 @@ struct App {
     tray: Option<Tray>,
     setup: Option<(window::Id, Onboarding)>,
     panel: Option<(window::Id, Panel)>,
-    /// Written when the first-run window closes, so it doesn't open again.
+    /// Written only after Finish, so dismissing setup doesn't skip it forever.
     first_run_marker: Option<PathBuf>,
+    ui_requests: UiRequests,
+}
+
+#[derive(Clone)]
+struct UiRequests(Arc<Mutex<Option<UnboundedReceiver<Pick>>>>);
+
+impl Hash for UiRequests {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state);
+    }
 }
 
 /// The icon and the one menu line that changes (the shortcut). Kept alive for as
@@ -59,12 +70,14 @@ struct Tray {
 }
 
 /// Runs until "Quit likh". With `first_run_marker`, onboarding opens
-/// straight away and the marker is written once it closes.
+/// straight away and the marker is written once it finishes.
 pub fn run(
     dictation: Arc<Mutex<Status>>,
     settings: Arc<RwLock<Settings>>,
     first_run_marker: Option<PathBuf>,
+    ui_requests: UnboundedReceiver<Pick>,
 ) -> iced::Result {
+    let ui_requests = UiRequests(Arc::new(Mutex::new(Some(ui_requests))));
     let boot = move || {
         let shortcut = settings.read().map(|s| s.shortcut).unwrap_or_default();
         let mut app = App {
@@ -74,6 +87,7 @@ pub fn run(
             setup: None,
             panel: None,
             first_run_marker: first_run_marker.clone(),
+            ui_requests: ui_requests.clone(),
         };
         let task = if app.first_run_marker.is_some() { app.open_setup() } else { Task::none() };
         (app, task)
@@ -110,7 +124,15 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         let task = match message {
-            Message::Tray(Pick::Open) => self.open_panel(),
+            Message::Tray(Pick::Open) => {
+                if let Some((id, _)) = self.setup {
+                    window::gain_focus(id)
+                } else if self.first_run_marker.is_some() {
+                    self.open_setup()
+                } else {
+                    self.open_panel()
+                }
+            }
             Message::Tray(Pick::Setup) | Message::Panel(_, panel::Message::RunSetup) => self.open_setup(),
             Message::Tray(Pick::Quit) => iced::exit(),
             Message::Setup(id, message) => match &mut self.setup {
@@ -126,19 +148,25 @@ impl App {
                 _ => Task::none(),
             },
             Message::Closed(id) => {
+                let mut finished = false;
                 if let Some((_, onboarding)) = self.setup.as_mut().filter(|(open, _)| *open == id) {
+                    finished = onboarding.finished();
                     onboarding.closing();
                     self.setup = None;
-                    if let Some(marker) = self.first_run_marker.take() {
+                    if let Some(marker) = self.first_run_marker.as_ref().filter(|_| finished) {
                         let _ = marker.parent().map(std::fs::create_dir_all);
-                        let _ = std::fs::write(marker, "");
+                        if let Err(error) = std::fs::write(marker, "") {
+                            eprintln!("likh: couldn't save setup completion: {error}");
+                        } else {
+                            self.first_run_marker = None;
+                        }
                     }
                 }
                 if let Some((_, panel)) = self.panel.as_mut().filter(|(open, _)| *open == id) {
                     panel.closing();
                     self.panel = None;
                 }
-                Task::none()
+                if finished { self.open_panel() } else { Task::none() }
             }
         };
         // The shortcut may have just changed, in either window.
@@ -175,11 +203,16 @@ impl App {
         };
         Subscription::batch([
             Subscription::run(picks).map(Message::Tray),
+            Subscription::run_with(self.ui_requests.clone(), ui_requests).map(Message::Tray),
             window::close_events().map(Message::Closed),
             setup,
             panel,
         ])
     }
+}
+
+fn ui_requests(inbox: &UiRequests) -> UnboundedReceiver<Pick> {
+    inbox.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take().expect("UI inbox subscribes once")
 }
 
 /// The icon and its menu. None if the shell has no tray (then likh still runs; `likh ctl quit` stops it).

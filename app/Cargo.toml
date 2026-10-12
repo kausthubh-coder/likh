@@ -1,6 +1,6 @@
 [package]
 name = "likh"
-version = "0.1.0"
+version = "0.1.0-alpha.4"
 description = "Native dictation that types with your Codex plan."
 edition.workspace = true
 license.workspace = true
@@ -32,6 +32,9 @@ tempfile = "3"
 
 [lints]
 workspace = true
+
+[target."cfg(windows)".build-dependencies]
+winresource = "0.1"
 
 [target."cfg(windows)".dependencies]
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse"] }

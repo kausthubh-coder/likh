@@ -101,6 +101,7 @@ pub struct Onboarding {
     settings: Option<Arc<RwLock<Settings>>>,
     practice: Practice,
     step: Step,
+    finished: bool,
     codex: CodexStatus,
     /// 0 → 1 as a step arrives. `direction` is +1 going forward, -1 going back.
     arrival: Spring,
@@ -142,6 +143,7 @@ impl Onboarding {
             settings: None,
             practice: Practice::default(),
             step: Step::Welcome,
+            finished: false,
             codex,
             arrival: Spring::new(spring::DEFAULT, 1.0),
             direction: 1.0,
@@ -175,6 +177,10 @@ impl Onboarding {
         self.step
     }
 
+    pub fn finished(&self) -> bool {
+        self.finished
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Next => return self.go(STEPS.get(self.step.index() + 1).copied().unwrap_or(Step::Done)),
@@ -183,7 +189,10 @@ impl Onboarding {
             Message::GetCodex => crate::shared::open_url(crate::shared::CODEX_SETUP),
             Message::OpenMicSettings => crate::shared::open_url(MIC_SETTINGS_URL),
             // Closing the window ends `likh onboarding`; inside the app, likh stays in the tray.
-            Message::Finish => return self.window.map_or_else(iced::exit, window::close),
+            Message::Finish => {
+                self.finished = true;
+                return self.window.map_or_else(iced::exit, window::close);
+            }
             Message::WindowFound(id) => self.window = id,
             Message::Drag => return self.window.map_or_else(Task::none, window::drag),
             Message::Frame(now) => {
