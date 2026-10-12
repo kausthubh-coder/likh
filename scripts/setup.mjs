@@ -4,12 +4,16 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
+import { homedir } from "node:os";
 
 const root = join(import.meta.dir, "..");
+// rustup puts cargo in ~/.cargo/bin, which shells opened before the install don't have on PATH.
+const cargoBin = join(homedir(), ".cargo", "bin");
+const env = { ...process.env, PATH: `${cargoBin}${delimiter}${process.env.PATH ?? ""}` };
 const run = (cmd, cwd = root) => {
   console.log(`> ${cmd}`);
-  execSync(cmd, { cwd, stdio: "inherit" });
+  execSync(cmd, { cwd, stdio: "inherit", env });
 };
 
 const freePort = (port) =>

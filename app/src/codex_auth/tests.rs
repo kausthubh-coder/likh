@@ -83,3 +83,26 @@ fn status_json_never_contains_tokens_or_full_email() {
         assert!(!out.contains(secret), "leaked {secret}: {out}");
     }
 }
+
+#[test]
+fn credentials_come_from_a_live_sign_in() {
+    let home = codex_home_with(Some(signed_in(NOW + 3600)));
+    let credentials = credentials(home.path(), NOW).expect("connected");
+    assert_eq!(credentials.access_token, jwt(json!({ "exp": NOW + 3600 })));
+    assert_eq!(credentials.account_id.as_deref(), Some("acct_123"));
+}
+
+#[test]
+fn credentials_refuse_an_expired_sign_in_and_say_why() {
+    let home = codex_home_with(Some(signed_in(NOW - 1)));
+    assert!(matches!(credentials(home.path(), NOW), Err(CodexStatus::Expired(_))));
+    let empty = codex_home_with(None);
+    assert_eq!(credentials(empty.path(), NOW).err(), Some(CodexStatus::SignedOut));
+}
+
+#[test]
+fn credentials_debug_never_shows_the_token() {
+    let home = codex_home_with(Some(signed_in(NOW + 3600)));
+    let shown = format!("{:?}", credentials(home.path(), NOW).expect("connected"));
+    assert_eq!(shown, r#"Credentials { access_token: "<redacted>", account_id: Some("<redacted>") }"#);
+}

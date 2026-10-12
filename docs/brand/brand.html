@@ -89,53 +89,33 @@
   @keyframes blink { 50% { opacity: 0; } }
   .typed { color: #23201c; }
 
-  .pill { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); display: grid; place-items: center; overflow: hidden;
-    background: linear-gradient(oklch(0.24 0.014 275 / 0.72), oklch(0.13 0.012 275 / 0.78));
-    -webkit-backdrop-filter: blur(18px) saturate(180%); backdrop-filter: blur(18px) saturate(180%);
-    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.18), 0 0 0 0.5px oklch(0 0 0 / 0.45), 0 8px 24px oklch(0 0 0 / 0.35); }
-  .pill.refract { backdrop-filter: var(--lens) blur(2px) saturate(170%); }
-  .pill.solid { background: oklch(0.19 0.014 275 / 0.96); backdrop-filter: none; }
-  .layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; opacity: 0; transition: opacity 150ms var(--ease-snappy); pointer-events: none; white-space: nowrap; }
+  /* The pill is solid: no blur, no refraction (see BRAND.md, Surface). */
+  .pill { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); overflow: hidden; background: var(--surface);
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 0.5px oklch(0 0 0 / 0.5), 0 1px 2px oklch(0 0 0 / 0.2), 0 8px 24px oklch(0 0 0 / 0.24); }
+  .layer { position: absolute; inset: 0; opacity: 0; transition: opacity 150ms var(--ease-snappy); pointer-events: none; white-space: nowrap; }
   .layer.on { opacity: 1; }
-  .bars { display: flex; align-items: center; gap: 4px; height: 24px; }
-  .bars i { display: block; width: 4px; height: 4px; border-radius: 2px; background: var(--accent); }
+  /* Bars sit 15px from the left edge, which centres them in the 76px listening pill. */
+  .bars { position: absolute; left: 15px; top: 8px; display: flex; align-items: center; gap: 3px; height: 20px; }
+  .bars i { display: block; width: 4px; height: 4px; border-radius: 2px; background: var(--accent); transition: background-color 150ms var(--ease-snappy); }
   .thinking .bars i { background: var(--text-muted); }
-  .lock { width: 12px; height: 12px; color: var(--text-muted); }
-  .count { font: 500 12px/16px var(--mono); font-variant-numeric: tabular-nums; color: var(--warning); }
-  .err { gap: 12px; padding: 0 12px 0 16px; justify-content: flex-start; }
-  .err .msg { font: 500 13px/18px var(--font); color: var(--text); white-space: normal; flex: 1; }
-  .err .act { font: 500 12px/16px var(--font); color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 6px 10px; }
+  /* The right slot: a 24px circle inset 6px, so it shares the capsule's centre (radius 18 - 6 = 12). */
+  .slot { position: absolute; right: 6px; top: 6px; width: 24px; height: 24px; border-radius: 12px; background: var(--elevated); display: grid; place-items: center; opacity: 0; scale: 0.9; transition: opacity 150ms var(--ease-snappy), scale 150ms var(--ease-snappy); }
+  .slot.on { opacity: 1; scale: 1; }
+  .slot .stop { width: 8px; height: 8px; border-radius: 2px; background: var(--text); }
+  .slot svg { position: absolute; inset: 0; rotate: -90deg; }
+  .slot .secs { font: 500 12px/1 var(--font); font-variant-numeric: tabular-nums; color: var(--text); letter-spacing: -0.02em; }
+  .err { display: flex; align-items: center; gap: 12px; padding: 0 8px 0 16px; }
+  .err .msg { font: 500 13px/18px var(--font); color: var(--text); white-space: normal; flex: 1; text-wrap: pretty; }
+  .err .act { flex: none; font: 500 13px/18px var(--font); color: var(--on-accent); background: var(--accent); border-radius: 18px; padding: 9px 14px; }
   .err svg { flex: none; color: var(--danger); }
   .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
   .controls .sep { width: 1px; height: 20px; background: var(--hairline); margin: 0 4px; }
 
   /* Onboarding */
-  .onb { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
-  .win { position: relative; aspect-ratio: 560 / 640; background: var(--bg); border-radius: 16px; overflow: hidden; box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06), 0 0 0 0.5px oklch(0 0 0 / 0.6), 0 16px 40px oklch(0 0 0 / 0.35); display: flex; flex-direction: column; padding: 24px; }
-  .win .dots { display: flex; gap: 6px; justify-content: center; margin-top: auto; }
-  .win .dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--elevated); }
-  .win .dots i.on { background: var(--text); width: 16px; }
-  .win h3 { font: 600 22px/26px var(--font); letter-spacing: -0.02em; margin-top: 16px; text-wrap: balance; }
-  .win p { font-size: 13px; line-height: 18px; color: var(--text-muted); margin-top: 8px; text-wrap: pretty; }
-  .win .art { flex: 1; display: grid; place-items: center; min-height: 0; }
-  .win .cta { margin-top: 16px; align-self: stretch; text-align: center; font: 500 13px/18px var(--font); padding: 9px; border-radius: 10px; background: var(--accent); color: var(--on-accent); }
-  .win .cta.ghost { background: var(--elevated); color: var(--text); }
-  .win .ctas { display: flex; gap: 8px; } .win .ctas .cta { flex: 1; }
-  .win .step { font: 500 12px/16px var(--mono); color: var(--text-subtle); }
-  .status { display: flex; align-items: center; gap: 12px; background: var(--surface); border-radius: 12px; padding: 12px; width: 100%; }
-  .status .ico { width: 32px; height: 32px; border-radius: 16px; display: grid; place-items: center; background: var(--elevated); flex: none; }
-  .status b { font: 500 13px/18px var(--font); display: block; }
-  .status span { font-size: 12px; line-height: 16px; color: var(--text-muted); }
-  .keys { display: flex; gap: 8px; align-items: center; }
-  .key { font: 500 15px/22px var(--mono); padding: 12px 16px; min-width: 64px; text-align: center; border-radius: 10px; background: var(--surface); box-shadow: inset 0 -2px 0 oklch(0 0 0 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.08); }
-  .key.down { background: var(--accent); color: var(--on-accent); transform: translateY(1px); }
-  .practice { width: 100%; background: var(--surface); border-radius: 12px; padding: 12px; font-size: 13px; line-height: 18px; min-height: 96px; }
-  .practice .hint { color: var(--text-subtle); }
-  .select { width: 100%; display: flex; justify-content: space-between; background: var(--surface); border-radius: 10px; padding: 8px 12px; font-size: 13px; margin-top: 12px; color: var(--text-muted); }
-  .bigbars { display: flex; align-items: center; gap: 6px; height: 72px; }
-  .bigbars i { width: 8px; border-radius: 4px; background: var(--accent); height: 8px; }
-  .codex-states { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
-  .codex-states button { font: 500 12px/16px var(--font); min-height: 28px; padding: 4px 8px; }
+  .onb { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px 16px; margin-top: 24px; }
+  .onb figure { margin: 0; }
+  .onb img { display: block; width: 100%; height: auto; border-radius: 12px; box-shadow: 0 0 0 0.5px oklch(1 0 0 / 0.08), 0 16px 40px oklch(0 0 0 / 0.35); }
+  .onb figcaption { margin-top: 8px; font-size: 13px; line-height: 18px; color: var(--text-muted); text-wrap: pretty; }
 
   /* Sound */
   .sounds { display: flex; gap: 8px; margin-top: 24px; }
@@ -162,10 +142,6 @@
       <rect x="13.5" y="5.2" width="2" height="5.6" rx="1" fill="oklch(0.78 0.11 45)" />
     </symbol>
   </defs>
-  <filter id="lens" x="0" y="0" width="148" height="40" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-    <feImage id="lens-map" width="148" height="40" preserveAspectRatio="none" result="map" />
-    <feDisplacementMap in="SourceGraphic" in2="map" scale="24" xChannelSelector="R" yChannelSelector="G" />
-  </filter>
 </svg>
 
 <main>
@@ -187,9 +163,10 @@
   <section>
     <div class="eyebrow">02 · Logo</div>
     <h2>The listening pill, frozen</h2>
-    <p class="lede">Five bars in a glass capsule. Their heights trace a lowercase m.</p>
+    <p class="lede">Five bars whose heights trace a lowercase m. The app icon puts them on a dusk tile; the mark puts them in the pill; at 16px and below, the bars stand alone. Files: <code>docs/brand/logo/</code>.</p>
     <div class="logos">
       <div class="card logo-stage">
+        <img src="logo/icon.svg" width="96" height="96" alt="murmur app icon" />
         <svg width="128" height="80"><use href="#mark" /></svg>
         <div class="lockup"><svg width="48" height="30"><use href="#mark" /></svg>murmur</div>
       </div>
@@ -234,7 +211,7 @@
   <section>
     <div class="eyebrow">06 · The pill</div>
     <h2>One liquid surface over every app</h2>
-    <p class="lede">Bottom centre, never takes focus. It grows out of its resting sliver, turns into the thinking wave, and expands into errors instead of spawning toasts. Shown over a bright page with a photo, the worst case for glass.</p>
+    <p class="lede">Bottom centre, never takes focus. It grows out of its resting sliver, turns into the thinking wave, and expands into errors instead of spawning toasts. Shown over a bright page with a photo, the hardest background for a dark pill to stay quiet on.</p>
     <div class="stage" id="stage">
       <div class="fake-app">
         <div class="bar"><span></span><span></span><span></span></div>
@@ -243,7 +220,11 @@
         <div class="img"></div>
       </div>
       <div class="pill" id="pill">
-        <div class="layer" data-for="listening handsfree warning thinking"><div class="bars" id="bars"></div><svg class="lock" id="lock" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" style="display:none"><rect x="2.5" y="5.5" width="7" height="5" rx="1.2"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5"/></svg><span class="count" id="count" style="display:none">0:55 left</span></div>
+        <div class="layer" data-for="listening handsfree warning thinking">
+          <div class="bars" id="bars"></div>
+          <div class="slot" id="slot-stop"><span class="stop"></span></div>
+          <div class="slot" id="slot-count"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10.5" stroke="var(--elevated)" stroke-width="2" /><circle id="ring" cx="12" cy="12" r="10.5" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" pathLength="100" stroke-dasharray="100" /></svg><span class="secs" id="secs">55</span></div>
+        </div>
         <div class="layer err" data-for="error"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm-.75 3.25h1.5v4.5h-1.5v-4.5Zm.75 7.1a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Z"/></svg><span class="msg">Your Codex sign-in expired. Open Codex once to refresh it.</span><span class="act">Open Codex</span></div>
       </div>
     </div>
@@ -253,74 +234,25 @@
       <button class="ctl" data-state="handsfree">hands-free</button>
       <button class="ctl" data-state="thinking">thinking</button>
       <button class="ctl" data-state="done">done</button>
-      <button class="ctl" data-state="warning">warning</button>
+      <button class="ctl" data-state="warning">time running out</button>
       <button class="ctl" data-state="error">error</button>
       <button class="ctl" data-state="cancelled">cancelled</button>
       <span class="sep"></span>
       <button class="ctl" id="play">▶ play a dictation</button>
-      <span class="sep"></span>
-      <button class="ctl" data-rung="solid">solid</button>
-      <button class="ctl" data-rung="frosted" aria-pressed="true">frosted</button>
-      <button class="ctl" data-rung="refract">refraction</button>
     </div>
   </section>
 
   <section>
     <div class="eyebrow">07 · Onboarding</div>
-    <h2>Six steps, one window, played once</h2>
-    <p class="lede">Each step slides on spring.default. Step 2 checks Codex live and has a state for every way it can be missing. Click the states to see the copy.</p>
+    <h2>Five steps, one borderless window, played once</h2>
+    <p class="lede">560 x 640, no title bar (drag anywhere, Alt+F4 closes). Each step slides 24px on spring.default and the dots slide with it. These are the real screens, rendered by the app's own views: <code>cargo test -p murmur brand_board -- --ignored</code> regenerates them.</p>
     <div class="onb">
-      <div class="win">
-        <span class="step">1 / 6</span>
-        <div class="art"><canvas id="flock-mini" width="240" height="160" style="width:240px;height:160px"></canvas></div>
-        <h3>Talk. It types.</h3>
-        <p>Hold a key, say it, let go. Your words land wherever you're typing.</p>
-        <div class="cta">Get started</div>
-        <div class="dots" style="margin-top:16px"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
-      </div>
-      <div class="win">
-        <span class="step">2 / 6</span>
-        <div class="art" style="align-content:center;width:100%">
-          <div class="status" id="codex-status"></div>
-          <div class="codex-states" id="codex-states"></div>
-        </div>
-        <h3>Connect Codex</h3>
-        <p>murmur uses your ChatGPT plan through Codex. Nothing to pay, nothing to paste.</p>
-        <div class="ctas" id="codex-ctas"></div>
-        <div class="dots" style="margin-top:16px"><i></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
-      </div>
-      <div class="win">
-        <span class="step">3 / 6</span>
-        <div class="art" style="width:100%"><div style="width:100%;display:grid;place-items:center"><div class="bigbars" id="bigbars"></div><div class="select"><span>Microphone</span><span>Headset (Jabra Evolve2) ▾</span></div></div></div>
-        <h3>Say something</h3>
-        <p>The bars should move when you talk. If they don't, pick another microphone.</p>
-        <div class="cta">Sounds good</div>
-        <div class="dots" style="margin-top:16px"><i></i><i></i><i class="on"></i><i></i><i></i><i></i></div>
-      </div>
-      <div class="win">
-        <span class="step">4 / 6</span>
-        <div class="art"><div class="keys"><span class="key" id="k1">Ctrl</span><span style="color:var(--text-subtle)">+</span><span class="key" id="k2">Win</span></div></div>
-        <h3>Hold to talk. Let go to paste.</h3>
-        <p>Press it now to try. Double-tap for hands-free. Esc cancels.</p>
-        <div class="ctas"><div class="cta ghost">Change</div><div class="cta">Use Ctrl + Win</div></div>
-        <div class="dots" style="margin-top:16px"><i></i><i></i><i></i><i class="on"></i><i></i><i></i></div>
-      </div>
-      <div class="win">
-        <span class="step">5 / 6</span>
-        <div class="art" style="width:100%"><div class="practice" id="practice"><span class="hint">Hold Ctrl + Win and say: “Remind me to send the deck tomorrow at nine.”</span></div></div>
-        <h3>Try it here</h3>
-        <p>This box is a safe place to practise. Nothing is sent anywhere but ChatGPT.</p>
-        <div class="cta">Continue</div>
-        <div class="dots" style="margin-top:16px"><i></i><i></i><i></i><i></i><i class="on"></i><i></i></div>
-      </div>
-      <div class="win">
-        <span class="step">6 / 6</span>
-        <div class="art"><div style="display:grid;place-items:center;gap:12px"><svg width="128" height="80" id="done-mark"><use href="#mark" /></svg></div></div>
-        <h3>murmur lives in your tray</h3>
-        <p>Hold Ctrl + Win in any app. Usage, history and settings are one click on the tray icon.</p>
-        <div class="cta">Finish</div>
-        <div class="dots" style="margin-top:16px"><i></i><i></i><i></i><i></i><i></i><i class="on"></i></div>
-      </div>
+      <figure><img src="onboarding/1-welcome-tiny-skia.png" alt="" width="560" height="640" loading="lazy" /><figcaption>Welcome. The flock flies in and lands on the logo, then the words arrive 50ms apart.</figcaption></figure>
+      <figure><img src="onboarding/2-codex-missing-tiny-skia.png" alt="" width="560" height="640" loading="lazy" /><figcaption>Connect Codex: the state is the headline. Re-checks every 2s on its own.</figcaption></figure>
+      <figure><img src="onboarding/2-codex-connected-tiny-skia.png" alt="" width="560" height="640" loading="lazy" /><figcaption>Connected: the link turns green.</figcaption></figure>
+      <figure><img src="onboarding/3-microphone-tiny-skia.png" alt="" width="560" height="640" loading="lazy" /><figcaption>Microphone: live levels, newest in the middle, rippling out.</figcaption></figure>
+      <figure><img src="onboarding/4-shortcut-tiny-skia.png" alt="" width="560" height="640" loading="lazy" /><figcaption>Hold to talk: inside the app this is a real first dictation into the box.</figcaption></figure>
+      <figure><img src="onboarding/5-done-tiny-skia.png" alt="" width="560" height="640" loading="lazy" /><figcaption>Done: the flock spells murmur, with the one bounce the brand allows.</figcaption></figure>
     </div>
   </section>
 
@@ -398,16 +330,26 @@ function flock(canvas, count, scale) {
   else requestAnimationFrame(frame);
 }
 flock(document.getElementById("flock"), 420, { cx: w => w * 0.74, cy: h => h * 0.42, size: (w, h) => Math.min(w, h) * 0.55 });
-flock(document.getElementById("flock-mini"), 160, { cx: w => w / 2, cy: h => h / 2, size: (w, h) => h * 0.8 });
 
 // ---- pill ----
 const pill = document.getElementById("pill"), barsEl = document.getElementById("bars");
 const NB = 7; for (let i = 0; i < NB; i++) barsEl.appendChild(document.createElement("i"));
 const bars = [...barsEl.children], levels = new Array(NB).fill(0);
-const SIZES = { resting: [40, 8], listening: [148, 40], handsfree: [172, 40], thinking: [148, 40], done: [40, 8], warning: [196, 40], error: [360, 56], cancelled: [40, 8] };
+// Width x height. The pill hugs its content: 7 bars (46px) plus 15px each side.
+const SIZES = { resting: [40, 8], listening: [76, 36], handsfree: [100, 36], thinking: [76, 36], done: [40, 8], warning: [100, 36], error: [360, 52], cancelled: [40, 8] };
 const sw_ = makeSpring(0.25, 0, 40), sh_ = makeSpring(0.25, 0, 8);
-let state = "resting", raf = 0, last = 0, rung = "frosted", lensFor = "";
+const slotStop = document.getElementById("slot-stop"), slotCount = document.getElementById("slot-count");
+const ring = document.getElementById("ring"), secsEl = document.getElementById("secs");
+let state = "resting", raf = 0, last = 0, warnFrom = 0;
 const voiced = () => ["listening", "handsfree", "warning"].includes(state);
+// Stand-in for mic RMS: syllables, louder and softer phrases, and per-bar grain,
+// so the bars use their whole height the way a real voice drives them.
+function voiceLevel(t, i) {
+  const syllable = Math.pow(Math.abs(Math.sin(t * 5.4)), 0.5);
+  const phrase = 0.7 + 0.3 * Math.sin(t * 1.3);
+  const grain = 0.6 + 0.4 * Math.abs(Math.sin(t * 13 + i * 2.1) * Math.cos(t * 7.7 + i * 1.3));
+  return Math.min(1, 1.8 * syllable * phrase * grain * (1 - Math.abs(i - 3) * 0.1));
+}
 function render(now) {
   const dt = Math.min(0.032, (now - last) / 1000); last = now;
   const a = step(sw_, dt), b = step(sh_, dt);
@@ -416,54 +358,35 @@ function render(now) {
   const tt = now / 1000;
   bars.forEach((el, i) => {
     let target;
-    if (voiced()) { const env = 0.45 + 0.55 * Math.abs(Math.sin(tt * 1.9)); const centre = 1 - Math.abs(i - (NB - 1) / 2) / NB; target = Math.max(0.15, env * centre * (0.45 + 0.55 * Math.abs(Math.sin(tt * 9 + i * 1.7) * Math.cos(tt * 5.3 + i)))); }
-    else if (state === "thinking") target = reduce ? 0.35 : 0.2 + 0.25 * (1 + Math.sin(tt * 5.2 - i * 0.7)) / 2;
-    else target = 0.12;
+    if (voiced()) target = voiceLevel(tt, i);
+    else if (state === "thinking") target = reduce ? 0.3 : 0.15 + 0.35 * (1 + Math.sin(tt * 5.2 - i * 0.7)) / 2;
+    else target = 0;
     const rate = target > levels[i] ? 0.04 : 0.14; // attack 40ms, release 140ms
     levels[i] += (target - levels[i]) * Math.min(1, dt / rate);
-    el.style.height = 4 + levels[i] * 22 + "px";
+    el.style.height = 4 + levels[i] * 16 + "px";
   });
+  if (state === "warning") {
+    const left = Math.max(0, 55 - (now - warnFrom) / 1000);
+    secsEl.textContent = Math.ceil(left);
+    ring.style.strokeDashoffset = 100 - (left / 60) * 100;
+  }
   const settled = a && b;
-  if (rung === "refract" && settled) applyLens(); else pill.classList.remove("refract");
-  const animating = !settled || voiced() || state === "thinking" || levels.some(l => l > 0.13);
+  const animating = !settled || voiced() || state === "thinking" || levels.some(l => l > 0.01);
   raf = animating ? requestAnimationFrame(render) : 0; // idle draws zero frames
 }
 function kick() { if (!raf) { last = performance.now(); raf = requestAnimationFrame(render); } }
 function setState(s) {
+  if (s === "warning" && state !== "warning") warnFrom = performance.now();
   state = s; const [w, h] = SIZES[s]; sw_.t = w; sh_.t = h;
-  pill.className = "pill" + (rung === "solid" ? " solid" : "") + (s === "thinking" ? " thinking" : "");
-  document.getElementById("lock").style.display = s === "handsfree" ? "" : "none";
-  document.getElementById("count").style.display = s === "warning" ? "" : "none";
+  pill.className = "pill" + (s === "thinking" ? " thinking" : "");
+  slotStop.classList.toggle("on", s === "handsfree");
+  slotCount.classList.toggle("on", s === "warning");
   pill.querySelectorAll(".layer").forEach(l => l.classList.toggle("on", l.dataset.for.split(" ").includes(s)));
   document.querySelectorAll("#pill-controls [data-state]").forEach(b => b.setAttribute("aria-pressed", b.dataset.state === s));
   if (s === "done" || s === "cancelled") setTimeout(() => state === s && setState("resting"), 260);
   kick();
 }
 document.querySelectorAll("#pill-controls [data-state]").forEach(b => b.onclick = () => setState(b.dataset.state));
-document.querySelectorAll("#pill-controls [data-rung]").forEach(b => b.onclick = () => {
-  rung = b.dataset.rung; document.querySelectorAll("#pill-controls [data-rung]").forEach(x => x.setAttribute("aria-pressed", x === b));
-  setState(state);
-});
-// Displacement map for a capsule: bend at the rim, flat in the middle (Snell-ish falloff).
-function applyLens() {
-  const w = Math.round(sw_.t), h = Math.round(sh_.t), key = w + "x" + h;
-  if (lensFor !== key) {
-    const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"), img = g.createImageData(w, h);
-    const r = h / 2, bezel = Math.min(14, r);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const cx = Math.min(Math.max(x, r), w - r), dx = x - cx, dy = y - r, d = Math.hypot(dx, dy) || 1;
-      const edge = r - d; let m = 0;
-      if (edge >= 0 && edge < bezel) { const t = 1 - edge / bezel; m = Math.pow(t, 2.2); }
-      const o = (y * w + x) * 4; img.data[o] = 128 - (dx / d) * m * 127; img.data[o + 1] = 128 - (dy / d) * m * 127; img.data[o + 2] = 128; img.data[o + 3] = 255;
-    }
-    g.putImageData(img, 0, 0);
-    const f = document.getElementById("lens"), m = document.getElementById("lens-map");
-    f.setAttribute("width", w); f.setAttribute("height", h); m.setAttribute("width", w); m.setAttribute("height", h);
-    m.setAttribute("href", c.toDataURL()); lensFor = key;
-    pill.style.setProperty("--lens", "url(#lens)");
-  }
-  pill.classList.add("refract");
-}
 
 // Scripted dictation: hold -> speak -> release -> think -> paste -> rest.
 const typed = document.getElementById("typed");
@@ -477,37 +400,6 @@ document.getElementById("play").onclick = async () => {
   playing = false;
 };
 setState("resting"); setTimeout(() => document.getElementById("play").click(), 900);
-
-// ---- onboarding: codex states ----
-const CODEX = {
-  checking: { ico: "…", c: "var(--text-subtle)", t: "Looking for Codex…", s: "Checking ~/.codex/auth.json", ctas: [] },
-  "not installed": { ico: "↓", c: "var(--text-muted)", t: "Codex isn't installed", s: "Install Codex, sign in once, then come back.", ctas: [["Check again", 1], ["Get Codex", 0]] },
-  "signed out": { ico: "!", c: "var(--warning)", t: "Codex isn't signed in", s: "Open Codex (or run codex login) and sign in.", ctas: [["Check again", 0]] },
-  connected: { ico: "✓", c: "var(--success)", t: "Connected through Codex", s: "k•••@gmail.com · ChatGPT Plus", ctas: [["Continue", 0]] },
-  expired: { ico: "!", c: "var(--danger)", t: "Your Codex sign-in expired", s: "Open Codex once to refresh it, then try again.", ctas: [["Check again", 1], ["Open Codex", 0]] },
-};
-const cs = document.getElementById("codex-status"), cc = document.getElementById("codex-ctas"), cb = document.getElementById("codex-states");
-function codex(k) {
-  const v = CODEX[k];
-  cs.innerHTML = `<div class="ico" style="color:${v.c}">${v.ico}</div><div><b>${v.t}</b><span>${v.s}</span></div>`;
-  cc.innerHTML = v.ctas.map(([t, ghost]) => `<div class="cta${ghost ? " ghost" : ""}">${t}</div>`).join("") || `<div class="cta ghost" style="opacity:.5">Continue</div>`;
-  cb.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.textContent === k));
-}
-cb.innerHTML = Object.keys(CODEX).map(k => `<button class="ctl">${k}</button>`).join("");
-cb.querySelectorAll("button").forEach(b => b.onclick = () => codex(b.textContent));
-codex("connected");
-
-// mic bars + key demo + practice
-const big = document.getElementById("bigbars"); for (let i = 0; i < 9; i++) big.appendChild(document.createElement("i"));
-const k1 = document.getElementById("k1"), k2 = document.getElementById("k2"), pr = document.getElementById("practice");
-if (!reduce) {
-  (function mic(now) { [...big.children].forEach((el, i) => { const t = now / 1000; el.style.height = 8 + 56 * Math.max(0.1, Math.abs(Math.sin(t * 3 + i * 0.9) * Math.sin(t * 1.3 + i * 0.3))) + "px"; }); requestAnimationFrame(mic); })(0);
-}
-setInterval(() => { k1.classList.add("down"); k2.classList.add("down"); setTimeout(() => { k1.classList.remove("down"); k2.classList.remove("down"); }, 1400); }, 2600);
-setInterval(() => {
-  pr.innerHTML = '<span class="hint">Hold Ctrl + Win and say: “Remind me to send the deck tomorrow at nine.”</span>';
-  setTimeout(() => { pr.innerHTML = '<span class="hint">Hold Ctrl + Win and say: “Remind me to send the deck tomorrow at nine.”</span><div style="margin-top:12px">Remind me to send the deck tomorrow at nine.</div>'; }, 1800);
-}, 4200);
 
 // ---- sound ----
 let ac;

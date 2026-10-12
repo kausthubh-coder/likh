@@ -62,9 +62,12 @@ pub mod radius {
     pub const CONTROL: f32 = 10.0;
 }
 
+/// The pill draws its own text with this one weight.
+pub const GEIST_MEDIUM: &[u8] = include_bytes!("../../assets/fonts/Geist-Medium.ttf");
+
 pub const FONT_FILES: [&[u8]; 4] = [
     include_bytes!("../../assets/fonts/Geist-Regular.ttf"),
-    include_bytes!("../../assets/fonts/Geist-Medium.ttf"),
+    GEIST_MEDIUM,
     include_bytes!("../../assets/fonts/Geist-SemiBold.ttf"),
     include_bytes!("../../assets/fonts/GeistMono-Medium.ttf"),
 ];

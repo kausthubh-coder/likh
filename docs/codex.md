@@ -20,7 +20,7 @@ murmur does what the Codex desktop app does when you dictate into it. It reads t
 - **Never refresh or write the tokens.** Codex rotates its refresh token, so a second writer would sign the user out of Codex.
   - When the access token's `exp` has passed, show "Your Codex sign-in expired. Open Codex once to refresh it."
   - Treat a 401 or 403 the same way: "ChatGPT turned down the sign-in. Sign in to Codex again."
-- **Token values never reach logs, metrics, screenshots or `murmur status --json`.** Tests in `codex_auth/tests.rs` enforce it. When phase 2 adds the request credentials, their `Debug` must redact the token, with a test.
+- **Token values never reach logs, metrics, screenshots or `murmur status --json`.** Tests in `codex_auth/tests.rs` enforce it. The request credentials (`codex_auth::Credentials`) redact both values in `Debug`, enforced by a test.
 - **Recordings are capped at 9m55s**, the same as the Codex app (595,000 ms), with a warning at 9:00. The server's own cap is unknown. Its errors include `file_above_max_size`, `input_too_large`, `audio_too_short` and `rate_limit_exceeded`; map each to a sentence in the UI.
 - **The HTTP timeout scales with the recording length.** The prototype's fixed 25 s timeout would cut off long uploads.
 

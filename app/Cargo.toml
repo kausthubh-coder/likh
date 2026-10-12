@@ -8,12 +8,22 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-iced = { version = "0.14", features = ["smol"] }
+# Software rendering only (tiny-skia). The wgpu renderer idled at 229-313 MB
+# against 7 MB for tiny-skia on the same window (docs/plan.md, Measured so far).
+iced = { version = "0.14", default-features = false, features = ["tiny-skia", "crisp", "web-colors", "thread-pool", "smol", "canvas"] }
 base64 = "0.23"
 clap = { version = "4.6", features = ["derive"] }
 dirs = "7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+cpal = "0.18"
+arboard = "3"
+enigo = "0.6"
+hound = "3"
+interprocess = "2"
+ureq = { version = "3", features = ["json"] }
+tiny-skia = "0.11"
+ab_glyph = "0.2"
 
 [dev-dependencies]
 iced_test = "0.14"
@@ -21,3 +31,10 @@ tempfile = "3"
 
 [lints]
 workspace = true
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse"] }
+
+# macOS (alpha) still uses handy-keys for the shortcut; Windows has its own idle-free hook.
+[target.'cfg(not(windows))'.dependencies]
+handy-keys = "0.3"

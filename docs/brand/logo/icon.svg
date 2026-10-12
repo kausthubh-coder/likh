@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- murmur app icon: five bars tracing a lowercase m, on a dusk tile. Source of truth: docs/brand/BRAND.md, Logo. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2129" />
+      <stop offset="1" stop-color="#0b0c11" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#tile)" />
+  <rect x="1" y="1" width="510" height="510" rx="115" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2" />
+  <g fill="#f2a07c">
+    <rect x="110" y="197.5" width="36" height="117" rx="18" />
+    <rect x="174" y="145.5" width="36" height="221" rx="18" />
+    <rect x="238" y="184.5" width="36" height="143" rx="18" />
+    <rect x="302" y="145.5" width="36" height="221" rx="18" />
+    <rect x="366" y="197.5" width="36" height="117" rx="18" />
+  </g>
+</svg>

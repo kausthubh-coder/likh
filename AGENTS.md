@@ -1,13 +1,13 @@
 # murmur
 
-Native dictation for Windows (macOS in alpha). Hold Ctrl+Win, talk, let go, and the text pastes at the cursor, transcribed through the user's ChatGPT plan via Codex's sign-in. Users care most that it is instant, reliable, and costs nothing to leave running 24/7. Stack: Rust + iced 0.14 (GPU via wgpu, no web view) in `app/`, and a Next.js landing page in `site/`. Run with bun, deployed on Vercel.
+Native dictation for Windows (macOS in alpha). Hold Ctrl+Win, talk, let go, and the text pastes at the cursor, transcribed through the user's ChatGPT plan via Codex's sign-in. Users care most that it is instant, reliable, and costs nothing to leave running 24/7. Stack: Rust + iced 0.14 (software renderer, no web view) in `app/`, and a Next.js landing page in `site/`. Run with bun, deployed on Vercel.
 
 ## Words we use
 
 - **you**: the agent reading this file.
 - **me**: the developer you are working for.
 - **user**: the person who uses murmur. Not me.
-- **pill**: the floating glass overlay at the bottom of the screen. It never takes focus.
+- **pill**: the small solid capsule at the bottom of the screen during a dictation. It never takes focus.
 - **dictation**: one hold (or hands-free session) from key-down to paste.
 - **Codex sign-in**: `~/.codex/auth.json`, written by Codex. We only ever read it.
 - **transcriber**: whatever turns audio into text. Today that's Codex's `/backend-api/transcribe`.
@@ -17,12 +17,19 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Win, talk, let go, and 
 | Where | What lives there |
 |---|---|
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
+| `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it |
+| `app/src/hotkey/` | Ctrl+Win and Esc. Windows has its own keyboard hook (`windows.rs`) |
+| `app/src/microphone/` | levels and recordings; `MURMUR_AUDIO=file.wav` replays a file instead |
+| `app/src/transcriber/` | audio to text through Codex; `MURMUR_TRANSCRIBER=echo:<text>` fakes it |
+| `app/src/paste/` | clipboard, Ctrl+V, clipboard back |
+| `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
+| `app/src/ctl/` | `murmur ctl`: drive the running app over a local pipe |
 | `app/src/codex_auth/` | is Codex installed and signed in; reading credentials safely |
-| `app/src/onboarding/` | the first-run window |
+| `app/src/onboarding/` | the first-run window and its flock |
 | `app/src/shared/` | `theme.rs` (brand tokens), `spring.rs` (motion). Only code two features use |
 | `app/assets/` | bundled fonts (Geist, OFL) |
 | `site/` | the landing page (Next.js). Read `site/AGENTS.md` before touching it |
-| `docs/brand/` | `BRAND.md` (the rules) and `brand.html` (the rules moving) |
+| `docs/brand/` | `BRAND.md` (the rules), `brand.html` (the rules moving), `logo/` (icon, mark, bars) |
 | `docs/plan.md` | decisions, phases, test strategy, spikes |
 | `docs/codex.md` | how Codex transcription works, its limits and risks |
 
@@ -32,7 +39,9 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, picks a free site port)
 - Doctor: `bun run doctor`. Run it first when anything looks off.
-- Run the app: `bun run dev` (opens onboarding). Agents: `cargo run -p murmur -- status --json`
+- Run the app: `bun run dev` (onboarding opens the first time). Agents: `murmur run --skip-onboarding`, then `murmur ctl status|start|stop|cancel|quit`
+- One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` pastes into a throwaway box
+- Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
 - Site: `bun run dev:site` (port from `site/.env.local`)
 - Test one module: `cargo test -p murmur codex_auth`
 - Lint the Rust you changed: `cargo clippy -p murmur --all-targets -- -D warnings`
@@ -72,11 +81,14 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 | Rule | Enforced by |
 |---|---|
 | No `unwrap()`, `todo!()`, `dbg!()`, `unsafe` | workspace lints in `Cargo.toml` |
+| `unsafe` only for Win32 in `pill/windows.rs` and `hotkey/windows.rs`, each with a `SAFETY:` comment | the lint above; those two files opt out at the top, nothing else may |
+| The pill and the shortcut cost nothing while idle (no timers, no polling) | `pill` and `onboarding` tests assert frames stop; `scripts/measure-idle.ps1` before and after |
 | Formatting | `cargo fmt --check` in `bun run check` |
 | Token values never appear in output | tests in `codex_auth/tests.rs` |
 | Every Codex sign-in state shows its fix | tests in `onboarding/tests.rs` |
 | Brand tokens match the board | `shared/theme.rs` tests (accent vs Chromium) |
 | View tests hold `shared::test_ui::lock()` while using an iced_test simulator (parallel simulators crash) | nothing yet: copy the pattern in `onboarding/tests.rs` |
+| A UI test never pastes into a real app | `scripts/e2e-dictate.ps1` only starts a dictation once its own box has focus, and cancels if focus leaves |
 
 When I correct you for the same thing twice, add the rule here and make something enforce it.
 

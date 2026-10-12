@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Brand tokens: docs/brand/BRAND.md */
+/* Brand tokens: docs/brand/BRAND.md. Components use these names, never raw values. */
 @theme inline {
   --color-bg: oklch(0.155 0.012 275);
   --color-surface: oklch(0.19 0.014 275);
@@ -10,9 +10,20 @@
   --color-text-subtle: oklch(0.56 0.014 275);
   --color-accent: oklch(0.78 0.11 45);
   --color-on-accent: oklch(0.22 0.03 45);
+  --color-success: oklch(0.78 0.13 155);
+  --color-warning: oklch(0.84 0.14 85);
+  --color-danger: oklch(0.68 0.17 25);
+  /* The mock document in the demo: a bright app, the worst case for the pill. */
+  --color-paper: oklch(0.965 0.006 80);
+  --color-ink: oklch(0.25 0.01 60);
+  --color-ink-muted: oklch(0.45 0.01 60);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
+  /* The pill's edge recipe (BRAND.md, Surface). */
+  --shadow-pill: inset 0 1px 0 oklch(1 0 0 / 0.1), 0 0 0 0.5px oklch(0 0 0 / 0.5), 0 1px 2px oklch(0 0 0 / 0.2),
+    0 8px 24px oklch(0 0 0 / 0.24);
+  --shadow-key: inset 0 -2px 0 oklch(0 0 0 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.08);
 }
 
 html {
@@ -23,4 +34,19 @@ html {
 body {
   background: var(--color-bg);
   color: var(--color-text);
+}
+
+::selection {
+  background: oklch(0.78 0.11 45 / 0.35);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
 }

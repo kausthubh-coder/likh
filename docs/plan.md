@@ -6,7 +6,9 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 
 - **Product:** native dictation. Hold Ctrl+Win, talk, let go, and the text pastes at the cursor in under a second. It must idle at near-zero CPU and low RAM so it can run 24/7.
 - **Transcription:** Codex only (see `docs/codex.md`). Claude is out.
-- **UI:** Rust + iced 0.14, drawn on the GPU with wgpu and no web view. The look is liquid glass (`docs/brand/`). We chose iced over GPUI for its public custom-shader path (real glass), headless screenshot tests that run on Windows, and a stabler API. We pay for that with our own spring helper and per-OS overlay code.
+- **UI:** Rust + iced 0.14 with the tiny-skia software renderer, no web view and no GPU context. We chose iced over GPUI for headless screenshot tests that run on Windows and a stabler API, and pay for it with our own spring helper and per-OS overlay code.
+- **The pill is solid, not glass** (2026-10-12). Real refraction needs a GPU renderer and continuous screen capture, and the GPU renderer alone idled at 229 to 313 MB against 7 MB. The pill is its own layered Win32 window drawn with tiny-skia (`app/src/pill/`), because iced's software renderer can't make a transparent, never-focused window and resizing an OS window per frame looked laggy.
+- **The shortcut is murmur's own keyboard hook on Windows** (2026-10-12). handy-keys woke its hook thread every 10ms and hooked the mouse too; ours sleeps until a key moves.
 - **Platforms:** Windows first. macOS ships labelled alpha; nobody on the team can test it on a Mac yet.
 - **Release:** a public repo (MIT) with a landing page in `site/`. Unsigned builds on GitHub Releases. Pull requests with CI before `main`.
 - **Local only:** logs, metrics and crash reports stay on the machine. "Copy diagnostics" produces a redacted bundle for GitHub issues.
@@ -15,10 +17,10 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 
 | Phase | What | Done when |
 |---|---|---|
-| 0 | Brand pack, scaffold, Codex sign-in detection, first onboarding screens | ✅ this commit |
-| 1 | **Spikes:** idle memory of an iced tray app plus the pill; refraction cost on Windows (below) | numbers recorded in this file |
-| 2 | Hold the hotkey, record, transcribe, paste. Minimal pill. Fake mic plus fake transcriber. `murmur ctl` | the e2e test passes in Notepad |
-| 3 | Full onboarding (6 steps) and the glass pill with every state | screenshots match `docs/brand/brand.html` |
+| 0 | Brand pack, scaffold, Codex sign-in detection, first onboarding screens | ✅ |
+| 1 | **Spikes:** idle cost of the running app; refraction cost on Windows | ✅ idle measured below; refraction dropped for a solid pill |
+| 2 | Hold the hotkey, record, transcribe, paste. The pill. Fake mic plus fake transcriber. `murmur ctl` | ✅ `scripts/e2e-dictate.ps1` pastes into a throwaway box with the fakes. A real Codex transcription and the physical Ctrl+Win still need a person (injected keys are ignored by design) |
+| 3 | Full onboarding and every pill state | ✅ five steps (Try it is folded into the shortcut step inside the app); pill: listening, thinking, countdown, error, done. Hands-free waits for phase 4 |
 | 4 | Hands-free (double-tap) with silence stop, Esc cancel, mic picker, paste-last, history, sounds, launch at login, usage panel, 9m55s cap | each has a test, and the verify skill covers it |
 | 5 | Landing page with downloads, the release workflow | `v0.1.0` on GitHub Releases |
 | later | Chunked long dictation, dictionary, snippets, cleanup, command mode, styles, stats | |
@@ -32,25 +34,25 @@ The onboarding window, idle on the Welcome step, release build. Windows 11, meas
 | wgpu, default (DX12) | 312.6 MB | 255.7 MB | 1,109 ms | |
 | wgpu, `WGPU_BACKEND=vulkan` | 228.8 MB | 176.4 MB | 328 ms | 61 |
 | tiny-skia, `ICED_BACKEND=tiny-skia` | **7.2 MB** | **30.5 MB** | **0 ms** | 11 |
+| tiny-skia only (wgpu compiled out), 2026-10-12 | 6.9 MB | 20.6 MB | 0 ms | 9 |
+
+The running app, idle (no window open, pill hidden, shortcut armed), release build, `scripts/measure-idle.ps1` over 60 s:
+
+| Build | Private memory | Working set | Idle CPU over 60 s | Threads |
+|---|---|---|---|---|
+| with handy-keys for the shortcut | 3.0 MB | 13.7 MB | 203 ms | 12 |
+| with murmur's own hook (`hotkey/windows.rs`) | **2.0 MB** | **10.8 MB** | **0 ms** | 6 |
+
+The exe shrank from 11.4 MB to 5.1 MB when wgpu was compiled out (7.6 MB with everything in phase 2).
 
 The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the always-on process should draw with tiny-skia and open a GPU context only if refraction proves worth it. The spikes below now compare against 7 MB, not against Handy's 139 MB.
-
-## Spikes to run before building on assumptions
-
-1. **Idle cost.** A minimal iced daemon with a tray icon and the pill window hidden, then shown idle. Record private bytes, working set, CPU % and GPU memory after 10 minutes, and compare with handy-codex (139 MB private across 8 processes, 0.03% CPU). If iced/wgpu idles above about 80 MB, try the `tiny-skia` software renderer for the pill.
-2. **Refraction on Windows.** The pill at 148x40 over a busy, moving background, in three modes:
-   - OS Acrylic blur only.
-   - Continuous `Windows.Graphics.Capture` of the strip behind the pill, with a refraction shader. The pill is excluded from the capture via `WDA_EXCLUDEFROMCAPTURE`.
-   - Capture only while it's visible.
-
-   Measure CPU %, GPU %, GPU memory, power (Task Manager "power usage"), and the latency between the background moving and the lens updating. The user wants refraction always on, not a few seconds at a time, so the number that decides it is the always-on cost.
 
 ## Features (Wispr Flow's list, triaged)
 
 - **First release:**
   - push-to-talk
   - hands-free with silence stop
-  - glass pill with level bars
+  - solid pill with level bars
   - paste with clipboard restore
   - tray
   - launch at login
@@ -93,15 +95,16 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
 ## How we test a voice app
 
 1. **Pure logic** (state machine, VAD, resampling, sign-in, springs): unit tests next to the code, with WAV fixtures.
-2. **Views:** `iced_test` simulator tests click through screens and find text. They run headless on Windows CI. Snapshot tests come with the glass pill.
-3. **Fake mic:** an `AudioSource` with `Mic` and `WavFile` implementations. `MURMUR_AUDIO=path.wav` makes the real app "hear" a file.
+2. **Views:** `iced_test` simulator tests click through screens and find text. They run headless on Windows CI. The pill's drawing is tested on its pixels (`pill/tests.rs`).
+3. **Fake mic:** `MURMUR_AUDIO=path.wav` makes recordings replay that file in real time instead of opening the mic (`microphone::Recording::start_from`).
 4. **Fake transcriber:** `MURMUR_TRANSCRIBER=echo:<text>` returns fixed text, so UX tests never touch ChatGPT.
-5. **Control CLI:** `murmur ctl start|stop|cancel|status|screenshot --json` talks to the running app over a local named pipe, so agents drive the real app without pressing keys.
-6. **End to end:**
-   - Windows text-to-speech (SAPI) generates a WAV of a known sentence.
-   - The fake mic feeds it in while the real transcriber runs, dictating into Notepad.
-   - UI Automation reads the text back, and the word error rate is scored (it must stay under 10%).
-7. **Visual:** screenshots of the pill and onboarding in each state, compared against baselines and against `brand.html`.
+5. **Control CLI:** `murmur ctl start|stop|cancel|status|quit` talks to the running app over a local named pipe and prints one JSON line, so agents drive the real app without pressing keys.
+6. **End to end** (`scripts/e2e-dictate.ps1`):
+   - `scripts/tts-wav.ps1` speaks a known sentence into a WAV with Windows' built-in voice.
+   - murmur runs with that WAV as its mic. The script opens a throwaway text box, clicks into it, and drives `murmur ctl start` / `stop`.
+   - It reads the box back and compares. It refuses to start unless its box has focus and cancels if focus leaves, so a paste never lands in a real app. Not Notepad: Windows 11 Notepad keeps tabs between sessions.
+   - Still to add: the real transcriber with a word error rate under 10%, which needs a signed-in Codex.
+7. **Visual:** the brand board's pill and onboarding pictures are rendered from the real code (`cargo test -p murmur brand_board -- --ignored`); compare against them.
 
 ## Observability (all local)
 

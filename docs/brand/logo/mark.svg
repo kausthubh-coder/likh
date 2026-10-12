@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" width="128" height="80">
+  <!-- The listening pill, frozen: a capsule holding five bars that trace an m. -->
+  <rect x="0.5" y="0.5" width="63" height="39" rx="19.5" fill="#12131a" stroke="#ffffff" stroke-opacity="0.16" />
+  <g fill="#f2a07c">
+    <rect x="15" y="15.05" width="4" height="9.9" rx="2" />
+    <rect x="23" y="10.65" width="4" height="18.7" rx="2" />
+    <rect x="31" y="13.95" width="4" height="12.1" rx="2" />
+    <rect x="39" y="10.65" width="4" height="18.7" rx="2" />
+    <rect x="47" y="15.05" width="4" height="9.9" rx="2" />
+  </g>
+</svg>
