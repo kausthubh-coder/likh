@@ -6,9 +6,9 @@ import { FlockMark } from "./flock-mark";
 const REPO = "https://github.com/kausthubh-coder/likh";
 /** The published build. Bump with each release; the page reads everything else from here. */
 const RELEASE = {
-  version: "0.1.0-alpha.3",
-  windows: `${REPO}/releases/download/v0.1.0-alpha.3/likh-windows-x64.exe`,
-  size: "8 MB",
+  version: "0.1.0-alpha.4",
+  windows: `${REPO}/releases/download/v0.1.0-alpha.4/likh-setup-windows-x64.exe`,
+  size: "4.8 MB",
 };
 
 /** Measured on the release build, idle, Windows 11 (docs/plan.md, Measured so far). */
@@ -47,7 +47,7 @@ const COMPARE: { label: string; likh: string; wispr: string; handy: string }[] =
     wispr: "Wispr's servers",
     handy: "A model on your computer",
   },
-  { label: "Download", likh: "8 MB", wispr: "An Electron app", handy: "App, plus a 0.5–1.6 GB model" },
+  { label: "Download", likh: RELEASE.size, wispr: "An Electron app", handy: "App, plus a 0.5–1.6 GB model" },
   { label: "Open source", likh: "Yes, MIT", wispr: "No", handy: "Yes, MIT" },
 ];
 
@@ -139,7 +139,7 @@ export default function Home() {
               and sign in once.
             </p>
             <p>
-              <span className="text-text">2.</span> Run likh. It isn&apos;t signed yet, so Windows asks first: More info, then
+              <span className="text-text">2.</span> Run the installer. It isn&apos;t signed yet, so Windows asks first: More info, then
               Run anyway.
             </p>
             <p>

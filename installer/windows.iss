@@ -6,6 +6,7 @@
 AppId={{D2A2EE76-FF22-4BE5-AD26-0EBD7881B4DC}
 AppName=likh
 AppVersion={#AppVersion}
+VersionInfoVersion={#FileVersion}
 AppPublisher=likh
 AppPublisherURL=https://getlikh.vercel.app
 DefaultDirName={localappdata}\Programs\likh

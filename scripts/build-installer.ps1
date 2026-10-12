@@ -31,7 +31,8 @@ try {
     $metadata = & bun scripts/cargo.mjs metadata --no-deps --format-version 1
     if ($LASTEXITCODE -ne 0) { throw 'Could not read the app version.' }
     $version = (($metadata | ConvertFrom-Json).packages | Where-Object name -eq likh).version
-    & $Compiler "/DAppVersion=$version" installer/windows.iss
+    $fileVersion = $version.Split('-')[0] + '.0'
+    & $Compiler "/DAppVersion=$version" "/DFileVersion=$fileVersion" installer/windows.iss
     if ($LASTEXITCODE -ne 0) { throw 'The installer build failed.' }
     Write-Output (Join-Path $root 'target\installer\likh-setup-windows-x64.exe')
 } finally {
