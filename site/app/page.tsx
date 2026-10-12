@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Bars } from "./bars";
 import { Demo } from "./demo";
 import { FlockMark } from "./flock-mark";
 
@@ -41,7 +43,7 @@ const COMPARE: { label: string; likh: string; wispr: string; handy: string }[] =
   { label: "Price", likh: "Free", wispr: "Free to 2,000 words a week, then $12–15/mo", handy: "Free" },
   {
     label: "Transcribes with",
-    likh: "ChatGPT, on the plan you have",
+    likh: "ChatGPT",
     wispr: "Wispr's servers",
     handy: "A model on your computer",
   },
@@ -74,7 +76,7 @@ export default function Home() {
             Talk. It types.
           </h1>
           <p className="mt-5 max-w-[30em] text-[17px] leading-[26px] text-pretty text-text-muted">
-            Hold Ctrl + Space, talk, let go. Your words land wherever you&apos;re typing, on the ChatGPT plan you already have.
+            Hold Ctrl + Space, talk, let go. Your words land wherever you&apos;re typing.
           </p>
           <DownloadButton className="mt-8" />
         </section>
@@ -130,10 +132,10 @@ export default function Home() {
           </div>
           <div className="mt-8 grid gap-6 text-[15px] leading-[22px] text-text-muted sm:grid-cols-3">
             <p>
-              <span className="text-text">1.</span> Install{" "}
-              <a href="https://developers.openai.com/codex" className="text-text underline-offset-4 hover:underline">
-                Codex
-              </a>{" "}
+              <span className="text-text">1.</span>{" "}
+              <Link href="/codex" className="text-text underline-offset-4 hover:underline">
+                Set up Codex
+              </Link>{" "}
               and sign in once.
             </p>
             <p>
@@ -154,7 +156,12 @@ export default function Home() {
           <h2 className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em]">Questions</h2>
           <div className="mt-6 divide-y divide-elevated">
             <Question q="Is it free?">
-              Yes. likh is MIT licensed, and transcription runs on the ChatGPT plan you already have through Codex.
+              likh is free and MIT licensed. Transcription goes through your Codex sign-in, so it counts toward your Codex
+              usage the way voice in OpenAI&apos;s own app does.{" "}
+              <Link href="/codex#plans" className="text-text underline-offset-4 hover:underline">
+                Which plans work
+              </Link>
+              .
             </Question>
             <Question q="Is this an official OpenAI app?">
               No. likh uses the transcription endpoint the Codex desktop app uses for its own dictation. OpenAI can change it
@@ -277,17 +284,6 @@ function DownloadButton({ className = "" }: { className?: string }) {
       </svg>
       Download for Windows
     </a>
-  );
-}
-
-function Bars({ className }: { className?: string }) {
-  const heights = [0.45, 0.85, 0.55, 0.85, 0.45];
-  return (
-    <svg viewBox="0 0 16 16" className={className} aria-hidden="true">
-      {heights.map((h, i) => (
-        <rect key={i} x={0.5 + i * 3.25} y={8 - h * 6.4} width="2" height={h * 12.8} rx="1" className="fill-accent" />
-      ))}
-    </svg>
   );
 }
 

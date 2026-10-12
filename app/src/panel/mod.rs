@@ -24,7 +24,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod tests;
 
 pub const WINDOW: Size = Size::new(720.0, 520.0);
-const SITE: &str = "https://likh.vercel.app";
 const REPO: &str = "https://github.com/kausthubh-coder/likh";
 /// Plenty to scroll back through; the file keeps everything.
 const HISTORY_SHOWN: usize = 200;
@@ -509,7 +508,7 @@ impl Panel {
                 column![
                     hint(p, "Free and open source, MIT. Your audio goes to ChatGPT through Codex and nowhere else."),
                     row![
-                        ghost("Website", Message::Open(SITE), 1.0),
+                        ghost("Website", Message::Open(crate::shared::SITE), 1.0),
                         ghost("Source on GitHub", Message::Open(REPO), 1.0),
                         ghost("Run setup again", Message::RunSetup, 1.0),
                     ]

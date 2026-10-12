@@ -33,7 +33,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[cfg(test)]
 mod tests;
 
-const GET_CODEX_URL: &str = "https://developers.openai.com/codex";
 const MIC_SETTINGS_URL: &str = "ms-settings:privacy-microphone";
 pub const WINDOW: Size = Size::new(560.0, 640.0);
 
@@ -181,7 +180,7 @@ impl Onboarding {
             Message::Next => return self.go(STEPS.get(self.step.index() + 1).copied().unwrap_or(Step::Done)),
             Message::Back => return self.go(STEPS[self.step.index().saturating_sub(1)]),
             Message::Recheck => self.codex = check_codex_now(),
-            Message::GetCodex => crate::shared::open_url(GET_CODEX_URL),
+            Message::GetCodex => crate::shared::open_url(crate::shared::CODEX_SETUP),
             Message::OpenMicSettings => crate::shared::open_url(MIC_SETTINGS_URL),
             // Closing the window ends `likh onboarding`; inside the app, likh stays in the tray.
             Message::Finish => return self.window.map_or_else(iced::exit, window::close),

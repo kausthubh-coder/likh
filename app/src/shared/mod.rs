@@ -7,6 +7,10 @@ pub mod test_ui;
 pub mod theme;
 pub mod ui;
 
+/// likh's website, and its guide to installing Codex and signing in.
+pub const SITE: &str = "https://getlikh.vercel.app";
+pub const CODEX_SETUP: &str = "https://getlikh.vercel.app/codex";
+
 /// Opens a web page or a Windows settings page (`ms-settings:`) with the system's default handler.
 pub fn open_url(url: &str) {
     #[cfg(target_os = "windows")]
