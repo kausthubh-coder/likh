@@ -17,6 +17,7 @@ use crate::shared::icon;
 use crate::shared::theme::{self, Palette, palette, radius, size, space};
 use crate::shared::ui::{field_style, ghost, keycap, keycaps, lighten, pill_fill, primary, said, segmented, switch};
 use crate::transcriber::{Engine, Failure, glyph, groq};
+use crate::update::{self, Updates};
 use iced::widget::{
     Space, button, canvas as canvas_widget, column, container, mouse_area, operation, row, scrollable, text, text_input,
 };
@@ -81,6 +82,12 @@ pub enum Message {
     GroqChecked(String, Option<Result<(), Failure>>),
     ReplaceGroqKey,
     ForgetGroqKey,
+    CheckForUpdates,
+    /// A newer release's page (macOS, where likh can't install it itself).
+    OpenRelease(String),
+    /// "Restart to update". Handled by the tray, like the tray's own line.
+    Restart,
+    AutoUpdate(bool),
     Copy(usize),
     Clear,
     /// Handled by the tray, which owns onboarding.
@@ -95,6 +102,7 @@ pub struct Panel {
     tab: Tab,
     settings: Arc<RwLock<Settings>>,
     dictation: Arc<Mutex<Status>>,
+    updates: Updates,
     codex: CodexStatus,
     groq: GroqSetup,
     /// None until the Transcription tab looks.
@@ -143,6 +151,7 @@ impl Panel {
         window: window::Id,
         settings: Arc<RwLock<Settings>>,
         dictation: Arc<Mutex<Status>>,
+        updates: Updates,
         files: Files,
     ) -> Self {
         Self {
@@ -150,6 +159,7 @@ impl Panel {
             tab: Tab::General,
             settings,
             dictation,
+            updates,
             codex: onboarding::check_codex_now(),
             groq: GroqSetup::look(),
             windows: None,
@@ -285,6 +295,10 @@ impl Panel {
                 return operation::focus(GROQ_KEY);
             }
             Message::ForgetGroqKey => self.groq.forget(),
+            Message::CheckForUpdates => self.updates.check_now(),
+            Message::OpenRelease(page) => crate::shared::open_url(&page),
+            Message::Restart => {}
+            Message::AutoUpdate(on) => self.change(|s| s.auto_update = on),
             Message::Copy(index) => {
                 if let Some(entry) = self.history.get(index) {
                     match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_text(entry.text.clone())) {
@@ -782,6 +796,7 @@ impl Panel {
         column![
             section(p, "Transcribing with", account.into()),
             section(p, "This session", hint(p, &session)),
+            section(p, "Updates", self.updates_view(p)),
             section(
                 p,
                 "likh",
@@ -799,6 +814,62 @@ impl Panel {
             ),
         ]
         .spacing(space::S6)
+        .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
+        .into()
+    }
+
+    /// The running version, where updating stands, and what you can do about it.
+    fn updates_view(&self, p: &Palette) -> Element<'_, Message> {
+        let chosen = self.chosen();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let this = format!("This is likh {}.", env!("CARGO_PKG_VERSION"));
+        let (line, tone, action): (String, Tone, Option<Element<'_, Message>>) = match self.updates.state() {
+            update::State::Idle => (this, Tone::Neutral, Some(ghost("Check now", Message::CheckForUpdates, 1.0))),
+            update::State::Checking => ("Checking for a newer likh\u{2026}".into(), Tone::Neutral, None),
+            update::State::UpToDate { checked_at } => (
+                format!("{this} It's the newest, checked {}.", history::ago(checked_at, now)),
+                Tone::Neutral,
+                Some(ghost("Check now", Message::CheckForUpdates, 1.0)),
+            ),
+            update::State::Downloading { version } => {
+                (format!("Downloading likh {version}\u{2026}"), Tone::Neutral, None)
+            }
+            update::State::Ready { version, .. } => (
+                format!("likh {version} is downloaded and checked."),
+                Tone::Success,
+                Some(primary("Restart to update", Message::Restart, 1.0)),
+            ),
+            update::State::Available { version, page } => (
+                format!("likh {version} is out."),
+                Tone::Success,
+                Some(ghost("Download it", Message::OpenRelease(page), 1.0)),
+            ),
+            update::State::Failed { reason } => {
+                (reason, Tone::Warning, Some(ghost("Try again", Message::CheckForUpdates, 1.0)))
+            }
+        };
+        let status = row![
+            text(line).size(size::SMALL).color(tone_color(p, tone)).width(Length::Fill),
+            action.unwrap_or_else(|| Space::new().into()),
+        ]
+        .spacing(space::S4)
+        .align_y(Alignment::Center);
+        let what = if update::INSTALLS {
+            "Once a day, when you open likh or dictate. You choose when it restarts."
+        } else {
+            "Once a day, when you open likh or dictate. On macOS you download it yourself."
+        };
+        column![
+            status,
+            setting(
+                p,
+                "Check for updates automatically",
+                what,
+                chosen.auto_update,
+                Message::AutoUpdate(!chosen.auto_update)
+            ),
+        ]
+        .spacing(space::S4)
         .into()
     }
 }

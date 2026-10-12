@@ -1,6 +1,6 @@
 [package]
 name = "likh"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 description = "Native dictation that types with your Codex plan."
 edition.workspace = true
 license.workspace = true
@@ -27,6 +27,9 @@ ab_glyph = "0.2"
 tray-icon = "0.26"
 # The Groq key lives in the OS credential store (Windows Credential Manager), never in settings.json.
 keyring = { version = "3", features = ["windows-native", "apple-native"] }
+# Updates: Ed25519 signature checks (already here through rustls) and release version order.
+ring = "0.17"
+semver = "1"
 
 [dev-dependencies]
 iced_test = "0.14"

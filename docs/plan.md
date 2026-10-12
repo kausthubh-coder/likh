@@ -76,6 +76,7 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - pause media while you talk (Windows; Wispr mutes instead, and polls the output device every 2 s to do it)
   - lists ("new bullet"), "press tab", "scratch that" after a sentence, punctuation by name
   - Groq and Windows speech as free engines
+- **Updates (2026-10-12):** from GitHub Releases through the existing Inno installer, Ed25519-signed in `release.yml`, checked at launch and after dictations (never on a timer), applied when the user picks "Restart to update". Velopack would add delta updates but replaces the installer; not worth it at 5 MB. macOS only links to the release.
 - **Next:**
   - chunking past 9m55s
   - personal dictionary and fix-up rules

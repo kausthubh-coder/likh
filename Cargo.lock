@@ -2204,7 +2204,7 @@ dependencies = [
 
 [[package]]
 name = "likh"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 dependencies = [
  "ab_glyph",
  "arboard",
@@ -2219,6 +2219,8 @@ dependencies = [
  "iced_test",
  "interprocess",
  "keyring",
+ "ring",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",

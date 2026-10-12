@@ -18,6 +18,7 @@ mod shared;
 mod sounds;
 mod transcriber;
 mod tray;
+mod update;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -114,9 +115,13 @@ fn run(skip_onboarding: bool) -> ExitCode {
     let (dictation, inputs) = mpsc::channel();
     let pill = pill::Pill::spawn(dictation.clone());
     let fake = transcriber::Transcriber::fake_from_env();
-    let status = dictation::spawn(dictation.clone(), inputs, pill, fake, settings.clone());
     let (ui, ui_requests) = iced::futures::channel::mpsc::unbounded();
-    if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui) {
+    let updates = update::Updates::new(Some(ui.clone()));
+    let status = dictation::spawn(dictation.clone(), inputs, pill, fake, settings.clone(), updates.clone());
+    if settings.read().is_ok_and(|s| s.auto_update) {
+        updates.check_if_due();
+    }
+    if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui, updates.clone()) {
         eprintln!("likh: `likh ctl` won't work this time: {error}");
     }
     match hotkey::spawn(dictation, shortcut, mouse) {
@@ -126,7 +131,7 @@ fn run(skip_onboarding: bool) -> ExitCode {
 
     let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
     // The tray owns the main thread until "Quit likh".
-    match tray::run(status, settings, first_run, ui_requests) {
+    match tray::run(status, settings, first_run, ui_requests, updates) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("likh: {error}");

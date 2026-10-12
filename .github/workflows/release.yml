@@ -1,0 +1,44 @@
+name: Release
+
+# Pushing a tag like v0.1.0-alpha.5 builds the Windows installer, signs it for
+# likh's updater, and publishes both as a prerelease. Every likh already
+# installed finds it within a day (app/src/update).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99"
+      - uses: oven-sh/setup-bun@v2
+      - uses: Swatinem/rust-cache@v2
+      - name: The tag matches app/Cargo.toml
+        shell: pwsh
+        run: |
+          $version = ((cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object name -eq likh).version
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} doesn't match likh $version in app/Cargo.toml." }
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build the installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1
+      - name: Sign it for the updater
+        env:
+          LIKH_UPDATE_SIGNING_KEY: ${{ secrets.LIKH_UPDATE_SIGNING_KEY }}
+        run: bun scripts/sign-release.mjs target/installer/likh-setup-windows-x64.exe
+      - name: Publish the prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $title = "likh " + ($tag.TrimStart("v") -replace "-", " " -replace "\.(?=\d+$)", " ")
+          gh release create $tag target/installer/likh-setup-windows-x64.exe target/installer/likh-setup-windows-x64.exe.sig --prerelease --title $title --generate-notes

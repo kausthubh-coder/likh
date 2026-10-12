@@ -103,6 +103,8 @@ pub struct Settings {
     pub command_groups: Groups,
     /// Start likh when you sign in to Windows.
     pub start_with_windows: bool,
+    /// Look for a newer likh at launch and after dictations, once a day (`update/`).
+    pub auto_update: bool,
 }
 
 impl Default for Settings {
@@ -120,6 +122,7 @@ impl Default for Settings {
             commands: true,
             command_groups: Groups::default(),
             start_with_windows: false,
+            auto_update: true,
         }
     }
 }

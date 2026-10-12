@@ -15,7 +15,7 @@ fn panel() -> Fixture {
     let status = Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber: "echo", dictations: 0, last: None }));
     let files =
         Files { settings: Some(dir.path().join("settings.json")), history: Some(dir.path().join("history.jsonl")) };
-    let panel = Panel::new(window::Id::unique(), settings.clone(), status, files);
+    let panel = Panel::new(window::Id::unique(), settings.clone(), status, Updates::new(None), files);
     Fixture { panel, settings, dir }
 }
 
@@ -247,4 +247,49 @@ fn spoken_commands_off_hides_every_group() {
     let _ = f.panel.update(Message::Commands(false));
     assert!(shows(&f.panel, "Off. Everything you say is typed as you said it."));
     assert!(!shows(&f.panel, "Lines and lists"));
+}
+
+#[test]
+fn about_offers_a_restart_once_an_update_is_downloaded() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    f.panel.updates = Updates::with_state(update::State::Ready {
+        version: "0.1.0-alpha.6".into(),
+        installer: "C:/Users/someone/AppData/Local/likh/updates/likh-setup-0.1.0-alpha.6.exe".into(),
+    });
+    press(&mut f.panel, "About");
+    assert!(shows(&f.panel, "likh 0.1.0-alpha.6 is downloaded and checked."));
+    let mut ui = simulator(f.panel.view());
+    ui.click("Restart to update").expect("a restart button");
+    assert!(
+        ui.into_messages().any(|message| matches!(message, Message::Restart)),
+        "the tray runs the installer when it hears Restart"
+    );
+}
+
+#[test]
+fn about_says_when_likh_is_newest_and_can_check_again() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    f.panel.updates = Updates::with_state(update::State::UpToDate { checked_at: now - 3 * 3600 });
+    press(&mut f.panel, "About");
+    assert!(shows(
+        &f.panel,
+        &format!(
+            "This is likh {}. It's the newest, checked {}.",
+            env!("CARGO_PKG_VERSION"),
+            history::ago(now - 3 * 3600, now)
+        )
+    ));
+    assert!(shows(&f.panel, "Check now"));
+}
+
+#[test]
+fn automatic_update_checks_can_be_switched_off() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "About");
+    let _ = f.panel.update(Message::AutoUpdate(false));
+    assert!(!Settings::load_from(&f.dir.path().join("settings.json")).auto_update);
 }

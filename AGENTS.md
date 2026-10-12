@@ -32,6 +32,8 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back; `LIKH_PASTE=<file>` logs pastes and key presses there instead |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
 | `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |
+| `app/src/update/` | updates from GitHub Releases: check at launch and after dictations (once a day), download, verify the Ed25519 signature, run the installer silently on "Restart to update". `LIKH_UPDATE_FEED=<url>` points it at a fake release list |
+| `installer/windows.iss`, `.github/workflows/release.yml` | the per-user Inno Setup installer, and the workflow that builds, signs and publishes it when a `v*` tag is pushed |
 | `app/src/codex_auth/` | is Codex installed and signed in; reading credentials safely |
 | `app/src/onboarding/` | the first-run window and its flock |
 | `app/src/shared/` | `theme.rs` (brand tokens), `spring.rs` (motion). Only code two features use |
@@ -55,6 +57,7 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Test one module: `cargo test -p likh codex_auth`
 - Lint the Rust you changed: `cargo clippy -p likh --all-targets -- -D warnings`
 - Full check (CI runs this; run it only when asked): `bun run check`
+- Release (only with my go): bump `version` in `app/Cargo.toml` and `RELEASE` in `site/app/page.tsx`, then push the tag `v<version>`. `release.yml` builds the installer, signs it with the `LIKH_UPDATE_SIGNING_KEY` secret (`scripts/sign-release.mjs`) and publishes a prerelease; installed copies find it within a day. A local installer: `scripts/build-installer.ps1` (Inno Setup 6)
 
 ## Proving a change works
 
@@ -107,7 +110,8 @@ When I correct you for the same thing twice, add the rule here and make somethin
 - Never save a Groq key from a test or a run of yours: it would land in my credential store. Tests take the paths that don't save (a refused or rejected key).
 - Don't switch on a mouse button in a running likh unless I ask: the hook blocks that button's normal click system-wide.
 - Never touch my nightly Studi profile or other apps' data.
-- Releases, tags and Vercel production deploys need my explicit go.
+- Releases, tags and Vercel production deploys need my explicit go. A published release reaches every installed likh through the updater.
+- The update signing key's private half is the `LIKH_UPDATE_SIGNING_KEY` secret, with my backup in `~/.likh-release/`. Never print it, copy it into the repo, or sign anything with it except a release. Changing `PUBLIC_KEY` in `update/` cuts off every installed likh from updates.
 - Stop only processes you started, by the PID you captured. Never kill by name.
 - No secrets in code, logs, screenshots or commits.
 - Git: open a PR and wait for CI and my review. Never push to `main` directly.

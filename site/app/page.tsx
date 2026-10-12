@@ -6,9 +6,9 @@ import { FlockMark } from "./flock-mark";
 const REPO = "https://github.com/kausthubh-coder/likh";
 /** The published build. Bump with each release; the page reads everything else from here. */
 const RELEASE = {
-  version: "0.1.0-alpha.4",
-  windows: `${REPO}/releases/download/v0.1.0-alpha.4/likh-setup-windows-x64.exe`,
-  size: "4.8 MB",
+  version: "0.1.0-alpha.5",
+  windows: `${REPO}/releases/download/v0.1.0-alpha.5/likh-setup-windows-x64.exe`,
+  size: "4.9 MB",
 };
 
 /** Measured on the release build, idle, Windows 11 (docs/plan.md, Measured so far). */
@@ -20,12 +20,12 @@ const STATS = [
 ];
 
 const FEATURES = [
-  { title: "Hold or tap", line: "Hold to talk. Tap once to go hands-free, tap again to stop." },
-  { title: "Voice commands", line: "“New line”, “press enter”, “scratch that”." },
+  { title: "Hold or tap", line: "Hold to talk, or tap to go hands-free. It stops when you go quiet." },
+  { title: "Voice commands", line: "“New line”, “new bullet”, “press enter”, “scratch that”." },
   { title: "History", line: "Every dictation, kept on your computer. Click to copy." },
-  { title: "Your shortcut", line: "Press the keys you want; likh learns them." },
-  { title: "Quiet sounds", line: "A soft cue when it starts and stops. Or none." },
-  { title: "Starts with Windows", line: "Ready when you sign in, waiting in the tray." },
+  { title: "Your shortcut", line: "Press the keys you want, or use a mouse button." },
+  { title: "Three free engines", line: "Your ChatGPT plan, a free Groq key, or Windows speech." },
+  { title: "Keeps itself current", line: "Starts with Windows and updates when you say so." },
 ];
 
 /**

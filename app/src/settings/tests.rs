@@ -18,6 +18,7 @@ fn an_older_file_keeps_its_choices_and_gets_the_new_defaults() {
     assert_eq!(loaded.mouse, MouseTrigger::Off);
     assert_eq!(loaded.silence_stop.after(), Some(std::time::Duration::from_secs(5)));
     assert_eq!(loaded.command_groups, Groups { lines: true, keys: true, scratch: true, punctuation: false });
+    assert!(loaded.auto_update);
 }
 
 #[test]
@@ -47,6 +48,7 @@ fn what_you_save_is_what_you_load() {
         commands: false,
         command_groups: Groups { lines: false, keys: true, scratch: false, punctuation: true },
         start_with_windows: true,
+        auto_update: false,
     };
     chosen.save_to(&path).expect("save");
     assert_eq!(Settings::load_from(&path), chosen);

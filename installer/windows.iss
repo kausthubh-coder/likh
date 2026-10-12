@@ -39,8 +39,15 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\likh.exe"; Description: "Open likh"; Flags: nowait postinstall skipifsilent
+; likh updating itself runs this installer silently with /relaunch=1 after quitting.
+Filename: "{app}\likh.exe"; Flags: nowait; Check: Relaunching
 
 [Code]
+function Relaunching(): Boolean;
+begin
+  Result := ExpandConstant('{param:relaunch|0}') = '1';
+end;
+
 function InitializeUninstall(): Boolean;
 var
   ResultCode: Integer;

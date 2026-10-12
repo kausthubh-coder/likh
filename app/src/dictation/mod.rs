@@ -222,6 +222,7 @@ pub fn spawn(
     pill: Pill,
     fake: Option<String>,
     settings: Arc<RwLock<Settings>>,
+    updates: crate::update::Updates,
 ) -> Arc<Mutex<Status>> {
     let engine = settings.read().map(|s| s.engine).unwrap_or_default();
     let transcriber = Transcriber::new(engine, fake.as_deref()).name();
@@ -229,7 +230,7 @@ pub fn spawn(
     let thread_status = status.clone();
     let spawned = std::thread::Builder::new()
         .name("likh-dictation".into())
-        .spawn(move || run(inputs, sender, pill, fake, thread_status, settings));
+        .spawn(move || run(inputs, sender, pill, fake, thread_status, settings, updates));
     if let Err(error) = spawned {
         eprintln!("likh: could not start dictation: {error}");
     }
@@ -268,6 +269,7 @@ fn run(
     fake: Option<String>,
     status: Arc<Mutex<Status>>,
     settings: Arc<RwLock<Settings>>,
+    updates: crate::update::Updates,
 ) {
     let mut dictation = Dictation::default();
     let mut running = Running::default();
@@ -406,6 +408,11 @@ fn run(
                         let mut status = status.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                         status.dictations += 1;
                         status.last = Some(last);
+                    }
+                    // Someone is using likh right now: a fine moment for the daily update check,
+                    // which never needs a timer of its own.
+                    if chosen.auto_update {
+                        updates.check_if_due();
                     }
                     if let Some(restore) = restore {
                         if let Some(key) = then

@@ -5,7 +5,9 @@ fn menu_ids_map_to_what_they_say() {
     assert_eq!(pick_for_menu("open"), Some(Pick::Open));
     assert_eq!(pick_for_menu("setup"), Some(Pick::Setup));
     assert_eq!(pick_for_menu("quit"), Some(Pick::Quit));
+    assert_eq!(pick_for_menu("update"), Some(Pick::Update));
     assert_eq!(pick_for_menu("Hold Ctrl + Space to talk"), None);
+    assert_eq!(restart_to_update("0.1.0-alpha.6"), "Restart to update to 0.1.0-alpha.6");
 }
 
 fn app(marker: Option<PathBuf>) -> App {
@@ -18,6 +20,7 @@ fn app(marker: Option<PathBuf>) -> App {
             last: None,
         })),
         settings: Arc::new(RwLock::new(Settings::default())),
+        updates: Updates::new(None),
         tray: None,
         setup: Some((window::Id::unique(), Onboarding::new(crate::codex_auth::CodexStatus::SignedOut))),
         panel: None,
