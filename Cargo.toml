@@ -5,7 +5,7 @@ members = ["app"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/kausthubh-coder/murmur"
+repository = "https://github.com/kausthubh-coder/likh"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

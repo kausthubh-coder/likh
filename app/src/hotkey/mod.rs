@@ -36,7 +36,7 @@ impl Default for Binding {
     }
 }
 
-/// One non-modifier key, by the name murmur shows and saves. Only keys in `KEYS` exist.
+/// One non-modifier key, by the name likh shows and saves. Only keys in `KEYS` exist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyName(pub &'static str);
 
@@ -138,7 +138,7 @@ impl Binding {
 }
 
 impl fmt::Display for Binding {
-    /// `Ctrl + Space`: how murmur writes a shortcut in sentences.
+    /// `Ctrl + Space`: how likh writes a shortcut in sentences.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.parts().join(" + "))
     }
@@ -203,7 +203,7 @@ pub fn pause(paused: bool) {
     let _ = paused;
 }
 
-/// Esc belongs to murmur only while a recording can be cancelled.
+/// Esc belongs to likh only while a recording can be cancelled.
 pub fn watch_escape(on: bool) {
     #[cfg(target_os = "windows")]
     windows::watch_escape(on);
@@ -223,7 +223,7 @@ mod other {
         let hold: Hotkey = String::from(binding).parse().map_err(|error: handy_keys::Error| error.to_string())?;
         let id = manager.register(hold).map_err(|error| error.to_string())?;
         std::thread::Builder::new()
-            .name("murmur-hotkey".into())
+            .name("likh-hotkey".into())
             .spawn(move || {
                 while let Ok(event) = manager.recv() {
                     let input = match event.state {

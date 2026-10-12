@@ -1,4 +1,4 @@
-# murmur
+# likh
 
 Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, and the text pastes at the cursor, transcribed through the user's ChatGPT plan via Codex's sign-in. Users care most that it is instant, reliable, and costs nothing to leave running 24/7. Stack: Rust + iced 0.14 (software renderer, no web view) in `app/`, and a Next.js landing page in `site/`. Run with bun, deployed on Vercel.
 
@@ -6,7 +6,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 
 - **you**: the agent reading this file.
 - **me**: the developer you are working for.
-- **user**: the person who uses murmur. Not me.
+- **user**: the person who uses likh. Not me.
 - **pill**: the small solid capsule at the bottom of the screen during a dictation. It never takes focus.
 - **dictation**: one hold (or hands-free session) from key-down to paste.
 - **Codex sign-in**: `~/.codex/auth.json`, written by Codex. We only ever read it.
@@ -24,13 +24,13 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/commands/` | spoken commands: "new line", "press enter", "scratch that" |
 | `app/src/sounds/` | the start, stop and error cues, synthesized |
 | `app/src/autostart/` | start with Windows (the Run key) |
-| `app/src/panel/` | the murmur window from the tray: General, History, About |
+| `app/src/panel/` | the likh window from the tray: General, History, About |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
-| `app/src/microphone/` | levels and recordings; `MURMUR_AUDIO=file.wav` replays a file instead |
-| `app/src/transcriber/` | audio to text through Codex; `MURMUR_TRANSCRIBER=echo:<text>` fakes it |
+| `app/src/microphone/` | levels and recordings; `LIKH_AUDIO=file.wav` replays a file instead |
+| `app/src/transcriber/` | audio to text through Codex; `LIKH_TRANSCRIBER=echo:<text>` fakes it |
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
-| `app/src/ctl/` | `murmur ctl`: drive the running app over a local pipe |
+| `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |
 | `app/src/codex_auth/` | is Codex installed and signed in; reading credentials safely |
 | `app/src/onboarding/` | the first-run window and its flock |
 | `app/src/shared/` | `theme.rs` (brand tokens), `spring.rs` (motion). Only code two features use |
@@ -46,18 +46,18 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, picks a free site port)
 - Doctor: `bun run doctor`. Run it first when anything looks off.
-- Run the app: `bun run dev` (onboarding opens the first time). Agents: `murmur run --skip-onboarding`, then `murmur ctl status|start|stop|cancel|quit`
+- Run the app: `bun run dev` (onboarding opens the first time). Agents: `likh run --skip-onboarding`, then `likh ctl status|start|stop|cancel|quit`
 - One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` pastes into a throwaway box
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
 - Site: `bun run dev:site` (port from `site/.env.local`)
-- Test one module: `cargo test -p murmur codex_auth`
-- Lint the Rust you changed: `cargo clippy -p murmur --all-targets -- -D warnings`
+- Test one module: `cargo test -p likh codex_auth`
+- Lint the Rust you changed: `cargo clippy -p likh --all-targets -- -D warnings`
 - Full check (CI runs this; run it only when asked): `bun run check`
 
 ## Proving a change works
 
 - Done means you saw it work, not that it compiles. Run the app and look at it.
-- Use the `verify-murmur` skill to launch, drive and capture evidence.
+- Use the `verify-likh` skill to launch, drive and capture evidence.
 - UI changes: compare against `docs/brand/brand.html` and `docs/brand/BRAND.md` (tokens, springs, copy). Say so if you shipped something different.
 - Test with real-shaped input: real WAV recordings and a real-looking `auth.json` built in a temp dir, never the user's own.
 - A test calls the code the way its users do and asserts the exact result. Delete tests that would pass if every function returned a default.

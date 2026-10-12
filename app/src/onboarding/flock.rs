@@ -1,5 +1,5 @@
-//! The murmuration: a flock of dots sweeps in and settles into a shape, the
-//! logo when onboarding opens and the word "murmur" when it finishes.
+//! The flock: dots sweep in and settle into a shape, like ink finding the
+//! page: the logo when onboarding opens and the word "likh" when it finishes.
 //!
 //! Every position is a pure function of the seconds since the flock started,
 //! so the window only asks for frames while `t < duration()` and a test can
@@ -13,18 +13,17 @@ use iced::{Color, Point, Rectangle, Renderer, Size, Theme, mouse};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shape {
-    /// The logo: five bars tracing an "m" inside a capsule (BRAND.md, Logo).
+    /// The logo: five level bars inside a capsule (BRAND.md, Logo).
     Mark,
-    /// "murmur" spelled in dots.
+    /// "likh" spelled in dots.
     Word,
 }
 
 /// Bar heights of the mark, as a share of the 22-unit bar box.
 const MARK_BARS: [f32; 5] = [0.45, 0.85, 0.55, 0.85, 0.45];
 
-/// "mur" on a 5-row dot grid; the word repeats it.
-const MUR: [&str; 5] =
-    ["XX.X..X...X.X.XX", "X.X.X.X...X.XX..", "X.X.X.X...X.X...", "X.X.X.X...X.X...", "X.X.X..XXXX.X..."];
+/// "likh" on a 5-row dot grid: l with a foot, a dotted i, k, h.
+const WORD: [&str; 5] = ["X..X.X..X.X...", "X....X.X..X...", "X..X.XX...XXX.", "X..X.X.X..X..X", ".X.X.X..X.X..X"];
 
 /// Seconds the flock flies before birds start peeling off to land.
 const FLY: f32 = 1.0;
@@ -44,7 +43,7 @@ impl Shape {
     fn bird_count(self) -> usize {
         match self {
             Shape::Mark => 96,
-            Shape::Word => 140,
+            Shape::Word => 84,
         }
     }
 
@@ -81,19 +80,16 @@ pub(super) fn layout(shape: Shape, size: Size) -> Layout {
             Layout { slots, radius, unit }
         }
         Shape::Word => {
-            let columns = MUR[0].len() * 2 + 1;
-            let pitch = (size.width * 0.8 / columns as f32).min(14.0);
+            let columns = WORD[0].len();
+            let pitch = (size.width * 0.8 / columns as f32).min(20.0);
             let mut slots = Vec::new();
-            for copy in 0..2 {
-                for (row, line) in MUR.iter().enumerate() {
-                    for (col, cell) in line.chars().enumerate() {
-                        if cell == 'X' {
-                            let column = (copy * (MUR[0].len() + 1) + col) as f32;
-                            slots.push(Point::new(
-                                (column - (columns - 1) as f32 / 2.0) * pitch,
-                                (row as f32 - 2.0) * pitch,
-                            ));
-                        }
+            for (row, line) in WORD.iter().enumerate() {
+                for (col, cell) in line.chars().enumerate() {
+                    if cell == 'X' {
+                        slots.push(Point::new(
+                            (col as f32 - (columns - 1) as f32 / 2.0) * pitch,
+                            (row as f32 - 2.0) * pitch,
+                        ));
                     }
                 }
             }
@@ -136,7 +132,7 @@ pub fn birds(shape: Shape, size: Size, t: f32) -> Vec<Bird> {
     (0..shape.bird_count())
         .map(|i| {
             let slot = layout.slots[i % layout.slots.len()];
-            // Each bird trails the centre a little, so the flock stretches out like starlings do.
+            // Each bird trails the centre a little, so the flock stretches out instead of moving as a block.
             let lag = 0.25 * noise(i, 1);
             let u = ((t - lag) / FLY).clamp(0.0, 1.0);
             let eased = 1.0 - (1.0 - u).powi(3);

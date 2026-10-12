@@ -1,4 +1,4 @@
-// Writes a throwaway CODEX_HOME in one sign-in state, so murmur can be driven
+// Writes a throwaway CODEX_HOME in one sign-in state, so likh can be driven
 // through every state without touching the real ~/.codex. Prints the path.
 // Usage: bun scripts/fake-codex-home.mjs <not-installed|signed-out|connected|expired>
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";

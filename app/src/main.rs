@@ -24,7 +24,7 @@ use std::sync::{Arc, RwLock};
 
 /// Native dictation that types with your Codex plan.
 #[derive(Parser)]
-#[command(name = "murmur", version)]
+#[command(name = "likh", version)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -32,7 +32,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run murmur: hold Ctrl+Space anywhere to dictate. The default.
+    /// Run likh: hold Ctrl+Space anywhere to dictate. The default.
     Run {
         /// Don't open the first-run window, even the first time (agents and tests).
         #[arg(long)]
@@ -58,7 +58,7 @@ fn main() -> ExitCode {
         Command::Onboarding => match onboarding::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("murmur: {error}");
+                eprintln!("likh: {error}");
                 ExitCode::FAILURE
             }
         },
@@ -69,7 +69,7 @@ fn main() -> ExitCode {
                 println!("{out}");
             } else {
                 let copy = onboarding::codex_copy(&codex);
-                println!("murmur {} · {} · {}", env!("CARGO_PKG_VERSION"), copy.title, copy.detail);
+                println!("likh {} · {} · {}", env!("CARGO_PKG_VERSION"), copy.title, copy.detail);
             }
             ExitCode::SUCCESS
         }
@@ -79,41 +79,51 @@ fn main() -> ExitCode {
                 if answer["ok"] == true { ExitCode::SUCCESS } else { ExitCode::FAILURE }
             }
             Err(_) => {
-                eprintln!("murmur isn't running. Start it with `murmur`.");
+                eprintln!("likh isn't running. Start it with `likh`.");
                 ExitCode::FAILURE
             }
         },
     }
 }
 
-/// The app: the pill, the dictation thread, the shortcut, `murmur ctl`, and
+/// The app: the pill, the dictation thread, the shortcut, `likh ctl`, and
 /// the tray on the main thread. Onboarding opens the first time.
 fn run(skip_onboarding: bool) -> ExitCode {
     if ctl::is_running() {
-        eprintln!("murmur is already running. `murmur ctl quit` stops it.");
+        eprintln!("likh is already running. `likh ctl quit` stops it.");
         return ExitCode::SUCCESS;
+    }
+    if let Some(data) = dirs::data_local_dir() {
+        match settings::adopt_murmur_folder(&data) {
+            Ok(true) => eprintln!("likh: moved your settings and history over from murmur."),
+            Ok(false) => {}
+            Err(reason) => eprintln!("likh: couldn't move murmur's settings over: {reason}"),
+        }
+    }
+    if let Err(reason) = autostart::adopt_murmur_value() {
+        eprintln!("likh: couldn't move murmur's start-with-Windows entry over: {reason}");
     }
     let settings = Arc::new(RwLock::new(settings::Settings::load()));
     let shortcut = settings.read().map(|s| s.shortcut).unwrap_or_default();
-    // One inbox for the dictation: the shortcut, the pill's stop button and `murmur ctl` all send to it.
+    // One inbox for the dictation: the shortcut, the pill's stop button and `likh ctl` all send to it.
     let (dictation, inputs) = mpsc::channel();
     let pill = pill::Pill::spawn(dictation.clone());
     let status =
         dictation::spawn(dictation.clone(), inputs, pill, transcriber::Transcriber::from_env(), settings.clone());
     if let Err(error) = ctl::serve(dictation.clone(), status.clone()) {
-        eprintln!("murmur: `murmur ctl` won't work this time: {error}");
+        eprintln!("likh: `likh ctl` won't work this time: {error}");
     }
     match hotkey::spawn(dictation, shortcut) {
-        Ok(()) => eprintln!("murmur is running. Hold {shortcut} to talk; `murmur ctl quit` stops it."),
-        Err(reason) => eprintln!("murmur: {reason} `murmur ctl start` still works."),
+        Ok(()) => eprintln!("likh is running. Hold {shortcut} to talk; `likh ctl quit` stops it."),
+        Err(reason) => eprintln!("likh: {reason} `likh ctl start` still works."),
     }
 
     let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
-    // The tray owns the main thread until "Quit murmur".
+    // The tray owns the main thread until "Quit likh".
     match tray::run(status, settings, first_run) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("murmur: {error}");
+            eprintln!("likh: {error}");
             ExitCode::FAILURE
         }
     }
@@ -121,5 +131,5 @@ fn run(skip_onboarding: bool) -> ExitCode {
 
 /// Exists once onboarding has been finished, so it only opens the first time.
 fn onboarded_marker() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|dir| dir.join("murmur").join("onboarded"))
+    settings::folder().map(|dir| dir.join("onboarded"))
 }

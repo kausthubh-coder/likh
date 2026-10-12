@@ -4,7 +4,7 @@
 //! The mic is open only while something listens: the onboarding meter, or a
 //! dictation between key-down and key-up. Never in the background.
 //!
-//! `MURMUR_AUDIO=path.wav` makes recordings replay that file in real time
+//! `LIKH_AUDIO=path.wav` makes recordings replay that file in real time
 //! instead of opening the mic, so agents can dictate without anyone speaking.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -40,9 +40,9 @@ pub fn listen() -> impl Stream<Item = Event> {
     iced::stream::channel(64, async |output: Sender<Event>| {
         // cpal streams can't move between threads on every platform, so one
         // thread owns it for its whole life.
-        let spawned = std::thread::Builder::new().name("murmur-meter".into()).spawn(move || meter(output));
+        let spawned = std::thread::Builder::new().name("likh-meter".into()).spawn(move || meter(output));
         if let Err(error) = spawned {
-            eprintln!("murmur: could not start the microphone thread: {error}");
+            eprintln!("likh: could not start the microphone thread: {error}");
         }
     })
 }
@@ -91,7 +91,7 @@ impl Recording {
     /// Starts recording now. `on_level` gets a 0–1 level every 30ms, for the pill's bars.
     /// Returns once the mic is really open, or with the reason it couldn't be.
     pub fn start(on_level: impl FnMut(f32) + Send + 'static) -> Result<Self, String> {
-        Self::start_from(std::env::var_os("MURMUR_AUDIO").map(PathBuf::from), on_level)
+        Self::start_from(std::env::var_os("LIKH_AUDIO").map(PathBuf::from), on_level)
     }
 
     /// `source` is a WAV file to replay, or `None` for the default microphone.
@@ -101,7 +101,7 @@ impl Recording {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let (thread_stop, thread_heard) = (stop.clone(), heard.clone());
         let thread = std::thread::Builder::new()
-            .name("murmur-recorder".into())
+            .name("likh-recorder".into())
             .spawn(move || record(source, on_level, thread_stop, thread_heard, ready_tx))
             .map_err(|error| error.to_string())?;
         match ready_rx.recv() {
@@ -228,7 +228,7 @@ fn open_input(on_audio: impl FnMut(u32, &[f32]) + Send + 'static) -> Result<Inpu
         SampleFormat::I16 => build::<i16>(&device, config, on_audio),
         SampleFormat::U16 => build::<u16>(&device, config, on_audio),
         SampleFormat::I32 => build::<i32>(&device, config, on_audio),
-        other => return Err(format!("The microphone uses a sample format murmur can't read yet ({other:?}).")),
+        other => return Err(format!("The microphone uses a sample format likh can't read yet ({other:?}).")),
     }?;
     stream.play().map_err(|error| error.to_string())?;
     Ok(Input { stream, device: device.to_string() })
@@ -258,7 +258,7 @@ where
                 );
                 on_audio(rate, &mono);
             },
-            |error| eprintln!("murmur: microphone error: {error}"),
+            |error| eprintln!("likh: microphone error: {error}"),
             None,
         )
         .map_err(|error| error.to_string())

@@ -1,6 +1,6 @@
-//! What the user chose: the shortcut, how it behaves, and whether murmur keeps
-//! a history. One JSON file in murmur's local data folder; anything missing or
-//! unreadable falls back to the defaults, so a bad file never stops murmur.
+//! What the user chose: the shortcut, how it behaves, and whether likh keeps
+//! a history. One JSON file in likh's local data folder; anything missing or
+//! unreadable falls back to the defaults, so a bad file never stops likh.
 
 use crate::hotkey::Binding;
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ pub struct Settings {
     pub sounds: bool,
     /// Spoken commands like "new line" and "press enter" (`commands/`).
     pub commands: bool,
-    /// Start murmur when you sign in to Windows.
+    /// Start likh when you sign in to Windows.
     pub start_with_windows: bool,
 }
 
@@ -70,9 +70,20 @@ impl Default for Settings {
     }
 }
 
-/// `%LOCALAPPDATA%\murmur` (or the platform's equivalent).
+/// `%LOCALAPPDATA%\likh` (or the platform's equivalent).
 pub fn folder() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|dir| dir.join("murmur"))
+    dirs::data_local_dir().map(|dir| dir.join("likh"))
+}
+
+/// likh was called murmur until 0.1.0-alpha.3. Moves `murmur`'s folder (settings,
+/// history, the onboarded marker) to `likh` once, so nobody starts over.
+/// Delete once alpha.2 is gone.
+pub fn adopt_murmur_folder(data: &Path) -> Result<bool, String> {
+    let (old, new) = (data.join("murmur"), data.join("likh"));
+    if new.exists() || !old.is_dir() {
+        return Ok(false);
+    }
+    std::fs::rename(&old, &new).map(|()| true).map_err(|error| error.to_string())
 }
 
 impl Settings {

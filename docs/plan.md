@@ -19,7 +19,7 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 |---|---|---|
 | 0 | Brand pack, scaffold, Codex sign-in detection, first onboarding screens | ✅ |
 | 1 | **Spikes:** idle cost of the running app; refraction cost on Windows | ✅ idle measured below; refraction dropped for a solid pill |
-| 2 | Hold the hotkey, record, transcribe, paste. The pill. Fake mic plus fake transcriber. `murmur ctl` | ✅ `scripts/e2e-dictate.ps1` pastes into a throwaway box with the fakes. A real Codex transcription and the physical Ctrl+Space still need a person (injected keys are ignored by design) |
+| 2 | Hold the hotkey, record, transcribe, paste. The pill. Fake mic plus fake transcriber. `likh ctl` | ✅ `scripts/e2e-dictate.ps1` pastes into a throwaway box with the fakes. A real Codex transcription and the physical Ctrl+Space still need a person (injected keys are ignored by design) |
 | 3 | Full onboarding and every pill state | ✅ five steps (Try it is folded into the shortcut step inside the app); pill: listening, thinking, countdown, error, done. Hands-free waits for phase 4 |
 | 4 | Hands-free, Esc cancel, history, sounds, voice commands, start with Windows, a settings window, a changeable shortcut, 9m55s cap | ✅ hands-free is "Hold or tap" (tap once, tap again) instead of double-tap; silence stop, mic picker and paste-last are still to do |
 | 5 | Landing page with downloads, the release workflow | `v0.1.0` on GitHub Releases |
@@ -41,7 +41,7 @@ The running app, idle (no window open, pill hidden, shortcut armed), release bui
 | Build | Private memory | Working set | Idle CPU over 60 s | Threads |
 |---|---|---|---|---|
 | with handy-keys for the shortcut | 3.0 MB | 13.7 MB | 203 ms | 12 |
-| with murmur's own hook (`hotkey/windows.rs`) | **2.0 MB** | **10.8 MB** | **0 ms** | 6 |
+| with likh's own hook (`hotkey/windows.rs`) | **2.0 MB** | **10.8 MB** | **0 ms** | 6 |
 
 The exe shrank from 11.4 MB to 5.1 MB when wgpu was compiled out (7.6 MB with everything in phase 2).
 
@@ -96,20 +96,20 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
 
 1. **Pure logic** (state machine, VAD, resampling, sign-in, springs): unit tests next to the code, with WAV fixtures.
 2. **Views:** `iced_test` simulator tests click through screens and find text. They run headless on Windows CI. The pill's drawing is tested on its pixels (`pill/tests.rs`).
-3. **Fake mic:** `MURMUR_AUDIO=path.wav` makes recordings replay that file in real time instead of opening the mic (`microphone::Recording::start_from`).
-4. **Fake transcriber:** `MURMUR_TRANSCRIBER=echo:<text>` returns fixed text, so UX tests never touch ChatGPT.
-5. **Control CLI:** `murmur ctl start|stop|cancel|status|quit` talks to the running app over a local named pipe and prints one JSON line, so agents drive the real app without pressing keys.
+3. **Fake mic:** `LIKH_AUDIO=path.wav` makes recordings replay that file in real time instead of opening the mic (`microphone::Recording::start_from`).
+4. **Fake transcriber:** `LIKH_TRANSCRIBER=echo:<text>` returns fixed text, so UX tests never touch ChatGPT.
+5. **Control CLI:** `likh ctl start|stop|cancel|status|quit` talks to the running app over a local named pipe and prints one JSON line, so agents drive the real app without pressing keys.
 6. **End to end** (`scripts/e2e-dictate.ps1`):
    - `scripts/tts-wav.ps1` speaks a known sentence into a WAV with Windows' built-in voice.
-   - murmur runs with that WAV as its mic. The script opens a throwaway text box, clicks into it, and drives `murmur ctl start` / `stop`.
+   - likh runs with that WAV as its mic. The script opens a throwaway text box, clicks into it, and drives `likh ctl start` / `stop`.
    - It reads the box back and compares. It refuses to start unless its box has focus and cancels if focus leaves, so a paste never lands in a real app. Not Notepad: Windows 11 Notepad keeps tabs between sessions.
    - Still to add: the real transcriber with a word error rate under 10%, which needs a signed-in Codex.
-7. **Visual:** the brand board's pill and onboarding pictures are rendered from the real code (`cargo test -p murmur brand_board -- --ignored`); compare against them.
+7. **Visual:** the brand board's pill and onboarding pictures are rendered from the real code (`cargo test -p likh brand_board -- --ignored`); compare against them.
 
 ## Observability (all local)
 
-- **Logs:** JSON lines via `tracing`, rolled daily, in `%LOCALAPPDATA%/murmur/logs`.
-- **Usage database:** SQLite in `%LOCALAPPDATA%/murmur/usage.db`, one row per dictation:
+- **Logs:** JSON lines via `tracing`, rolled daily, in `%LOCALAPPDATA%/likh/logs`.
+- **Usage database:** SQLite in `%LOCALAPPDATA%/likh/usage.db`, one row per dictation:
   - key-up to paste latency
   - audio seconds
   - upload bytes
@@ -117,5 +117,5 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - error
 - **Health:** idle RAM and CPU are sampled every 5 minutes.
 - **Interfaces:**
-  - `murmur status --json` and `murmur ctl status --json` print all of it for agents.
+  - `likh status --json` and `likh ctl status --json` print all of it for agents.
   - The usage panel shows the same data to people.

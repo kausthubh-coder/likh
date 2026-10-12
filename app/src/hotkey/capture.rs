@@ -54,7 +54,7 @@ fn is_modifier(code: Code) -> bool {
     )
 }
 
-/// The physical key as one of murmur's key names (layout-independent: the key
+/// The physical key as one of likh's key names (layout-independent: the key
 /// in the A position is "A" on any keyboard layout).
 pub fn key_for(code: Code) -> Option<KeyName> {
     let name = match code {

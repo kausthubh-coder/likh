@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "murmur · Talk. It types.",
+  title: "likh · Talk. It types.",
   description:
     "Native dictation for Windows and macOS that types with your ChatGPT plan through Codex. Hold a key, talk, let go.",
 };

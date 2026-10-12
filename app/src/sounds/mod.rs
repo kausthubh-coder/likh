@@ -67,13 +67,13 @@ pub fn samples(cue: Cue, rate: u32) -> Vec<f32> {
 
 /// Plays `cue` on the default output without waiting for it.
 pub fn play(cue: Cue) {
-    let spawned = std::thread::Builder::new().name("murmur-sound".into()).spawn(move || {
+    let spawned = std::thread::Builder::new().name("likh-sound".into()).spawn(move || {
         if let Err(reason) = play_now(cue) {
-            eprintln!("murmur: couldn't play a sound: {reason}");
+            eprintln!("likh: couldn't play a sound: {reason}");
         }
     });
     if let Err(error) = spawned {
-        eprintln!("murmur: couldn't play a sound: {error}");
+        eprintln!("likh: couldn't play a sound: {error}");
     }
 }
 
@@ -111,7 +111,7 @@ where
                     frame.fill(value);
                 }
             },
-            |error| eprintln!("murmur: speaker error: {error}"),
+            |error| eprintln!("likh: speaker error: {error}"),
             None,
         )
         .map_err(|error| error.to_string())

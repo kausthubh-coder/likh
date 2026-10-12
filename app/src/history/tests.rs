@@ -7,7 +7,7 @@ fn entry(at: u64, text: &str) -> Entry {
 #[test]
 fn entries_come_back_newest_first_and_limited() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let path = dir.path().join("murmur").join("history.jsonl");
+    let path = dir.path().join("likh").join("history.jsonl");
     for (at, text) in [(1, "first"), (2, "second"), (3, "third")] {
         append(&path, &entry(at, text)).expect("append");
     }

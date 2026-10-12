@@ -1,5 +1,5 @@
 [package]
-name = "murmur"
+name = "likh"
 version = "0.1.0"
 description = "Native dictation that types with your Codex plan."
 edition.workspace = true

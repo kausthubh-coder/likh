@@ -183,7 +183,7 @@ impl Onboarding {
             Message::Recheck => self.codex = check_codex_now(),
             Message::GetCodex => crate::shared::open_url(GET_CODEX_URL),
             Message::OpenMicSettings => crate::shared::open_url(MIC_SETTINGS_URL),
-            // Closing the window ends `murmur onboarding`; inside the app, murmur stays in the tray.
+            // Closing the window ends `likh onboarding`; inside the app, likh stays in the tray.
             Message::Finish => return self.window.map_or_else(iced::exit, window::close),
             Message::WindowFound(id) => self.window = id,
             Message::Drag => return self.window.map_or_else(Task::none, window::drag),
@@ -380,7 +380,7 @@ impl Onboarding {
         Page {
             art: flock_art(p, Shape::Word, self.clock),
             title: "You're all set",
-            body: format!("Hold {} in any app to talk. murmur waits in your tray.", self.shortcut()),
+            body: format!("Hold {} in any app to talk. likh waits in your tray.", self.shortcut()),
             note: None,
             actions: vec![Action::Primary("Finish", Message::Finish)],
         }
@@ -413,10 +413,10 @@ pub fn window_settings() -> window::Settings {
     }
 }
 
-/// `murmur onboarding`: the window on its own, without the running app.
+/// `likh onboarding`: the window on its own, without the running app.
 pub fn run() -> iced::Result {
     let mut app = iced::application(Onboarding::boot, Onboarding::update, Onboarding::view)
-        .title("murmur")
+        .title("likh")
         .subscription(Onboarding::subscription)
         .window(window_settings())
         .theme(|_: &Onboarding| Theme::Dark)
@@ -562,7 +562,7 @@ fn connect_codex<'a>(p: &Palette, status: &CodexStatus) -> Page<'a> {
         }
         CodexStatus::SignedOut | CodexStatus::Expired(_) => vec![Action::Primary("Check again", Message::Recheck)],
     };
-    // The state is the headline, so there is no card: murmur on the left,
+    // The state is the headline, so there is no card: likh on the left,
     // Codex on the right, and the link between them says how it's going.
     let art = canvas_widget(Link { tone: copy.tone, colors: LinkColors::from(p) }).width(240).height(64);
     Page {
@@ -573,7 +573,7 @@ fn connect_codex<'a>(p: &Palette, status: &CodexStatus) -> Page<'a> {
         note: Some(if connected {
             ("Nothing to pay, nothing to paste.".to_string(), p.text_subtle)
         } else {
-            ("murmur checks again every 2 seconds.".to_string(), p.text_subtle)
+            ("likh checks again every 2 seconds.".to_string(), p.text_subtle)
         }),
         actions,
     }
@@ -594,7 +594,7 @@ fn microphone_step<'a>(p: &Palette, mic: &Mic) -> Page<'a> {
         (None, device) => Page {
             art: level_bars(p.accent, &mic.history),
             title: "Say something",
-            body: "The bars should move when you talk. murmur uses your default microphone.".into(),
+            body: "The bars should move when you talk. likh uses your default microphone.".into(),
             note: Some((device.clone().unwrap_or_else(|| "Opening your microphone…".into()), p.text_subtle)),
             actions: vec![Action::Primary("Sounds good", Message::Next)],
         },
@@ -631,7 +631,7 @@ fn shortcut<'a>(p: &Palette, binding: Binding, practice: &'a Practice, in_app: b
             art: caps,
             title: "Hold to talk",
             body: format!("Hold {binding}, say it, let go. Esc cancels."),
-            note: Some(("Start murmur to try it here.".to_string(), p.text_subtle)),
+            note: Some(("Start likh to try it here.".to_string(), p.text_subtle)),
             actions: vec![Action::Primary("Continue", Message::Next)],
         };
     }
@@ -711,7 +711,7 @@ fn dots<'a>(p: &Palette, position: f32) -> Element<'a, Message> {
     .into()
 }
 
-/// The Codex step's art: murmur's bars, a dotted link, and a terminal prompt
+/// The Codex step's art: likh's bars, a dotted link, and a terminal prompt
 /// for Codex. The link takes the state's colour and carries its icon.
 struct Link {
     tone: Tone,
@@ -770,7 +770,7 @@ impl canvas::Program<Message> for Link {
             Tone::Success => colors.success,
         };
         let at = |x: f32, y: f32| Point::new(c.x + x, c.y + y);
-        // murmur: the logo's five bars, left.
+        // likh: the logo's five bars, left.
         for (i, share) in [0.45, 0.85, 0.55, 0.85, 0.45].iter().enumerate() {
             let h = 40.0 * share;
             let bar = Path::rounded_rectangle(at(-112.0 + i as f32 * 10.0, -h / 2.0), Size::new(5.0, h), 2.5.into());

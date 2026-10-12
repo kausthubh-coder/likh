@@ -1,4 +1,4 @@
-//! The murmur window, opened from the tray: the shortcut and how it behaves,
+//! The likh window, opened from the tray: the shortcut and how it behaves,
 //! sounds, voice commands, history and start-with-Windows (General), what you
 //! dictated (History), and the Codex sign-in (About).
 //!
@@ -24,8 +24,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod tests;
 
 pub const WINDOW: Size = Size::new(720.0, 520.0);
-const SITE: &str = "https://murmur-eight-tau.vercel.app";
-const REPO: &str = "https://github.com/kausthubh-coder/murmur";
+const SITE: &str = "https://likh.vercel.app";
+const REPO: &str = "https://github.com/kausthubh-coder/likh";
 /// Plenty to scroll back through; the file keeps everything.
 const HISTORY_SHOWN: usize = 200;
 /// Long dictations are cut in the list; copying still copies all of it.
@@ -299,7 +299,7 @@ impl Panel {
             .map(|h| container(Space::new()).width(3).height(16.0 * h).style(move |_| pill_fill(accent)).into()))
         .spacing(2)
         .align_y(Alignment::Center);
-        let brand = row![mark, text("murmur").size(size::BODY).font(theme::UI_SEMIBOLD)]
+        let brand = row![mark, text("likh").size(size::BODY).font(theme::UI_SEMIBOLD)]
             .spacing(space::S2)
             .align_y(Alignment::Center);
         let nav = column([Tab::General, Tab::History, Tab::About].map(|tab| self.nav_item(p, tab))).spacing(space::S1);
@@ -401,7 +401,7 @@ impl Panel {
             setting(
                 p,
                 "Start with Windows",
-                "murmur is ready as soon as you sign in.",
+                "likh is ready as soon as you sign in.",
                 chosen.start_with_windows,
                 Message::StartWithWindows(!chosen.start_with_windows)
             ),
@@ -494,18 +494,18 @@ impl Panel {
         .spacing(space::S3)
         .align_y(Alignment::Center);
         let session = match (status.dictations, &status.last) {
-            (0, _) => "No dictations since murmur started.".to_string(),
+            (0, _) => "No dictations since likh started.".to_string(),
             (n, Some(last)) if last.error.is_none() => {
-                format!("{n} since murmur started. The last one pasted {} ms after you let go.", last.latency_ms)
+                format!("{n} since likh started. The last one pasted {} ms after you let go.", last.latency_ms)
             }
-            (n, _) => format!("{n} since murmur started."),
+            (n, _) => format!("{n} since likh started."),
         };
         column![
             section(p, "Transcribing with", account.into()),
             section(p, "This session", hint(p, &session)),
             section(
                 p,
-                "murmur",
+                "likh",
                 column![
                     hint(p, "Free and open source, MIT. Your audio goes to ChatGPT through Codex and nowhere else."),
                     row![

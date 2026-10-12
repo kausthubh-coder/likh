@@ -2183,6 +2183,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "likh"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "arboard",
+ "base64",
+ "clap",
+ "cpal",
+ "dirs",
+ "enigo",
+ "handy-keys",
+ "hound",
+ "iced",
+ "iced_test",
+ "interprocess",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tiny-skia",
+ "tray-icon",
+ "ureq",
+ "windows 0.62.2",
+ "winreg",
+]
+
+[[package]]
 name = "lilt"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2372,32 +2398,6 @@ dependencies = [
  "png 0.18.1",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "murmur"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "arboard",
- "base64",
- "clap",
- "cpal",
- "dirs",
- "enigo",
- "handy-keys",
- "hound",
- "iced",
- "iced_test",
- "interprocess",
- "serde",
- "serde_json",
- "tempfile",
- "tiny-skia",
- "tray-icon",
- "ureq",
- "windows 0.62.2",
- "winreg",
 ]
 
 [[package]]

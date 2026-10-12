@@ -103,7 +103,7 @@ fn the_error_pill_hugs_its_text_between_200_and_360() {
 }
 
 /// Regenerates the pill pictures on the brand board from the real renderer.
-/// Run: cargo test -p murmur brand_board_pill -- --ignored
+/// Run: cargo test -p likh brand_board_pill -- --ignored
 #[test]
 #[ignore = "writes docs/brand/pill/*.png; run by hand after changing the pill"]
 fn brand_board_pill() {

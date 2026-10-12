@@ -1,9 +1,9 @@
-//! `murmur ctl`: drive the running app from a terminal or an agent, without
+//! `likh ctl`: drive the running app from a terminal or an agent, without
 //! pressing keys. One JSON line in each direction over a local socket (a
 //! named pipe on Windows), private to the signed-in user's name.
 //!
-//! `murmur ctl start` / `stop` are the shortcut going down and up, `cancel`
-//! is Esc, `status` reports what murmur is doing, `quit` stops it.
+//! `likh ctl start` / `stop` are the shortcut going down and up, `cancel`
+//! is Esc, `status` reports what likh is doing, `quit` stops it.
 
 use crate::dictation::{Input, Status};
 use interprocess::local_socket::prelude::*;
@@ -20,11 +20,11 @@ pub const COMMANDS: [&str; 5] = ["status", "start", "stop", "cancel", "quit"];
 
 fn name() -> std::io::Result<Name<'static>> {
     let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
-    format!("murmur-{user}.sock").to_ns_name::<GenericNamespaced>()
+    format!("likh-{user}.sock").to_ns_name::<GenericNamespaced>()
 }
 
 /// Sends one command to the running app and returns its JSON answer.
-/// `Err` means nothing is listening: murmur isn't running.
+/// `Err` means nothing is listening: likh isn't running.
 pub fn send(command: &str) -> std::io::Result<Value> {
     let mut connection = BufReader::new(Stream::connect(name()?)?);
     connection.get_mut().write_all(format!("{command}\n").as_bytes())?;
@@ -40,7 +40,7 @@ pub fn is_running() -> bool {
 /// Answers commands on a background thread for as long as the app runs.
 pub fn serve(dictation: Sender<Input>, status: Arc<Mutex<Status>>) -> std::io::Result<()> {
     let listener = ListenerOptions::new().name(name()?).create_sync()?;
-    std::thread::Builder::new().name("murmur-ctl".into()).spawn(move || {
+    std::thread::Builder::new().name("likh-ctl".into()).spawn(move || {
         for connection in listener.incoming().filter_map(Result::ok) {
             let mut connection = BufReader::new(connection);
             let mut line = String::new();

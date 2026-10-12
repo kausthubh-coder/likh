@@ -3,7 +3,7 @@
 //!
 //! winit can't make a window like this (no per-pixel alpha with the software
 //! renderer, no "never activate"), so this file talks to Win32 directly. It is
-//! the only place in murmur allowed to use `unsafe` (AGENTS.md, Rules).
+//! the only place in likh allowed to use `unsafe` (AGENTS.md, Rules).
 //!
 //! One thread owns the window and sleeps in `GetMessageW` until `Waker::wake`
 //! posts to it. While the pill moves, a 16ms timer drives frames; once it
@@ -65,7 +65,7 @@ impl Waker {
 pub fn spawn(commands: Receiver<Command>, dictation: Sender<Input>) -> Result<Waker, String> {
     let (ready_tx, ready_rx) = mpsc::channel();
     std::thread::Builder::new()
-        .name("murmur-pill".into())
+        .name("likh-pill".into())
         .spawn(move || match Overlay::create() {
             Ok(overlay) => {
                 DICTATION.with(|slot| *slot.borrow_mut() = Some(dictation));
@@ -104,7 +104,7 @@ impl Overlay {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(window_proc),
                 hInstance: instance.into(),
-                lpszClassName: w!("murmur-pill"),
+                lpszClassName: w!("likh-pill"),
                 ..Default::default()
             };
             if RegisterClassExW(&class) == 0 {
@@ -112,8 +112,8 @@ impl Overlay {
             }
             let hwnd = CreateWindowExW(
                 WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-                w!("murmur-pill"),
-                w!("murmur"),
+                w!("likh-pill"),
+                w!("likh"),
                 WS_POPUP,
                 0,
                 0,

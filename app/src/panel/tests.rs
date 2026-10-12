@@ -104,8 +104,8 @@ fn an_empty_history_says_why_and_what_to_do() {
     ));
 }
 
-/// Regenerates the murmur window's screenshots on the brand board from the real views.
-/// Run: cargo test -p murmur brand_board_panel -- --ignored
+/// Regenerates the likh window's screenshots on the brand board from the real views.
+/// Run: cargo test -p likh brand_board_panel -- --ignored
 #[test]
 #[ignore = "writes docs/brand/panel/*.png; run by hand after changing the window"]
 fn brand_board_panel() {
@@ -144,7 +144,8 @@ fn brand_board_panel() {
         };
         let mut ui = iced_test::Simulator::with_size(settings, WINDOW, f.panel.view());
         let path = out.join(name);
-        let _ = std::fs::remove_file(path.with_extension("png"));
+        // iced writes `<name>-tiny-skia.png`, and only when it's missing.
+        let _ = std::fs::remove_file(out.join(format!("{name}-tiny-skia.png")));
         if let Ok(snapshot) = ui.snapshot(&iced::Theme::Dark) {
             let _ = snapshot.matches_image(&path);
         }

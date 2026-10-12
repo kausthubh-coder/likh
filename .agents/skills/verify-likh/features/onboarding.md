@@ -1,6 +1,6 @@
 # Onboarding
 
-The first-run window: five steps in one borderless 560 x 640 window. It opens with the flock landing on the logo, checks Codex live, shows the mic working, teaches the shortcut and ends with the flock spelling murmur. Inside the running app the shortcut step is a real first dictation into a practice box.
+The first-run window: five steps in one borderless 560 x 640 window. It opens with the flock landing on the logo, checks Codex live, shows the mic working, teaches the shortcut and ends with the flock spelling likh. Inside the running app the shortcut step is a real first dictation into a practice box.
 
 ## Sub-features
 
@@ -12,21 +12,21 @@ The first-run window: five steps in one borderless 560 x 640 window. It opens wi
 - `onb-codex-live` turns not-connected into connected on its own within 2 s once a valid `auth.json` appears.
 - `onb-mic` shows nine live bars and the device name; with no mic, "Can't hear a microphone" and `Open settings`.
 - `onb-shortcut` lights the `Ctrl` `Space` key caps. Inside the app: holding the real shortcut records, and the words land in the practice box.
-- `onb-done` spells murmur in dots and `Finish` closes the window. murmur keeps running.
+- `onb-done` spells likh in dots and `Finish` closes the window. likh keeps running.
 - `onb-back` returns to the step before from anywhere but welcome and done.
 - `onb-drag` moves the window by dragging any empty spot (there is no title bar).
 
 ## How to get to it (user POV)
 
-- The first time `murmur` runs. After `Finish` (or Alt+F4) it never opens again; delete `%LOCALAPPDATA%\murmur\onboarded` to see it again.
-- `murmur onboarding` opens it on its own, without the app (the shortcut step then only checks the keys).
+- The first time `likh` runs. After `Finish` (or Alt+F4) it never opens again; delete `%LOCALAPPDATA%\likh\onboarded` to see it again.
+- `likh onboarding` opens it on its own, without the app (the shortcut step then only checks the keys).
 
 ## Driving it with scripts
 
 Preconditions:
 
 - A fake `CODEX_HOME` for the state you're proving.
-- The window was launched with that `CODEX_HOME` (`murmur onboarding`), and you have its PID.
+- The window was launched with that `CODEX_HOME` (`likh onboarding`), and you have its PID.
 
 Coordinates are logical client pixels in the 560 x 640 window; there is no title bar to subtract.
 
@@ -43,4 +43,4 @@ Coordinates are logical client pixels in the 560 x 640 window; there is no title
 - The microphone step opens the real mic, the only step that touches hardware. Leave it promptly.
 - The "Not installed" check is based on the folder alone. Point `CODEX_HOME` at a path that doesn't exist; the helper does this for you.
 - Expiry is read from the token's `exp`. A fake `connected` home expires 7 days after it was made, so regenerate it rather than reusing an old one.
-- The screenshot helper finds the window by its title, `murmur`, which it still has without a title bar.
+- The screenshot helper finds the window by its title, `likh`, which it still has without a title bar.

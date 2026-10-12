@@ -1,12 +1,12 @@
-# murmur brand
+# likh brand
 
 The rules every screen follows. `brand.html` next to this file shows them moving. When code and this file disagree, fix one of them in the same change.
 
 ## Story
 
-A murmuration is thousands of starlings moving as one shape at dusk. murmur turns a stream of speech into text that lands where you are typing. The palette is dusk, the motion is the flock: one surface that changes shape, never a pile of popups.
+likh (लिख्) is the Sanskrit root for *write*. You talk; it writes, right where you are typing. The palette is dusk, the motion is a flock of dots finding its place like ink on a page: one surface that changes shape, never a pile of popups.
 
-Name: always lowercase, `murmur`. Tagline: **Talk. It types.**
+Name: always lowercase, `likh`. Tagline: **Talk. It types.**
 
 ## Feel
 
@@ -20,13 +20,13 @@ The pill is the product. It must never steal focus, never block the cursor and n
 
 ## Logo
 
-Five rounded peach bars whose heights (0.45, 0.85, 0.55, 0.85, 0.45) trace a lowercase "m". Files in `logo/`:
+Five rounded peach bars whose heights (0.45, 0.85, 0.55, 0.85, 0.45) are a voice level, mid-word. Files in `logo/`:
 
 - `icon.svg`: the app icon. The bars on a dusk tile (radius 116 of 512, gradient `oklch(0.25 0.016 275)` to `bg`). Window and taskbar icon, site favicon, T3 project icon.
 - `mark.svg`: the bars inside a dark capsule: the listening pill, frozen. Onboarding's welcome lands on it.
 - `bars.svg`: the bars alone, for 16px and below.
 
-Wordmark: `murmur` in Geist 600, tracking -0.02em, always lowercase.
+Wordmark: `likh` in Geist 600, tracking -0.02em, always lowercase.
 
 ## Color (OKLCH, dark-first)
 
@@ -126,7 +126,7 @@ Codex sign-in copy (used by onboarding and errors):
 | State | Message | Action |
 |---|---|---|
 | checking | Looking for Codex… | none |
-| not installed | murmur transcribes with your ChatGPT plan through Codex. Install Codex, sign in once, then come back. | Get Codex · Check again |
+| not installed | likh transcribes with your ChatGPT plan through Codex. Install Codex, sign in once, then come back. | Get Codex · Check again |
 | signed out | Codex is installed but not signed in. Open Codex (or run `codex login`) and sign in. | Check again |
 | connected | Connected through Codex as k•••@gmail.com | Continue |
 | expired | Your Codex sign-in expired. Open Codex once to refresh it, then try again. | Open Codex |
@@ -138,9 +138,9 @@ Codex sign-in copy (used by onboarding and errors):
 Five steps in one borderless window, 560 x 640, no title bar: drag it anywhere, Alt+F4 closes it. Each step slides 24px on `spring.default`; the back button and the progress dots stay still, and the wide dot slides to the new step. Every step has the same skeleton (art, display title, one line of body, a note line, the actions), so nothing jumps. No cards: the state is the headline.
 
 1. **Welcome**: the flock flies in from the left and lands on the mark, then title, body and button arrive 50ms apart. "Talk. It types." · Get started
-2. **Connect Codex**: murmur's bars, a dotted link, a terminal prompt for Codex. The link carries the state's icon and colour; the title is the state from the copy table above. Re-checks every 2s while visible.
+2. **Connect Codex**: likh's bars, a dotted link, a terminal prompt for Codex. The link carries the state's icon and colour; the title is the state from the copy table above. Re-checks every 2s while visible.
 3. **Microphone**: nine live bars from the default mic, newest in the middle. The device name underneath. If no mic opens: "Can't hear a microphone" with Open settings.
 4. **Shortcut**: big key caps `Ctrl` `Space`. Inside the app this is a real first dictation: hold the keys, talk, let go, and the words land in a practice box.
-5. **Done**: the flock spells murmur in dots (`spring.playful`, the one bounce). "Hold Ctrl + Space in any app to talk." · Finish
+5. **Done**: the flock spells likh in dots (`spring.playful`, the one bounce). "Hold Ctrl + Space in any app to talk." · Finish
 
-The opening flock plays each time the window opens; the window only opens the first time. The finish plays once. Screens on the board are rendered from the app's own views (`cargo test -p murmur brand_board -- --ignored`).
+The opening flock plays each time the window opens; the window only opens the first time. The finish plays once. Screens on the board are rendered from the app's own views (`cargo test -p likh brand_board -- --ignored`).

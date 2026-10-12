@@ -1,10 +1,10 @@
-# murmur verification map
+# likh verification map
 
-This folder is the maintained list of what a user can do with murmur and how to prove each one. Read it before driving the app, then use the matching feature file as the recipe.
+This folder is the maintained list of what a user can do with likh and how to prove each one. Read it before driving the app, then use the matching feature file as the recipe.
 
 ## Baseline preconditions
 
-- `cargo build -p murmur` succeeded on this checkout.
+- `cargo build -p likh` succeeded on this checkout.
 - A fake `CODEX_HOME` from `bun scripts/fake-codex-home.mjs <state>`. Never the real `~/.codex`.
 - The app was launched by this run, and its PID was captured by path.
 
@@ -26,6 +26,6 @@ Each file has an H1 and one paragraph, then four H2s in this order: `Sub-feature
 
 ## Features
 
-- [Dictation](./dictation.md): hold Ctrl+Space, talk, let go; the pill; `murmur ctl`; idle cost.
+- [Dictation](./dictation.md): hold Ctrl+Space, talk, let go; the pill; `likh ctl`; idle cost.
 - [Onboarding](./onboarding.md): the five first-run steps, every Codex sign-in state, the mic and the practice dictation.
-- [Status CLI](./status-cli.md): `murmur status` and `murmur status --json`.
+- [Status CLI](./status-cli.md): `likh status` and `likh status --json`.

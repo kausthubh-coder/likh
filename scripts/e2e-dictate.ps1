@@ -1,12 +1,12 @@
 # One dictation end to end, without touching anyone's real apps: opens a
-# throwaway text box, focuses it, drives the running murmur with `murmur ctl`
+# throwaway text box, focuses it, drives the running likh with `likh ctl`
 # (start, wait, stop), then reads back what got pasted.
 #
-# Start murmur first with the audio and transcriber you want, for example:
-#   MURMUR_AUDIO=.agents/qa/speech.wav MURMUR_TRANSCRIBER=echo:hello target/release/murmur.exe run --skip-onboarding
-# Usage: powershell -File scripts/e2e-dictate.ps1 -Murmur target/release/murmur.exe -Seconds 3.5 [-Expected "hello"]
+# Start likh first with the audio and transcriber you want, for example:
+#   LIKH_AUDIO=.agents/qa/speech.wav LIKH_TRANSCRIBER=echo:hello target/release/likh.exe run --skip-onboarding
+# Usage: powershell -File scripts/e2e-dictate.ps1 -Likh target/release/likh.exe -Seconds 3.5 [-Expected "hello"]
 param(
-  [Parameter(Mandatory)] [string] $Murmur,
+  [Parameter(Mandatory)] [string] $Likh,
   [Parameter(Mandatory)] [double] $Seconds,
   [string] $Expected = ""
 )
@@ -25,7 +25,7 @@ public static class Fg {
 [Fg]::SetProcessDPIAware() | Out-Null
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "murmur e2e target"
+$form.Text = "likh e2e target"
 $form.Width = 640; $form.Height = 200; $form.StartPosition = "CenterScreen"; $form.TopMost = $true
 $box = New-Object System.Windows.Forms.TextBox
 $box.Multiline = $true; $box.Dock = "Fill"; $box.Font = New-Object System.Drawing.Font("Segoe UI", 12)
@@ -36,7 +36,7 @@ function Pump([int] $ms) {
   $until = [DateTime]::Now.AddMilliseconds($ms)
   while ([DateTime]::Now -lt $until) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 15 }
 }
-function Ctl([string] $command) { (& $Murmur ctl $command) | ConvertFrom-Json }
+function Ctl([string] $command) { (& $Likh ctl $command) | ConvertFrom-Json }
 
 Pump 400
 # Windows won't hand the foreground to a script, but a click always focuses what

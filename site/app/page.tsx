@@ -1,11 +1,11 @@
 import { Demo } from "./demo";
 import { FlockMark } from "./flock-mark";
 
-const REPO = "https://github.com/kausthubh-coder/murmur";
+const REPO = "https://github.com/kausthubh-coder/likh";
 /** The published build. Bump with each release; the page reads everything else from here. */
 const RELEASE = {
-  version: "0.1.0-alpha.2",
-  windows: `${REPO}/releases/download/v0.1.0-alpha.2/murmur-windows-x64.exe`,
+  version: "0.1.0-alpha.3",
+  windows: `${REPO}/releases/download/v0.1.0-alpha.3/likh-windows-x64.exe`,
   size: "8 MB",
 };
 
@@ -21,32 +21,32 @@ const FEATURES = [
   { title: "Hold or tap", line: "Hold to talk. Tap once to go hands-free, tap again to stop." },
   { title: "Voice commands", line: "“New line”, “press enter”, “scratch that”." },
   { title: "History", line: "Every dictation, kept on your computer. Click to copy." },
-  { title: "Your shortcut", line: "Press the keys you want; murmur learns them." },
+  { title: "Your shortcut", line: "Press the keys you want; likh learns them." },
   { title: "Quiet sounds", line: "A soft cue when it starts and stops. Or none." },
   { title: "Starts with Windows", line: "Ready when you sign in, waiting in the tray." },
 ];
 
 /**
- * Memory while idle, in MB. murmur and Handy we measured ourselves on Windows 11
+ * Memory while idle, in MB. likh and Handy we measured ourselves on Windows 11
  * (Handy: a build of Handy 0.x, all its processes together). Wispr Flow is what
  * reviewers report for its Windows app; linked in the footnote.
  */
 const MEMORY = [
-  { name: "murmur", mb: 14, note: "measured" },
+  { name: "likh", mb: 14, note: "measured" },
   { name: "Handy", mb: 140, note: "measured" },
   { name: "Wispr Flow", mb: 800, note: "reported" },
 ];
 
-const COMPARE: { label: string; murmur: string; wispr: string; handy: string }[] = [
-  { label: "Price", murmur: "Free", wispr: "Free to 2,000 words a week, then $12–15/mo", handy: "Free" },
+const COMPARE: { label: string; likh: string; wispr: string; handy: string }[] = [
+  { label: "Price", likh: "Free", wispr: "Free to 2,000 words a week, then $12–15/mo", handy: "Free" },
   {
     label: "Transcribes with",
-    murmur: "ChatGPT, on the plan you have",
+    likh: "ChatGPT, on the plan you have",
     wispr: "Wispr's servers",
     handy: "A model on your computer",
   },
-  { label: "Download", murmur: "8 MB", wispr: "An Electron app", handy: "App, plus a 0.5–1.6 GB model" },
-  { label: "Open source", murmur: "Yes, MIT", wispr: "No", handy: "Yes, MIT" },
+  { label: "Download", likh: "8 MB", wispr: "An Electron app", handy: "App, plus a 0.5–1.6 GB model" },
+  { label: "Open source", likh: "Yes, MIT", wispr: "No", handy: "Yes, MIT" },
 ];
 
 export default function Home() {
@@ -55,7 +55,7 @@ export default function Home() {
       <header className="flex h-16 items-center justify-between">
         <a href="#" className="flex items-center gap-2 text-[15px] font-semibold tracking-[-0.02em]">
           <Bars className="h-4" />
-          murmur
+          likh
         </a>
         <nav className="-mr-3 flex text-[13px] font-medium text-text-muted">
           <a href="#download" className="rounded-[10px] px-3 py-2 hover:text-text">
@@ -137,7 +137,7 @@ export default function Home() {
               and sign in once.
             </p>
             <p>
-              <span className="text-text">2.</span> Run murmur. It isn&apos;t signed yet, so Windows asks first: More info, then
+              <span className="text-text">2.</span> Run likh. It isn&apos;t signed yet, so Windows asks first: More info, then
               Run anyway.
             </p>
             <p>
@@ -154,11 +154,11 @@ export default function Home() {
           <h2 className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em]">Questions</h2>
           <div className="mt-6 divide-y divide-elevated">
             <Question q="Is it free?">
-              Yes. murmur is MIT licensed, and transcription runs on the ChatGPT plan you already have through Codex.
+              Yes. likh is MIT licensed, and transcription runs on the ChatGPT plan you already have through Codex.
             </Question>
             <Question q="Is this an official OpenAI app?">
-              No. murmur uses the transcription endpoint the Codex desktop app uses for its own dictation. OpenAI can change it
-              at any time; if that happens, murmur ships an update or stops working.
+              No. likh uses the transcription endpoint the Codex desktop app uses for its own dictation. OpenAI can change it
+              at any time; if that happens, likh ships an update or stops working.
             </Question>
             <Question q="How long can I talk?">
               Up to ten minutes at a time, the same as Codex. The pill counts down your last minute.
@@ -172,7 +172,7 @@ export default function Home() {
       </main>
 
       <footer className="mt-24 flex flex-col gap-2 py-10 text-[13px] text-text-subtle sm:mt-32 sm:flex-row sm:justify-between">
-        <span>murmur · MIT · named after starlings moving as one at dusk</span>
+        <span>likh · MIT · Sanskrit for “write”</span>
         <a href={REPO} className="hover:text-text">
           Source on GitHub
         </a>
@@ -191,12 +191,12 @@ function Compare() {
         <div className="mt-4 space-y-3">
           {MEMORY.map((row) => (
             <div key={row.name} className="grid grid-cols-[96px_1fr_auto] items-center gap-4">
-              <span className={`text-[13px] ${row.name === "murmur" ? "font-medium text-text" : "text-text-muted"}`}>
+              <span className={`text-[13px] ${row.name === "likh" ? "font-medium text-text" : "text-text-muted"}`}>
                 {row.name}
               </span>
               <span className="h-2 rounded-full bg-surface">
                 <span
-                  className={`block h-full rounded-full ${row.name === "murmur" ? "bg-accent" : "bg-text-subtle"}`}
+                  className={`block h-full rounded-full ${row.name === "likh" ? "bg-accent" : "bg-text-subtle"}`}
                   style={{ width: `${Math.max(1.5, (row.mb / most) * 100)}%` }}
                 />
               </span>
@@ -213,7 +213,7 @@ function Compare() {
           <thead>
             <tr className="text-[13px] text-text-subtle">
               <th className="w-[20%] pb-3 font-normal" />
-              <th className="pb-3 font-medium text-text">murmur</th>
+              <th className="pb-3 font-medium text-text">likh</th>
               <th className="pb-3 font-normal">Wispr Flow</th>
               <th className="pb-3 font-normal">Handy</th>
             </tr>
@@ -222,7 +222,7 @@ function Compare() {
             {COMPARE.map((row) => (
               <tr key={row.label} className="align-top">
                 <td className="py-3 pr-4 text-[13px] text-text-subtle">{row.label}</td>
-                <td className="py-3 pr-4 text-text">{row.murmur}</td>
+                <td className="py-3 pr-4 text-text">{row.likh}</td>
                 <td className="py-3 pr-4 text-text-muted">{row.wispr}</td>
                 <td className="py-3 text-text-muted">{row.handy}</td>
               </tr>
@@ -250,7 +250,7 @@ function Compare() {
         >
           Voibe
         </a>
-        ); murmur we measured, and Handy from a build of its source. Handy works offline, which murmur doesn&apos;t.
+        ); likh we measured, and Handy from a build of its source. Handy works offline, which likh doesn&apos;t.
       </p>
     </section>
   );

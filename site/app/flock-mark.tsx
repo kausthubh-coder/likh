@@ -1,6 +1,6 @@
 "use client";
 
-// The logo arriving as a murmuration: dots sweep in from the left and land
+// The logo arriving as a flock: dots sweep in from the left and land
 // on the five bars, once, when the page opens. Then it is a plain SVG and
 // draws nothing. The same choreography as the app's welcome screen
 // (app/src/onboarding/flock.rs), shrunk to a page mark.

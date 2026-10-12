@@ -1,7 +1,7 @@
-//! Is Codex installed and signed in? murmur borrows the ChatGPT sign-in that
+//! Is Codex installed and signed in? likh borrows the ChatGPT sign-in that
 //! Codex keeps in `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`).
 //!
-//! murmur only ever reads this file. It never refreshes or writes tokens,
+//! likh only ever reads this file. It never refreshes or writes tokens,
 //! because Codex rotates its refresh token and two writers would sign the user
 //! out of Codex. `CodexStatus` carries only a masked email, a plan name and an
 //! expiry time. The one thing that holds a token is `Credentials`, which the

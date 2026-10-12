@@ -1,12 +1,12 @@
 # Clicks inside a process's window at logical (DPI-independent) client coordinates,
 # the same numbers iced layouts use. Usage:
-#   powershell -File scripts/click-window.ps1 -ProcessId 1234 -X 280 -Y 600 [-Title murmur]
-# Agents: prefer `murmur ctl` once it exists; this is for screens it can't reach.
+#   powershell -File scripts/click-window.ps1 -ProcessId 1234 -X 280 -Y 600 [-Title likh]
+# Agents: prefer `likh ctl` once it exists; this is for screens it can't reach.
 param(
   [Parameter(Mandatory)] [int] $ProcessId,
   [Parameter(Mandatory)] [double] $X,
   [Parameter(Mandatory)] [double] $Y,
-  [string] $Title = "murmur"
+  [string] $Title = "likh"
 )
 $ErrorActionPreference = "Stop"
 Add-Type @"

@@ -27,13 +27,13 @@ pub const TAP: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Input {
-    /// The shortcut went down (or `murmur ctl start`).
+    /// The shortcut went down (or `likh ctl start`).
     Hold,
     /// The shortcut came up.
     Release,
-    /// The pill's stop button, or `murmur ctl stop`: finish and paste, however it started.
+    /// The pill's stop button, or `likh ctl stop`: finish and paste, however it started.
     Stop,
-    /// Esc, or `murmur ctl cancel`.
+    /// Esc, or `likh ctl cancel`.
     Cancel,
     /// The mic couldn't open.
     MicFailed(String),
@@ -121,7 +121,7 @@ impl Dictation {
             (_, Input::Cancel) if recording => self.stop(Effect::Discard, Show::Cancelled),
             (_, Input::MicFailed(reason)) if recording => {
                 let mut effects =
-                    self.stop(Effect::Discard, Show::Error(format!("murmur can't hear a microphone. {reason}")));
+                    self.stop(Effect::Discard, Show::Error(format!("likh can't hear a microphone. {reason}")));
                 effects.push(Effect::Sound(Cue::Error));
                 effects
             }
@@ -175,7 +175,7 @@ impl Dictation {
     }
 }
 
-/// What the last dictation did, for `murmur ctl status`. Never the text itself.
+/// What the last dictation did, for `likh ctl status`. Never the text itself.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Last {
     pub audio_seconds: f32,
@@ -206,10 +206,10 @@ pub fn spawn(
         Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber: transcriber.name(), dictations: 0, last: None }));
     let thread_status = status.clone();
     let spawned = std::thread::Builder::new()
-        .name("murmur-dictation".into())
+        .name("likh-dictation".into())
         .spawn(move || run(inputs, sender, pill, Arc::new(transcriber), thread_status, settings));
     if let Err(error) = spawned {
-        eprintln!("murmur: could not start dictation: {error}");
+        eprintln!("likh: could not start dictation: {error}");
     }
     status
 }
@@ -272,7 +272,7 @@ fn run(
                 Effect::Sound(_) => {}
                 Effect::Undo => {
                     if let Err(reason) = crate::paste::undo() {
-                        pill.show(Show::Error(format!("murmur couldn't undo. {reason}")));
+                        pill.show(Show::Error(format!("likh couldn't undo. {reason}")));
                     }
                 }
                 Effect::Paste { text, then_enter } => {
@@ -287,7 +287,7 @@ fn run(
                     let restore = match pasted {
                         Ok(restore) => Some(restore),
                         Err(reason) => {
-                            let message = format!("murmur couldn't paste. {reason}");
+                            let message = format!("likh couldn't paste. {reason}");
                             pill.show(Show::Error(message.clone()));
                             last.error = Some(message);
                             None
@@ -299,7 +299,7 @@ fn run(
                         if let Some(file) = crate::history::file()
                             && let Err(reason) = crate::history::append(&file, &entry)
                         {
-                            eprintln!("murmur: couldn't save to history: {reason}");
+                            eprintln!("likh: couldn't save to history: {reason}");
                         }
                     }
                     {
@@ -309,7 +309,7 @@ fn run(
                     }
                     if let Some(restore) = restore {
                         if then_enter && let Err(reason) = crate::paste::press_enter() {
-                            pill.show(Show::Error(format!("murmur couldn't press Enter. {reason}")));
+                            pill.show(Show::Error(format!("likh couldn't press Enter. {reason}")));
                         }
                         restore.finish();
                     }
@@ -317,7 +317,7 @@ fn run(
                 Effect::Pill(show) => pill.show(show),
             }
         }
-        // Esc belongs to murmur only while a recording can be cancelled.
+        // Esc belongs to likh only while a recording can be cancelled.
         crate::hotkey::watch_escape(matches!(dictation.phase(), Phase::Recording | Phase::HandsFree));
         let mut status = status.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         status.phase = dictation.phase();

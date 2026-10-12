@@ -42,7 +42,7 @@ static REBIND_REQUEST: Mutex<Option<RebindRequest>> = Mutex::new(None);
 pub fn spawn(dictation: Sender<Input>, binding: Binding) -> Result<(), String> {
     let (ready_tx, ready_rx) = mpsc::channel();
     std::thread::Builder::new()
-        .name("murmur-hotkey".into())
+        .name("likh-hotkey".into())
         .spawn(move || {
             // SAFETY: no arguments; this thread's id.
             let _ = THREAD.set(unsafe { GetCurrentThreadId() });

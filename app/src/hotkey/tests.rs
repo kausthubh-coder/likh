@@ -92,7 +92,7 @@ mod capturing {
     }
 
     #[test]
-    fn keys_murmur_cant_bind_say_so() {
+    fn keys_likh_cant_bind_say_so() {
         assert!(matches!(on_event(&press(Code::CapsLock, Modifiers::CTRL), Modifiers::CTRL), Outcome::Refused(_)));
         assert_eq!(key_for(Code::Space).map(|k| k.0), Some("Space"));
         assert_eq!(key_for(Code::Digit7).map(|k| k.0), Some("7"));

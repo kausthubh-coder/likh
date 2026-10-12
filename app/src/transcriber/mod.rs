@@ -2,7 +2,7 @@
 //! (docs/codex.md); anything else that can do `transcribe(audio) -> text`
 //! slots in here.
 //!
-//! `MURMUR_TRANSCRIBER=echo:<text>` swaps in a fake that returns `<text>`, so
+//! `LIKH_TRANSCRIBER=echo:<text>` swaps in a fake that returns `<text>`, so
 //! tests and agents can drive whole dictations without touching ChatGPT.
 
 use crate::codex_auth::{self, CodexStatus, Credentials};
@@ -27,7 +27,7 @@ pub enum Transcriber {
 
 impl Transcriber {
     pub fn from_env() -> Self {
-        match std::env::var("MURMUR_TRANSCRIBER").ok().and_then(|v| v.strip_prefix("echo:").map(str::to_owned)) {
+        match std::env::var("LIKH_TRANSCRIBER").ok().and_then(|v| v.strip_prefix("echo:").map(str::to_owned)) {
             Some(text) => Transcriber::Echo(text),
             None => Transcriber::Codex,
         }
@@ -79,7 +79,7 @@ impl Failure {
                 "Your Codex sign-in expired. Open Codex once to refresh it, then try again.".into()
             }
             Failure::SignIn(CodexStatus::NotInstalled) => {
-                "murmur needs Codex. Install it, sign in once, then try again.".into()
+                "likh needs Codex. Install it, sign in once, then try again.".into()
             }
             Failure::SignIn(_) => "Codex isn't signed in. Open Codex (or run codex login) and sign in.".into(),
             Failure::Rejected => "ChatGPT turned down the sign-in. Sign in to Codex again.".into(),
@@ -87,13 +87,13 @@ impl Failure {
             Failure::TooLong => "That recording was too long for ChatGPT. Try a shorter one.".into(),
             Failure::RateLimited => "ChatGPT is busy with your dictations. Try again in a minute.".into(),
             Failure::Server(code) => format!("ChatGPT couldn't transcribe that (error {code}). Try again."),
-            Failure::Unreadable => "ChatGPT sent back something murmur can't read. Try again.".into(),
+            Failure::Unreadable => "ChatGPT sent back something likh can't read. Try again.".into(),
         }
     }
 }
 
 fn post(credentials: &Credentials, wav: &[u8], seconds: f32) -> Result<String, Failure> {
-    let boundary = format!("murmur-{:016x}", SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    let boundary = format!("likh-{:016x}", SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
     let body = multipart(&boundary, wav);
     // Uploads scale with length; a fixed timeout cut long ones off in the prototype.
     let timeout = Duration::from_secs(15) + Duration::from_secs_f32(seconds * 0.5);

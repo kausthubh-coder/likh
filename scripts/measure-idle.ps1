@@ -1,4 +1,4 @@
-# Measures what a running murmur costs while nobody touches it: memory after it
+# Measures what a running likh costs while nobody touches it: memory after it
 # settles, and CPU time spent over a quiet window. Run it on a release build.
 # Usage: powershell -File scripts/measure-idle.ps1 -ProcessId 1234 [-Settle 20] [-Window 30]
 param(

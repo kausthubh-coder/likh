@@ -1,5 +1,5 @@
 # Speaks a sentence into a WAV with Windows' built-in voice, so dictation can be
-# tested without anyone talking. 16 kHz mono 16-bit, what murmur sends anyway.
+# tested without anyone talking. 16 kHz mono 16-bit, what likh sends anyway.
 # Usage: powershell -File scripts/tts-wav.ps1 -Text "Remind me to send the deck tomorrow at nine." -Out .agents/qa/speech.wav
 param(
   [Parameter(Mandatory)] [string] $Text,

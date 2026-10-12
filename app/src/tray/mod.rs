@@ -1,9 +1,9 @@
-//! Where murmur lives while it runs: a tray icon with a small menu, and the
+//! Where likh lives while it runs: a tray icon with a small menu, and the
 //! main thread that owns it.
 //!
 //! The main thread runs iced as a daemon: no windows until one is needed (the
-//! murmur window, onboarding), and no frames or timers in between. Everything
-//! else (the shortcut, the pill, the dictation, `murmur ctl`) runs on its own
+//! likh window, onboarding), and no frames or timers in between. Everything
+//! else (the shortcut, the pill, the dictation, `likh ctl`) runs on its own
 //! thread and doesn't depend on it.
 
 use crate::dictation::Status;
@@ -52,13 +52,13 @@ struct App {
 }
 
 /// The icon and the one menu line that changes (the shortcut). Kept alive for as
-/// long as murmur runs; dropping it removes the icon.
+/// long as likh runs; dropping it removes the icon.
 struct Tray {
     icon: TrayIcon,
     shortcut: MenuItem,
 }
 
-/// Runs until "Quit murmur". With `first_run_marker`, onboarding opens
+/// Runs until "Quit likh". With `first_run_marker`, onboarding opens
 /// straight away and the marker is written once it closes.
 pub fn run(
     dictation: Arc<Mutex<Status>>,
@@ -79,7 +79,7 @@ pub fn run(
         (app, task)
     };
     let mut daemon = iced::daemon(boot, App::update, App::view)
-        .title(|_: &App, _| "murmur".to_string())
+        .title(|_: &App, _| "likh".to_string())
         .subscription(App::subscription)
         .theme(|_: &App, _| Theme::Dark)
         .default_font(theme::UI);
@@ -145,7 +145,7 @@ impl App {
             let line = panel::hold_to_talk(self.settings.read().map(|s| s.shortcut).unwrap_or_default());
             if tray.shortcut.text() != line {
                 tray.shortcut.set_text(&line);
-                let _ = tray.icon.set_tooltip(Some(format!("murmur · {line}")));
+                let _ = tray.icon.set_tooltip(Some(format!("likh · {line}")));
             }
         }
         task
@@ -181,30 +181,30 @@ impl App {
     }
 }
 
-/// The icon and its menu. None if the shell has no tray (then murmur still runs; `murmur ctl quit` stops it).
+/// The icon and its menu. None if the shell has no tray (then likh still runs; `likh ctl quit` stops it).
 fn build(hold_to_talk: &str) -> Option<Tray> {
     let menu = Menu::new();
     let shortcut = MenuItem::new(hold_to_talk, false, None);
     let items = [
         &shortcut as &dyn tray_icon::menu::IsMenuItem,
         &PredefinedMenuItem::separator(),
-        &MenuItem::with_id(OPEN, "Open murmur", true, None),
+        &MenuItem::with_id(OPEN, "Open likh", true, None),
         &MenuItem::with_id(SETUP, "Set up again…", true, None),
         &PredefinedMenuItem::separator(),
-        &MenuItem::with_id(QUIT, "Quit murmur", true, None),
+        &MenuItem::with_id(QUIT, "Quit likh", true, None),
     ];
     if let Err(error) = menu.append_items(&items) {
-        eprintln!("murmur: no tray menu: {error}");
+        eprintln!("likh: no tray menu: {error}");
     }
     let image = tray_icon::Icon::from_rgba(icon::rgba(32), 32, 32).ok();
-    let mut builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(format!("murmur · {hold_to_talk}"));
+    let mut builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(format!("likh · {hold_to_talk}"));
     if let Some(image) = image {
         builder = builder.with_icon(image);
     }
     match builder.build() {
         Ok(icon) => Some(Tray { icon, shortcut }),
         Err(error) => {
-            eprintln!("murmur: no tray icon: {error}");
+            eprintln!("likh: no tray icon: {error}");
             None
         }
     }
@@ -221,7 +221,7 @@ pub fn pick_for_menu(id: &str) -> Option<Pick> {
 }
 
 /// Tray clicks and menu picks, as a stream. The menu opens on a right click;
-/// a double click on the icon opens the murmur window.
+/// a double click on the icon opens the likh window.
 fn picks() -> impl iced::futures::Stream<Item = Pick> {
     iced::stream::channel(8, async |out: Sender<Pick>| {
         let menu_out = out.clone();

@@ -69,7 +69,7 @@ fn connected_offers_continue_not_recheck() {
     press(&mut app, "Get started");
     assert!(shows(&app, "Continue"));
     assert!(!shows(&app, "Check again"));
-    assert!(!shows(&app, "murmur checks again every 2 seconds."));
+    assert!(!shows(&app, "likh checks again every 2 seconds."));
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn not_connected_says_it_rechecks_by_itself() {
     let _ui = test_ui::lock();
     let mut app = Onboarding::new(CodexStatus::SignedOut);
     press(&mut app, "Get started");
-    assert!(shows(&app, "murmur checks again every 2 seconds."));
+    assert!(shows(&app, "likh checks again every 2 seconds."));
 }
 
 #[test]
@@ -137,11 +137,11 @@ fn to_the_shortcut_step(app: &mut Onboarding) {
 }
 
 #[test]
-fn on_its_own_the_shortcut_step_says_to_start_murmur() {
+fn on_its_own_the_shortcut_step_says_to_start_likh() {
     let _ui = test_ui::lock();
     let mut app = Onboarding::new(connected());
     to_the_shortcut_step(&mut app);
-    assert!(shows(&app, "Start murmur to try it here."));
+    assert!(shows(&app, "Start likh to try it here."));
 }
 
 #[test]
@@ -253,11 +253,11 @@ fn the_flock_flies_in_from_the_left_and_lands_on_the_logo() {
 }
 
 #[test]
-fn the_finish_spells_murmur_and_settles() {
+fn the_finish_spells_likh_and_settles() {
     let size = Size::new(496.0, 300.0);
     let slots = flock::layout(Shape::Word, size).slots;
-    // m, u, r: 15 + 12 + 8 dots, twice.
-    assert_eq!(slots.len(), 70);
+    // l, i, k, h: 5 + 4 + 10 + 9 dots.
+    assert_eq!(slots.len(), 28);
     for (i, bird) in flock::birds(Shape::Word, size, Shape::Word.duration()).iter().enumerate() {
         let slot = slots[i % slots.len()];
         assert!((bird.position.x - slot.x).hypot(bird.position.y - slot.y) < 1.0, "bird {i} still moving");
@@ -266,7 +266,7 @@ fn the_finish_spells_murmur_and_settles() {
 
 /// Regenerates the onboarding screenshots on the brand board from the real
 /// views, so the board can't drift from the app. Writes docs/brand/onboarding/.
-/// Run: cargo test -p murmur brand_board_onboarding -- --ignored
+/// Run: cargo test -p likh brand_board_onboarding -- --ignored
 #[test]
 #[ignore = "writes docs/brand/onboarding/*.png; run by hand after changing a screen"]
 fn brand_board_onboarding() {
@@ -310,7 +310,8 @@ fn brand_board_onboarding() {
         };
         let mut ui = iced_test::Simulator::with_size(settings, WINDOW, app.view());
         let path = out.join(name);
-        let _ = std::fs::remove_file(path.with_extension("png"));
+        // iced writes `<name>-tiny-skia.png`, and only when it's missing.
+        let _ = std::fs::remove_file(out.join(format!("{name}-tiny-skia.png")));
         if let Ok(snapshot) = ui.snapshot(&Theme::Dark) {
             let _ = snapshot.matches_image(&path);
         }

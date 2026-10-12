@@ -175,7 +175,7 @@ fn a_mic_that_wont_open_shows_the_reason() {
         d.handle(Input::MicFailed("No microphone is connected.".into()), after(t0, 50), HOLD_OR_TAP),
         vec![
             Effect::Discard,
-            Effect::Pill(Show::Error("murmur can't hear a microphone. No microphone is connected.".into())),
+            Effect::Pill(Show::Error("likh can't hear a microphone. No microphone is connected.".into())),
             Effect::Sound(Cue::Error)
         ]
     );

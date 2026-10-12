@@ -91,7 +91,7 @@ impl Pill {
             match windows::spawn(rx, dictation) {
                 Ok(waker) => Self { commands: Some(tx), waker: Some(waker) },
                 Err(reason) => {
-                    eprintln!("murmur: no pill on screen: {reason}");
+                    eprintln!("likh: no pill on screen: {reason}");
                     Self::none()
                 }
             }

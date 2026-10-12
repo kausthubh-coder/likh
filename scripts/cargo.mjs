@@ -1,7 +1,7 @@
 // Runs cargo with the given arguments, finding it even in a terminal opened
 // before rustup was installed (rustup adds ~/.cargo/bin to PATH only for new
 // shells). Every `bun run` script that needs cargo goes through here.
-// Usage: bun scripts/cargo.mjs run -p murmur
+// Usage: bun scripts/cargo.mjs run -p likh
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
