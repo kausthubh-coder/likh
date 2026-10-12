@@ -102,6 +102,7 @@ The pill hugs what it shows. Seven bars (4px wide, 3px apart, 46px in all) sit 1
 | `resting` | 40 x 8 | dim sliver, 24px above the taskbar, bottom centre. Can be hidden. |
 | `listening` | 76 x 36 | 7 peach level bars, 4 to 20px tall |
 | `hands-free` | 100 x 36 | bars + a stop button (8px square in the 24px circle). Clicking it pastes, Esc cancels |
+| `stopping after quiet` | 100 x 36 | hands-free after 1 s of quiet: a peach ring around the stop button empties over the chosen quiet; the last 3 s show the seconds (`2`) instead of the square. Talking again clears it. Peach, not amber: this is the normal end |
 | `thinking` | 76 x 36 | travelling wave, bars turn `text-muted` |
 | `done` | back to resting | 250ms; the pasted text is the feedback, no checkmark toast |
 | `time running out` | 100 x 36 | from 9:00: bars + an amber ring that empties over the last minute, seconds left inside it (`55`) |
@@ -140,8 +141,6 @@ The other engines' copy (onboarding and settings, `onboarding::engine_copy`):
 | Groq, no key | Add a free Groq key. Make one at console.groq.com, then paste it here. | Get a free key · Save key |
 | Groq, key saved | Groq is ready. Your key is saved on this computer, in its credential store. | Continue |
 | Groq, key refused | Groq turned down that key. Copy it again from Groq. | Save key |
-| Windows, switch off | Online speech is off. Turn it on in Windows Settings, under Privacy & security, Speech. | Check again · Open settings |
-| Windows, ready | Windows speech is ready. Built in and free. Your audio goes to Microsoft's speech service. | Continue |
 
 ## Settings window
 

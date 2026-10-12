@@ -22,6 +22,18 @@ fn an_older_file_keeps_its_choices_and_gets_the_new_defaults() {
 }
 
 #[test]
+fn a_file_that_picked_windows_speech_moves_to_chatgpt_and_keeps_the_rest() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("settings.json");
+    // What likh 0.1.0-alpha.5 wrote with Windows speech picked.
+    std::fs::write(&path, r#"{ "mode": "tap", "engine": "windows", "silence_stop": "3s", "sounds": false }"#)
+        .expect("write");
+    let loaded = Settings::load_from(&path);
+    assert_eq!(loaded.engine, Engine::Codex);
+    assert_eq!((loaded.mode, loaded.silence_stop, loaded.sounds), (Mode::Tap, SilenceStop::Short, false));
+}
+
+#[test]
 fn a_fresh_install_gets_the_defaults() {
     let dir = tempfile::tempdir().expect("temp dir");
     let settings = Settings::load_from(&dir.path().join("settings.json"));

@@ -1,8 +1,7 @@
-//! Turns a recording into text. Three engines, picked in settings:
+//! Turns a recording into text. Two engines, picked in settings:
 //!
 //! - ChatGPT through Codex's sign-in, `/backend-api/transcribe` (docs/codex.md).
 //! - Groq's Whisper with the user's own free key (`groq.rs`).
-//! - Windows' own speech recognizer, no account at all (`windows_speech.rs`).
 //!
 //! `LIKH_TRANSCRIBER=echo:<text>` swaps in a fake that returns `<text>`, so
 //! tests and agents can drive whole dictations without touching any of them.
@@ -14,8 +13,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub mod glyph;
 pub mod groq;
-#[cfg(target_os = "windows")]
-pub mod windows_speech;
 
 #[cfg(test)]
 mod tests;
@@ -28,30 +25,31 @@ const USER_AGENT: &str = "Codex Desktop/26.1007.2314.0 (Windows NT 10.0; x64)";
 pub const SHORTEST: Duration = Duration::from_millis(300);
 
 /// Which service turns speech into text. Saved in settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Engine {
     #[default]
     Codex,
     Groq,
-    Windows,
+}
+
+/// An engine likh no longer has (`"windows"`, Windows speech, up to
+/// 0.1.0-alpha.5) reads as ChatGPT, so an old settings.json keeps the rest of
+/// its choices instead of failing to load.
+impl<'de> Deserialize<'de> for Engine {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = String::deserialize(deserializer)?;
+        Ok(if id == Engine::Groq.id() { Engine::Groq } else { Engine::Codex })
+    }
 }
 
 impl Engine {
-    /// The engines this computer can use. Windows speech exists only on Windows.
-    pub fn available() -> &'static [Engine] {
-        if cfg!(target_os = "windows") {
-            &[Engine::Codex, Engine::Groq, Engine::Windows]
-        } else {
-            &[Engine::Codex, Engine::Groq]
-        }
-    }
+    pub const ALL: [Engine; 2] = [Engine::Codex, Engine::Groq];
 
     pub fn name(self) -> &'static str {
         match self {
             Engine::Codex => "ChatGPT",
             Engine::Groq => "Groq",
-            Engine::Windows => "Windows",
         }
     }
 
@@ -60,7 +58,6 @@ impl Engine {
         match self {
             Engine::Codex => "Your ChatGPT plan, through Codex. The most accurate.",
             Engine::Groq => "Whisper on a free Groq key. The fastest.",
-            Engine::Windows => "Built into Windows. No account, less accurate.",
         }
     }
 
@@ -69,7 +66,6 @@ impl Engine {
         match self {
             Engine::Codex => "codex",
             Engine::Groq => "groq",
-            Engine::Windows => "windows",
         }
     }
 }
@@ -79,7 +75,6 @@ impl Engine {
 pub enum Transcriber {
     Codex,
     Groq,
-    Windows,
     Echo(String),
 }
 
@@ -94,7 +89,6 @@ impl Transcriber {
             (Some(text), _) => Transcriber::Echo(text.to_owned()),
             (None, Engine::Codex) => Transcriber::Codex,
             (None, Engine::Groq) => Transcriber::Groq,
-            (None, Engine::Windows) => Transcriber::Windows,
         }
     }
 
@@ -102,16 +96,8 @@ impl Transcriber {
         match self {
             Transcriber::Codex => Engine::Codex.id(),
             Transcriber::Groq => Engine::Groq.id(),
-            Transcriber::Windows => Engine::Windows.id(),
             Transcriber::Echo(_) => "echo",
         }
-    }
-
-    /// Windows speech hears the microphone itself while the dictation runs,
-    /// instead of being handed the recording afterwards.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows has a live engine"))]
-    pub fn listens_live(&self) -> bool {
-        matches!(self, Transcriber::Windows)
     }
 
     /// `samples` are 16 kHz mono in -1..1. Blocks until the service answers.
@@ -132,15 +118,12 @@ impl Transcriber {
                 let key = groq::saved_key().ok_or(Failure::GroqNoKey)?;
                 groq::transcribe(&key, &wav(samples), seconds)
             }
-            // The dictation finishes the live session instead (`windows_speech::Listening::finish`).
-            Transcriber::Windows => Err(Failure::WindowsSpeech("it wasn't listening".into())),
         }
     }
 }
 
 /// Why a dictation didn't turn into text, in words the pill can show.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "the Windows speech failures only happen on Windows"))]
 pub enum Failure {
     TooShort,
     SignIn(CodexStatus),
@@ -155,12 +138,6 @@ pub enum Failure {
     GroqRateLimited,
     GroqOffline,
     GroqServer(u16),
-    /// Online speech recognition is off in Windows' privacy settings.
-    WindowsPrivacy,
-    WindowsLanguage,
-    WindowsMicrophone,
-    WindowsOffline,
-    WindowsSpeech(String),
 }
 
 impl Failure {
@@ -185,13 +162,6 @@ impl Failure {
             Failure::GroqRateLimited => "You've hit Groq's free limit for now. Try again in a minute.".into(),
             Failure::GroqOffline => "Can't reach Groq. Check your connection and try again.".into(),
             Failure::GroqServer(code) => format!("Groq couldn't transcribe that (error {code}). Try again."),
-            Failure::WindowsPrivacy => {
-                "Turn on Online speech recognition in Windows Settings, under Privacy, Speech.".into()
-            }
-            Failure::WindowsLanguage => "Windows speech doesn't support your display language yet.".into(),
-            Failure::WindowsMicrophone => "Windows speech can't open your microphone.".into(),
-            Failure::WindowsOffline => "Windows speech needs the internet. Check your connection.".into(),
-            Failure::WindowsSpeech(detail) => format!("Windows speech didn't work ({detail}). Try again."),
         }
     }
 }

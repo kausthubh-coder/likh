@@ -34,7 +34,7 @@ pub enum Pick {
     Open,
     Setup,
     Quit,
-    /// "Restart to update".
+    /// The update line: checks, or restarts into a downloaded update.
     Update,
     /// Where updating stands changed (sent by `update::Updates`): refresh the menu and windows.
     UpdateChanged,
@@ -69,16 +69,12 @@ impl Hash for UiRequests {
     }
 }
 
-/// The icon and the menu lines that change: the shortcut, and "Restart to update"
-/// while an update is ready. Kept alive for as long as likh runs; dropping it
-/// removes the icon.
+/// The icon and the menu lines that change: the shortcut, and the update
+/// line. Kept alive for as long as likh runs; dropping it removes the icon.
 struct Tray {
     icon: TrayIcon,
-    menu: Menu,
     shortcut: MenuItem,
     update: MenuItem,
-    /// The update line is in the menu.
-    update_shown: bool,
 }
 
 /// Runs until "Quit likh". With `first_run_marker`, onboarding opens
@@ -152,10 +148,16 @@ impl App {
             }
             Message::Tray(Pick::Setup) | Message::Panel(_, panel::Message::RunSetup) => self.open_setup(),
             Message::Tray(Pick::Quit) => iced::exit(),
-            Message::Tray(Pick::Update) | Message::Panel(_, panel::Message::Restart) => {
-                if let Err(reason) = self.updates.apply() {
-                    eprintln!("likh: couldn't update: {reason}");
+            Message::Tray(Pick::Update) => {
+                match self.updates.state() {
+                    State::Ready { .. } => self.restart_to_update(),
+                    State::Available { page, .. } => crate::shared::open_url(&page),
+                    _ => self.updates.check_now(),
                 }
+                Task::none()
+            }
+            Message::Panel(_, panel::Message::Restart) => {
+                self.restart_to_update();
                 Task::none()
             }
             // Nothing to do here: the menu below, and every window on its next draw, read the new state.
@@ -201,23 +203,19 @@ impl App {
                 tray.shortcut.set_text(&line);
                 let _ = tray.icon.set_tooltip(Some(format!("likh · {line}")));
             }
-            // "Restart to update" is in the menu exactly while an update is ready.
-            match self.updates.state() {
-                State::Ready { version, .. } if !tray.update_shown => {
-                    tray.update.set_text(restart_to_update(&version));
-                    if tray.menu.insert(&tray.update, 2).is_ok() {
-                        tray.update_shown = true;
-                    }
-                }
-                State::Ready { .. } => {}
-                _ if tray.update_shown => {
-                    let _ = tray.menu.remove(&tray.update);
-                    tray.update_shown = false;
-                }
-                _ => {}
+            let (line, enabled) = update_line(&self.updates.state());
+            if tray.update.text() != line {
+                tray.update.set_text(line);
             }
+            tray.update.set_enabled(enabled);
         }
         task
+    }
+
+    fn restart_to_update(&self) {
+        if let Err(reason) = self.updates.apply() {
+            eprintln!("likh: couldn't update: {reason}");
+        }
     }
 
     fn view(&self, id: window::Id) -> Element<'_, Message> {
@@ -259,11 +257,14 @@ fn ui_requests(inbox: &UiRequests) -> UnboundedReceiver<Pick> {
 fn build(hold_to_talk: &str) -> Option<Tray> {
     let menu = Menu::new();
     let shortcut = MenuItem::new(hold_to_talk, false, None);
+    let (line, enabled) = update_line(&State::Idle);
+    let update = MenuItem::with_id(UPDATE, line, enabled, None);
     let items = [
         &shortcut as &dyn tray_icon::menu::IsMenuItem,
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(OPEN, "Open likh", true, None),
         &MenuItem::with_id(SETUP, "Set up again…", true, None),
+        &update,
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(QUIT, "Quit likh", true, None),
     ];
@@ -271,15 +272,12 @@ fn build(hold_to_talk: &str) -> Option<Tray> {
         eprintln!("likh: no tray menu: {error}");
     }
     let image = tray_icon::Icon::from_rgba(icon::rgba(32), 32, 32).ok();
-    // A clone shares the same menu, so the update line can come and go later.
-    let mut builder =
-        TrayIconBuilder::new().with_menu(Box::new(menu.clone())).with_tooltip(format!("likh · {hold_to_talk}"));
+    let mut builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(format!("likh · {hold_to_talk}"));
     if let Some(image) = image {
         builder = builder.with_icon(image);
     }
-    let update = MenuItem::with_id(UPDATE, "", true, None);
     match builder.build() {
-        Ok(icon) => Some(Tray { icon, menu, shortcut, update, update_shown: false }),
+        Ok(icon) => Some(Tray { icon, shortcut, update }),
         Err(error) => {
             eprintln!("likh: no tray icon: {error}");
             None
@@ -287,9 +285,17 @@ fn build(hold_to_talk: &str) -> Option<Tray> {
     }
 }
 
-/// The tray line and the button for a downloaded update.
-pub fn restart_to_update(version: &str) -> String {
-    format!("Restart to update to {version}")
+/// The tray's update line for where updating stands, and whether picking it does anything.
+pub fn update_line(state: &State) -> (String, bool) {
+    match state {
+        State::Idle => ("Check for updates".into(), true),
+        State::Checking => ("Checking for updates\u{2026}".into(), false),
+        State::UpToDate { .. } => ("Up to date \u{b7} Check again".into(), true),
+        State::Downloading { version } => (format!("Downloading likh {version}\u{2026}"), false),
+        State::Ready { version, .. } => (format!("Restart to update to {version}"), true),
+        State::Available { version, .. } => (format!("Download likh {version}"), true),
+        State::Failed { .. } => ("Couldn't check \u{b7} Try again".into(), true),
+    }
 }
 
 /// What a menu id means.

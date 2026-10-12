@@ -1,10 +1,10 @@
 //! Each engine's mark, drawn with the same stroke as the onboarding art: a
-//! terminal prompt for Codex, a bolt for Groq (the fast one), four panes for
-//! Windows. Drawn, not icons from a font, so they match the logo's weight.
+//! terminal prompt for Codex, a bolt for Groq (the fast one). Drawn, not
+//! icons from a font, so they match the logo's weight.
 
 use super::Engine;
 use iced::widget::canvas::{self, Frame, Path, Stroke};
-use iced::{Color, Point, Rectangle, Renderer, Size, Theme, mouse};
+use iced::{Color, Point, Rectangle, Renderer, Theme, mouse};
 
 /// The glyph's box is about 32 x 24 at scale 1, centred on `center`.
 pub fn draw(frame: &mut Frame, engine: Engine, center: Point, color: Color) {
@@ -35,11 +35,6 @@ pub fn draw(frame: &mut Frame, engine: Engine, center: Point, color: Color) {
             }),
             line,
         ),
-        Engine::Windows => {
-            for (x, y) in [(-11.0, -11.0), (1.0, -11.0), (-11.0, 1.0), (1.0, 1.0)] {
-                frame.fill(&Path::rounded_rectangle(at(x, y), Size::new(10.0, 10.0), 2.5.into()), color);
-            }
-        }
     }
 }
 

@@ -12,7 +12,6 @@ The first-run window: five steps in one borderless 560 x 640 window. It opens wi
 - `onb-codex-live` turns not-connected into connected on its own within 2 s once a valid `auth.json` appears.
 - `onb-engine` the step opens on the engine in settings (ChatGPT for a new install) with a ChatGPT · Groq · Windows pick above the art; the pick stays in place whichever is chosen. Picking one saves it at once.
 - `onb-groq` "Add a free Groq key", a hidden key field, `Get a free key` (opens console.groq.com/keys) and `Save key`. A key not starting `gsk_` is refused before any request; Groq's 401 says "Groq turned down that key". A saved key reads "Groq is ready" with `Continue`.
-- `onb-windows` with Online speech recognition off: "Online speech is off", `Check again` and `Open settings` (ms-settings:privacy-speech), re-checking every 2 s; on: "Windows speech is ready".
 - `onb-mic` shows nine live bars and the device name; with no mic, "Can't hear a microphone" and `Open settings`.
 - `onb-shortcut` lights the `Ctrl` `Space` key caps. Inside the app: holding the real shortcut records, and the words land in the practice box.
 - `onb-done` spells likh in dots and `Finish` closes the window. likh keeps running.
@@ -39,7 +38,7 @@ Coordinates are logical client pixels in the 560 x 640 window; there is no title
 - **Not installed.** `Check again` is left of `Get Codex`, on the same row as the primary button. Only click `Get Codex` when proving that link (it opens the browser).
 - **Live re-check.** Launch with the `signed-out` folder, go to step 2, then run `bun scripts/fake-codex-home.mjs connected` and copy `.agents/qa/codex-connected/auth.json` into the signed-out folder. Within 2 s the title reads "Connected through Codex".
 - **Microphone.** Reaching step 3 opens the real default mic; Windows shows its mic-in-use icon until you leave the step. Expect your own room noise on the bars.
-- **Engine pick:** ChatGPT (210, 147), Groq (279, 147), Windows (349, 147) on step 2. Compare `docs/brand/onboarding/2-groq-key` and `2-windows-off`.
+- **Engine pick:** ChatGPT and Groq, one segmented pick centred at y 147 on step 2 (two segments since 0.1.0-alpha.6; read the x from `docs/brand/onboarding/2-groq-key.png`). Compare `docs/brand/onboarding/2-groq-key`.
 - **Compare** with the renders in `docs/brand/onboarding/`, which come from the same views.
 
 ## Gotchas

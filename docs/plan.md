@@ -5,9 +5,9 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 ## Decisions
 
 - **Product:** native dictation. Hold Ctrl+Space, talk, let go, and the text pastes at the cursor in under a second. It must idle at near-zero CPU and low RAM so it can run 24/7.
-- **Transcription:** Codex by default (see `docs/codex.md`). Claude is out. Since 2026-10-12 the user can pick two free alternatives, in onboarding and in settings:
+- **Transcription:** Codex by default (see `docs/codex.md`). Claude is out. Since 2026-10-12 the user can pick a free alternative, in onboarding and in settings:
   - **Groq** with the user's own free key (whisper-large-v3-turbo, about 2,000 requests a day free). The key lives in the OS credential store, never in settings.json.
-  - **Windows speech** (`Windows.Media.SpeechRecognition`), no account. It needs "Online speech recognition" on, and it opens the mic itself, so it listens live alongside likh's recording instead of taking the WAV. Windows only; macOS hides it.
+  - **Windows speech was removed** (2026-10-12, after 0.1.0-alpha.5): it didn't work for the developer in practice. A settings.json that still says `"engine": "windows"` loads as ChatGPT.
 - **UI:** Rust + iced 0.14 with the tiny-skia software renderer, no web view and no GPU context. We chose iced over GPUI for headless screenshot tests that run on Windows and a stabler API, and pay for it with our own spring helper and per-OS overlay code.
 - **The pill is solid, not glass** (2026-10-12). Real refraction needs a GPU renderer and continuous screen capture, and the GPU renderer alone idled at 229 to 313 MB against 7 MB. The pill is its own layered Win32 window drawn with tiny-skia (`app/src/pill/`), because iced's software renderer can't make a transparent, never-focused window and resizing an OS window per frame looked laggy.
 - **The shortcut is a system hotkey on Windows** (2026-10-12), Ctrl+Space by default. handy-keys woke its hook thread every 10ms and hooked the mouse too. Our own low-level hook fixed that, but Windows silently removes low-level hooks that answer slowly once (it happened during heavy builds), and the shortcut died. `RegisterHotKey` can't time out and swallows the keys for us; letting go is noticed by checking the keys every 15ms, only while held.
@@ -46,6 +46,8 @@ The running app, idle (no window open, pill hidden, shortcut armed), release bui
 | with handy-keys for the shortcut | 3.0 MB | 13.7 MB | 203 ms | 12 |
 | with likh's own hook (`hotkey/windows.rs`) | **2.0 MB** | **10.8 MB** | **0 ms** | 6 |
 | phase 6 (engines, silence stop, pause media; default settings, mouse button off), 2026-10-12 | 2.3 MB | 11.9 MB | **0 ms** | 8 |
+| 0.1.0-alpha.5, side by side with alpha.6 (same `LIKH_HOME`, settled 10 s), 2026-10-12 | 2.4 MB | 13.8 MB | **0 ms** | 8 |
+| 0.1.0-alpha.6 (no Windows speech, quiet countdown, update line), 2026-10-12 | 2.4 MB | 13.8 MB | **0 ms** | 8 |
 
 A picked mouse button installs a low-level mouse hook: no cost while the mouse is still, one wake per mouse event while it moves.
 
@@ -75,7 +77,7 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - mouse-button trigger (middle, back, forward)
   - pause media while you talk (Windows; Wispr mutes instead, and polls the output device every 2 s to do it)
   - lists ("new bullet"), "press tab", "scratch that" after a sentence, punctuation by name
-  - Groq and Windows speech as free engines
+  - Groq as a free engine
 - **Updates (2026-10-12):** from GitHub Releases through the existing Inno installer, Ed25519-signed in `release.yml`, checked at launch and after dictations (never on a timer), applied when the user picks "Restart to update". Velopack would add delta updates but replaces the installer; not worth it at 5 MB. macOS only links to the release.
 - **Next:**
   - chunking past 9m55s

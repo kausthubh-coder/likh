@@ -139,9 +139,8 @@ fn brand_board_panel() {
     for (name, tab, engine) in shots {
         f.settings.write().expect("settings").engine = engine;
         let _ = f.panel.update(Message::Tab(tab));
-        // Never this machine's own key or Windows settings on a public board.
+        // Never this machine's own key on a public board.
         f.panel.groq = GroqSetup::default();
-        f.panel.windows = Some(Err(Failure::WindowsPrivacy));
         if matches!(tab, Tab::About | Tab::Transcription) {
             f.panel.codex = CodexStatus::Connected(crate::codex_auth::Account {
                 email_hint: Some("t\u{2022}\u{2022}\u{2022}@example.com".into()),
@@ -203,19 +202,6 @@ fn a_key_groq_turns_down_is_not_kept() {
     assert!(shows(&f.panel, "Groq turned down that key. Copy it again from Groq."));
 }
 
-#[cfg(target_os = "windows")]
-#[test]
-fn windows_speech_switched_off_says_where_to_turn_it_on() {
-    let _ui = test_ui::lock();
-    let mut f = panel();
-    let _ = f.panel.update(Message::Engine(Engine::Windows));
-    let _ = f.panel.update(Message::Tab(Tab::Transcription));
-    f.panel.windows = Some(Err(Failure::WindowsPrivacy));
-    assert!(shows(&f.panel, "Online speech is off"));
-    assert!(shows(&f.panel, "Turned off"));
-    assert!(shows(&f.panel, "Open speech settings"));
-}
-
 #[test]
 fn hands_free_quiet_stop_is_picked_and_saved() {
     let _ui = test_ui::lock();
@@ -265,6 +251,26 @@ fn about_offers_a_restart_once_an_update_is_downloaded() {
         ui.into_messages().any(|message| matches!(message, Message::Restart)),
         "the tray runs the installer when it hears Restart"
     );
+}
+
+#[test]
+fn every_tab_has_the_update_button_in_the_sidebar() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    // Nothing checked yet: General already offers a check.
+    let mut ui = simulator(f.panel.view());
+    ui.click("Check for updates").expect("a check button on General");
+    assert!(ui.into_messages().any(|message| matches!(message, Message::CheckForUpdates)));
+
+    f.panel.updates = Updates::with_state(update::State::Ready {
+        version: "0.1.0-alpha.6".into(),
+        installer: "C:/Users/someone/AppData/Local/likh/updates/likh-setup-0.1.0-alpha.6.exe".into(),
+    });
+    press(&mut f.panel, "Commands");
+    assert!(shows(&f.panel, &format!("v{} \u{2192} v0.1.0-alpha.6", env!("CARGO_PKG_VERSION"))));
+    let mut ui = simulator(f.panel.view());
+    ui.click("Restart to update").expect("a restart button on Commands");
+    assert!(ui.into_messages().any(|message| matches!(message, Message::Restart)));
 }
 
 #[test]

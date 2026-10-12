@@ -20,6 +20,7 @@ use crate::dictation::Input;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{
@@ -225,13 +226,13 @@ fn run(dictation: Sender<Input>, mut binding: Binding) {
                 held = false;
                 // SAFETY: the thread timer we started above.
                 let _ = unsafe { KillTimer(None, timer) };
-                let _ = dictation.send(Input::Release);
+                let _ = dictation.send(Input::Release(Instant::now()));
             }
             MOUSE_DOWN if !held => {
                 let _ = dictation.send(Input::Hold);
             }
             MOUSE_UP if !held => {
-                let _ = dictation.send(Input::Release);
+                let _ = dictation.send(Input::Release(Instant::now()));
             }
             SET_MOUSE => {
                 MOUSE.store(msg.wParam.0 as u8, Ordering::SeqCst);
