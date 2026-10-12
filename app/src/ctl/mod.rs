@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 #[cfg(test)]
 mod tests;
 
-pub const COMMANDS: [&str; 5] = ["status", "start", "stop", "cancel", "quit"];
+pub const COMMANDS: [&str; 6] = ["status", "start", "stop", "cancel", "quit", "open"];
 
 fn name() -> std::io::Result<Name<'static>> {
     let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
@@ -38,7 +38,11 @@ pub fn is_running() -> bool {
 }
 
 /// Answers commands on a background thread for as long as the app runs.
-pub fn serve(dictation: Sender<Input>, status: Arc<Mutex<Status>>) -> std::io::Result<()> {
+pub fn serve(
+    dictation: Sender<Input>,
+    status: Arc<Mutex<Status>>,
+    ui: iced::futures::channel::mpsc::UnboundedSender<crate::tray::Pick>,
+) -> std::io::Result<()> {
     let listener = ListenerOptions::new().name(name()?).create_sync()?;
     std::thread::Builder::new().name("likh-ctl".into()).spawn(move || {
         for connection in listener.incoming().filter_map(Result::ok) {
@@ -49,6 +53,11 @@ pub fn serve(dictation: Sender<Input>, status: Arc<Mutex<Status>>) -> std::io::R
             }
             let snapshot = status.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
             let (answer, input) = answer(line.trim(), &snapshot);
+            let answer = if line.trim() == "open" && ui.unbounded_send(crate::tray::Pick::Open).is_err() {
+                json!({ "ok": false, "error": "likh's window isn't ready. Try opening it again." })
+            } else {
+                answer
+            };
             let quitting = line.trim() == "quit";
             if let Some(input) = input {
                 let _ = dictation.send(input);
@@ -79,7 +88,7 @@ pub fn answer(command: &str, status: &Status) -> (Value, Option<Input>) {
         "start" => (ok, Some(Input::Hold)),
         "stop" => (ok, Some(Input::Stop)),
         "cancel" => (ok, Some(Input::Cancel)),
-        "quit" => (ok, None),
+        "quit" | "open" => (ok, None),
         other => (
             json!({ "ok": false, "error": format!("unknown command {other:?}; try one of {}", COMMANDS.join(", ")) }),
             None,

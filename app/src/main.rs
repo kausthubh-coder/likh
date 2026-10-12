@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod autostart;
 mod codex_auth;
 mod commands;
@@ -90,7 +92,7 @@ fn main() -> ExitCode {
 /// the tray on the main thread. Onboarding opens the first time.
 fn run(skip_onboarding: bool) -> ExitCode {
     if ctl::is_running() {
-        eprintln!("likh is already running. `likh ctl quit` stops it.");
+        let _ = ctl::send("open");
         return ExitCode::SUCCESS;
     }
     if let Some(data) = dirs::data_local_dir() {
@@ -110,7 +112,8 @@ fn run(skip_onboarding: bool) -> ExitCode {
     let pill = pill::Pill::spawn(dictation.clone());
     let status =
         dictation::spawn(dictation.clone(), inputs, pill, transcriber::Transcriber::from_env(), settings.clone());
-    if let Err(error) = ctl::serve(dictation.clone(), status.clone()) {
+    let (ui, ui_requests) = iced::futures::channel::mpsc::unbounded();
+    if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui) {
         eprintln!("likh: `likh ctl` won't work this time: {error}");
     }
     match hotkey::spawn(dictation, shortcut) {
@@ -120,7 +123,7 @@ fn run(skip_onboarding: bool) -> ExitCode {
 
     let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
     // The tray owns the main thread until "Quit likh".
-    match tray::run(status, settings, first_run) {
+    match tray::run(status, settings, first_run, ui_requests) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("likh: {error}");
