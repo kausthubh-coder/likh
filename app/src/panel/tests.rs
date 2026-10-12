@@ -128,9 +128,21 @@ fn brand_board_panel() {
         plan: Some("plus".into()),
         expires_at: None,
     });
-    for (name, tab) in [("general", Tab::General), ("history", Tab::History), ("about", Tab::About)] {
+    let shots = [
+        ("general", Tab::General, Engine::Codex),
+        ("transcription", Tab::Transcription, Engine::Codex),
+        ("transcription-groq", Tab::Transcription, Engine::Groq),
+        ("commands", Tab::Commands, Engine::Codex),
+        ("history", Tab::History, Engine::Codex),
+        ("about", Tab::About, Engine::Codex),
+    ];
+    for (name, tab, engine) in shots {
+        f.settings.write().expect("settings").engine = engine;
         let _ = f.panel.update(Message::Tab(tab));
-        if tab == Tab::About {
+        // Never this machine's own key or Windows settings on a public board.
+        f.panel.groq = GroqSetup::default();
+        f.panel.windows = Some(Err(Failure::WindowsPrivacy));
+        if matches!(tab, Tab::About | Tab::Transcription) {
             f.panel.codex = CodexStatus::Connected(crate::codex_auth::Account {
                 email_hint: Some("t\u{2022}\u{2022}\u{2022}@example.com".into()),
                 plan: Some("plus".into()),
@@ -150,4 +162,89 @@ fn brand_board_panel() {
             let _ = snapshot.matches_image(&path);
         }
     }
+}
+
+#[test]
+fn picking_an_engine_card_saves_it_and_shows_what_it_needs() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    f.panel.groq = GroqSetup::default();
+    press(&mut f.panel, "Transcription");
+    press(&mut f.panel, "Groq");
+    assert_eq!(f.settings.read().expect("settings").engine, Engine::Groq);
+    assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).engine, Engine::Groq);
+    assert!(shows(&f.panel, "Add a free Groq key"));
+    assert!(shows(&f.panel, "Needs a key"));
+    assert!(shows(&f.panel, "Save key"));
+}
+
+#[test]
+fn a_key_that_isnt_groqs_is_refused_before_any_request() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    f.panel.groq = GroqSetup::default();
+    let _ = f.panel.update(Message::Engine(Engine::Groq));
+    let _ = f.panel.update(Message::Tab(Tab::Transcription));
+    let _ = f.panel.update(Message::GroqKey("sk-proj-0123456789abcdef0123".into()));
+    let _ = f.panel.update(Message::SaveGroqKey);
+    assert!(!f.panel.groq.checking, "no request for a key that can't work");
+    assert!(shows(&f.panel, "That isn't a Groq key. Groq keys start with gsk_."));
+}
+
+#[test]
+fn a_key_groq_turns_down_is_not_kept() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    f.panel.groq = GroqSetup { key: "gsk_0123456789abcdefABCDEF".into(), checking: true, ..GroqSetup::default() };
+    let _ = f.panel.update(Message::Engine(Engine::Groq));
+    let _ = f.panel.update(Message::Tab(Tab::Transcription));
+    let _ = f.panel.update(Message::GroqChecked("gsk_0123456789abcdefABCDEF".into(), Some(Err(Failure::GroqRejected))));
+    assert!(!f.panel.groq.saved && !f.panel.groq.checking);
+    assert!(shows(&f.panel, "Groq turned down that key. Copy it again from Groq."));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_speech_switched_off_says_where_to_turn_it_on() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let _ = f.panel.update(Message::Engine(Engine::Windows));
+    let _ = f.panel.update(Message::Tab(Tab::Transcription));
+    f.panel.windows = Some(Err(Failure::WindowsPrivacy));
+    assert!(shows(&f.panel, "Online speech is off"));
+    assert!(shows(&f.panel, "Turned off"));
+    assert!(shows(&f.panel, "Open speech settings"));
+}
+
+#[test]
+fn hands_free_quiet_stop_is_picked_and_saved() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "10 s");
+    assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).silence_stop, SilenceStop::Long);
+    press(&mut f.panel, "Never");
+    assert_eq!(f.settings.read().expect("settings").silence_stop.after(), None);
+}
+
+#[test]
+fn each_command_group_shows_its_phrases_and_switches_alone() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Commands");
+    assert!(shows(&f.panel, "\u{201c}new paragraph\u{201d}"));
+    assert!(!shows(&f.panel, "\u{201c}question mark\u{201d}"), "punctuation starts off, its phrases hidden");
+    let _ = f.panel.update(Message::CommandGroup(Group::Punctuation, true));
+    assert!(shows(&f.panel, "\u{201c}question mark\u{201d}"));
+    let saved = Settings::load_from(&f.dir.path().join("settings.json")).command_groups;
+    assert!(saved.punctuation && saved.lines, "only that group changed");
+}
+
+#[test]
+fn spoken_commands_off_hides_every_group() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Commands");
+    let _ = f.panel.update(Message::Commands(false));
+    assert!(shows(&f.panel, "Off. Everything you say is typed as you said it."));
+    assert!(!shows(&f.panel, "Lines and lists"));
 }

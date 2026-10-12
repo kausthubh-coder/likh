@@ -1,7 +1,15 @@
 use super::*;
 
 fn paste(text: &str, then_enter: bool) -> Action {
-    Action::Paste { text: text.to_string(), then_enter }
+    Action::Paste { text: text.to_string(), then: then_enter.then_some(Press::Enter) }
+}
+
+fn interpret(transcript: &str) -> Action {
+    super::interpret(transcript, &Groups::default())
+}
+
+fn with(groups: Groups, transcript: &str) -> Action {
+    super::interpret(transcript, &groups)
 }
 
 #[test]
@@ -47,4 +55,52 @@ fn scratch_that_alone_undoes_the_last_paste() {
 #[test]
 fn a_command_inside_a_word_is_left_alone() {
     assert_eq!(interpret("The renew lines are long."), paste("The renew lines are long.", false));
+}
+
+#[test]
+fn press_tab_at_the_end_moves_to_the_next_field() {
+    assert_eq!(
+        interpret("Priya Raman. Press tab."),
+        Action::Paste { text: "Priya Raman.".into(), then: Some(Press::Tab) }
+    );
+}
+
+#[test]
+fn new_bullet_starts_a_list_item() {
+    assert_eq!(
+        interpret("Groceries. New bullet. Milk. New bullet, eggs."),
+        paste(
+            "Groceries.
+- Milk.
+- Eggs.",
+            false
+        )
+    );
+}
+
+#[test]
+fn scratch_that_after_a_sentence_drops_that_sentence() {
+    assert_eq!(
+        interpret("Hi Sam. Let's meet at two. Scratch that. Let's meet at three."),
+        paste("Hi Sam. Let's meet at three.", false)
+    );
+    // Taking back the only sentence leaves nothing to paste.
+    assert_eq!(interpret("Let's meet at two. Scratch that."), paste("", false));
+}
+
+#[test]
+fn punctuation_by_name_only_when_switched_on() {
+    let said = "Are you coming question mark I hope so comma see you there period";
+    assert_eq!(interpret(said), paste(said, false));
+    let on = Groups { punctuation: true, ..Groups::default() };
+    assert_eq!(with(on, said), paste("Are you coming? I hope so, see you there.", false));
+    // The transcriber's own commas around the word don't double up.
+    assert_eq!(with(on, "Dear Priya, comma, thanks."), paste("Dear Priya, thanks.", false));
+}
+
+#[test]
+fn a_group_switched_off_is_just_words() {
+    let off = Groups { lines: false, keys: false, scratch: false, punctuation: false };
+    assert_eq!(with(off, "Hi. New line. Press enter."), paste("Hi. New line. Press enter.", false));
+    assert_eq!(with(off, "Scratch that."), paste("Scratch that.", false));
 }

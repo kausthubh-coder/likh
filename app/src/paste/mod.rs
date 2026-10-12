@@ -2,6 +2,7 @@
 //! macOS) into whatever has focus, then the clipboard goes back to what it was.
 //! The pill never takes focus, so "whatever has focus" is the app the user was in.
 
+use crate::commands::Press;
 use arboard::Clipboard;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use std::time::Duration;
@@ -26,10 +27,15 @@ pub fn undo() -> Result<(), String> {
     shortcut('z')
 }
 
-/// "Press enter": sends what was just pasted, in chats and terminals.
-pub fn press_enter() -> Result<(), String> {
+/// "Press enter" sends what was just pasted, in chats and terminals;
+/// "press tab" moves to the next field of a form.
+pub fn press(press: Press) -> Result<(), String> {
+    let key = match press {
+        Press::Enter => Key::Return,
+        Press::Tab => Key::Tab,
+    };
     let mut keys = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
-    keys.key(Key::Return, Direction::Click).map_err(|error| error.to_string())
+    keys.key(key, Direction::Click).map_err(|error| error.to_string())
 }
 
 /// Ctrl (Cmd on macOS) plus a letter, in whatever app has focus.

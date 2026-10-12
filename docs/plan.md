@@ -5,7 +5,9 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 ## Decisions
 
 - **Product:** native dictation. Hold Ctrl+Space, talk, let go, and the text pastes at the cursor in under a second. It must idle at near-zero CPU and low RAM so it can run 24/7.
-- **Transcription:** Codex only (see `docs/codex.md`). Claude is out.
+- **Transcription:** Codex by default (see `docs/codex.md`). Claude is out. Since 2026-10-12 the user can pick two free alternatives, in onboarding and in settings:
+  - **Groq** with the user's own free key (whisper-large-v3-turbo, about 2,000 requests a day free). The key lives in the OS credential store, never in settings.json.
+  - **Windows speech** (`Windows.Media.SpeechRecognition`), no account. It needs "Online speech recognition" on, and it opens the mic itself, so it listens live alongside likh's recording instead of taking the WAV. Windows only; macOS hides it.
 - **UI:** Rust + iced 0.14 with the tiny-skia software renderer, no web view and no GPU context. We chose iced over GPUI for headless screenshot tests that run on Windows and a stabler API, and pay for it with our own spring helper and per-OS overlay code.
 - **The pill is solid, not glass** (2026-10-12). Real refraction needs a GPU renderer and continuous screen capture, and the GPU renderer alone idled at 229 to 313 MB against 7 MB. The pill is its own layered Win32 window drawn with tiny-skia (`app/src/pill/`), because iced's software renderer can't make a transparent, never-focused window and resizing an OS window per frame looked laggy.
 - **The shortcut is a system hotkey on Windows** (2026-10-12), Ctrl+Space by default. handy-keys woke its hook thread every 10ms and hooked the mouse too. Our own low-level hook fixed that, but Windows silently removes low-level hooks that answer slowly once (it happened during heavy builds), and the shortcut died. `RegisterHotKey` can't time out and swallows the keys for us; letting go is noticed by checking the keys every 15ms, only while held.
@@ -23,7 +25,8 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 | 3 | Full onboarding and every pill state | ✅ five steps (Try it is folded into the shortcut step inside the app); pill: listening, thinking, countdown, error, done. Hands-free waits for phase 4 |
 | 4 | Hands-free, Esc cancel, history, sounds, voice commands, start with Windows, a settings window, a changeable shortcut, 9m55s cap | ✅ hands-free is "Hold or tap" (tap once, tap again) instead of double-tap; silence stop, mic picker and paste-last are still to do |
 | 5 | Landing page with downloads, the release workflow | `v0.1.0` on GitHub Releases |
-| later | Chunked long dictation, dictionary, snippets, cleanup, command mode, styles, stats | |
+| 6 | Silence stop, a mouse button, more spoken commands, pause media, Groq and Windows speech, all in settings | ✅ silence stop proven end to end (`e2e-dictate.ps1 -LetSilenceStop`). A real Groq key, Windows speech with Online speech recognition on, pausing something that plays, and a physical mouse button still need a person |
+| later | Chunked long dictation, dictionary, snippets, cleanup (fillers, "actually 3"), command mode, styles, stats | |
 
 ## Measured so far
 
@@ -42,6 +45,9 @@ The running app, idle (no window open, pill hidden, shortcut armed), release bui
 |---|---|---|---|---|
 | with handy-keys for the shortcut | 3.0 MB | 13.7 MB | 203 ms | 12 |
 | with likh's own hook (`hotkey/windows.rs`) | **2.0 MB** | **10.8 MB** | **0 ms** | 6 |
+| phase 6 (engines, silence stop, pause media; default settings, mouse button off), 2026-10-12 | 2.3 MB | 11.9 MB | **0 ms** | 8 |
+
+A picked mouse button installs a low-level mouse hook: no cost while the mouse is still, one wake per mouse event while it moves.
 
 The exe shrank from 11.4 MB to 5.1 MB when wgpu was compiled out (7.6 MB with everything in phase 2).
 
@@ -64,12 +70,17 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - sounds
   - usage panel
   - Codex sign-in states
+- **Done in phase 6:**
+  - hands-free silence stop (Never, 3, 5 or 10 s; 5 s by default)
+  - mouse-button trigger (middle, back, forward)
+  - pause media while you talk (Windows; Wispr mutes instead, and polls the output device every 2 s to do it)
+  - lists ("new bullet"), "press tab", "scratch that" after a sentence, punctuation by name
+  - Groq and Windows speech as free engines
 - **Next:**
   - chunking past 9m55s
   - personal dictionary and fix-up rules
   - snippets
-  - filler and self-correction cleanup
-  - lists
+  - filler and self-correction cleanup (with a small model through "Sign in with ChatGPT" or similar)
   - offline local model
 - **Later:**
   - command mode (voice-edit the selection)
@@ -80,8 +91,6 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - words-per-minute and streak stats
   - language picker
   - whisper mode
-  - auto-mute media
-  - mouse-button triggers
 - **Skipped:**
   - accounts
   - cloud sync

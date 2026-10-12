@@ -21,6 +21,7 @@ Read `features/README.md`, then the feature file you're proving.
    ```sh
    CODEX_HOME="<printed path>" ./target/debug/likh.exe onboarding
    ```
+   If the person's own likh is already running (`Get-Process likh` lists one under `AppData\Local\Programs\likh`), a second `likh run` just opens their window. Give yours its own home instead: `LIKH_HOME="$(pwd)/.agents/qa/<name>/home"`. It gets its own settings, history, onboarding marker and `likh ctl` pipe (named after the folder). Set the same `LIKH_HOME` for every `likh ctl` call. Their Ctrl+Space stays theirs, so drive yours with `likh ctl`.
 4. **Ready signal:** a visible top-level window titled `likh` appears, owned by the new PID. Capture the PID by path, never by name alone:
    ```powershell
    (Get-Process likh | Where-Object { $_.Path -like "*dev\likh\target*" }).Id
@@ -38,6 +39,8 @@ powershell -NoProfile -File scripts/screenshot-window.ps1 -ProcessId <pid> -Out 
 If it throws "No visible window titled 'likh'", the process died or is still starting.
 
 ## Drive
+
+`likh.exe` is a GUI-subsystem app (it lives in the tray), so PowerShell neither waits for `& likh.exe ctl ...` nor keeps its output. Call it from Bash, or with `Start-Process -Wait`, or through the `Ctl` helper in `scripts/e2e-dictate.ps1`.
 
 For dictation, drive with `likh ctl` (see `features/dictation.md`). For the onboarding window there is no accessibility tree yet, so drive by logical client coordinates. These are the same numbers the iced layout uses; the 560 x 640 window is fixed size and has no title bar. The helper handles DPI scaling and focus:
 
@@ -69,6 +72,6 @@ Each feature file lists the coordinates for its buttons. After every click, wait
 | `scripts/screenshot-window.ps1 -ProcessId -Out [-Title]` | PNG of the window as it appears on screen |
 | `scripts/click-window.ps1 -ProcessId -X -Y [-Title]` | clicks at logical client coordinates |
 | `scripts/tts-wav.ps1 -Text -Out` | speaks a sentence into a 16 kHz WAV for `LIKH_AUDIO` |
-| `scripts/e2e-dictate.ps1 -Likh -Seconds [-Expected]` | one dictation into a throwaway text box, read back as JSON |
+| `scripts/e2e-dictate.ps1 -Likh -Seconds [-Expected] [-LetSilenceStop]` | one dictation into a throwaway text box, read back as JSON; `-LetSilenceStop` never sends stop and fails unless likh stops by itself |
 | `scripts/screenshot-pill.ps1 -Out [-Count -EveryMs -DelayMs]` | the bottom centre of the screen, where the pill is |
 | `scripts/measure-idle.ps1 -ProcessId [-Settle -Window]` | memory and CPU of a running build while nobody touches it |

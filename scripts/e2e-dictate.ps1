@@ -5,10 +5,13 @@
 # Start likh first with the audio and transcriber you want, for example:
 #   LIKH_AUDIO=.agents/qa/speech.wav LIKH_TRANSCRIBER=echo:hello target/release/likh.exe run --skip-onboarding
 # Usage: powershell -File scripts/e2e-dictate.ps1 -Likh target/release/likh.exe -Seconds 3.5 [-Expected "hello"]
+# -LetSilenceStop never sends `stop`: likh must stop by itself (hands-free in
+# "Tap to toggle" with silence stop on), within -Seconds.
 param(
   [Parameter(Mandatory)] [string] $Likh,
   [Parameter(Mandatory)] [double] $Seconds,
-  [string] $Expected = ""
+  [string] $Expected = "",
+  [switch] $LetSilenceStop
 )
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -36,7 +39,17 @@ function Pump([int] $ms) {
   $until = [DateTime]::Now.AddMilliseconds($ms)
   while ([DateTime]::Now -lt $until) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 15 }
 }
-function Ctl([string] $command) { (& $Likh ctl $command) | ConvertFrom-Json }
+$LikhPath = (Resolve-Path $Likh).Path
+# likh.exe is a GUI-subsystem app (it runs from the tray), so PowerShell neither
+# waits for `& likh.exe` nor keeps its output. Start it and read stdout directly.
+function Ctl([string] $command) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo $LikhPath, "ctl $command"
+  $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.CreateNoWindow = $true
+  $process = [System.Diagnostics.Process]::Start($psi)
+  $out = $process.StandardOutput.ReadToEnd()
+  $process.WaitForExit()
+  $out | ConvertFrom-Json
+}
 
 Pump 400
 # Windows won't hand the foreground to a script, but a click always focuses what
@@ -55,14 +68,31 @@ if ([Fg]::GetForegroundWindow() -ne $form.Handle) {
 $before = (Ctl status).dictation.dictations
 $started = [DateTime]::Now
 Ctl start | Out-Null
-Pump ([int]($Seconds * 1000))
-if ([Fg]::GetForegroundWindow() -ne $form.Handle) {
-  # Someone clicked away mid-recording: cancel rather than paste into their app.
-  Ctl cancel | Out-Null
-  $form.Close()
-  throw "The test box lost focus while recording, so the dictation was cancelled."
+if ($LetSilenceStop) {
+  # Watch for likh to stop by itself; it reports the transcribing phase once it has.
+  # Anything else (no answer, the box losing focus, time running out) cancels:
+  # a paste must never land in someone's real app.
+  $deadline = [DateTime]::Now.AddSeconds($Seconds)
+  do {
+    Pump 50
+    $phase = try { (Ctl status).dictation.phase } catch { $null }
+    $focused = [Fg]::GetForegroundWindow() -eq $form.Handle
+  } while ($phase -eq "hands_free" -and $focused -and [DateTime]::Now -lt $deadline)
+  if (-not $focused -or $phase -notin @("transcribing", "idle")) {
+    Ctl cancel | Out-Null
+    $form.Close()
+    throw "Stopped watching (phase '$phase', box focused: $focused), so the dictation was cancelled."
+  }
+} else {
+  Pump ([int]($Seconds * 1000))
+  if ([Fg]::GetForegroundWindow() -ne $form.Handle) {
+    # Someone clicked away mid-recording: cancel rather than paste into their app.
+    Ctl cancel | Out-Null
+    $form.Close()
+    throw "The test box lost focus while recording, so the dictation was cancelled."
+  }
+  Ctl stop | Out-Null
 }
-Ctl stop | Out-Null
 $released = [DateTime]::Now
 
 # Wait for the paste: the dictation count goes up once the text is in.
@@ -80,4 +110,5 @@ $form.Close()
   latency_ms  = $status.dictation.last.latency_ms
   audio_s     = $status.dictation.last.audio_seconds
   release_to_seen_ms = [int]([DateTime]::Now - $released).TotalMilliseconds
+  start_to_stop_ms = [int]($released - $started).TotalMilliseconds
 } | ConvertTo-Json -Compress

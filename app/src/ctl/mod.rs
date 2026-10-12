@@ -10,6 +10,7 @@ use interprocess::local_socket::prelude::*;
 use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Name, Stream};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +21,11 @@ pub const COMMANDS: [&str; 6] = ["status", "start", "stop", "cancel", "quit", "o
 
 fn name() -> std::io::Result<Name<'static>> {
     let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
-    format!("likh-{user}.sock").to_ns_name::<GenericNamespaced>()
+    // A test instance with its own `LIKH_HOME` gets its own pipe, named after that folder.
+    let instance = std::env::var_os("LIKH_HOME")
+        .and_then(|home| PathBuf::from(home).file_name().map(|name| format!("-{}", name.to_string_lossy())))
+        .unwrap_or_default();
+    format!("likh-{user}{instance}.sock").to_ns_name::<GenericNamespaced>()
 }
 
 /// Sends one command to the running app and returns its JSON answer.

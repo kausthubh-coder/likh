@@ -6,21 +6,33 @@
 //! it. Windows doesn't say when it comes back up, so while it's held a 15ms
 //! timer looks at the keys; when it's let go the timer stops. Idle, nothing runs.
 //!
+//! A mouse button needs a low-level mouse hook on this same thread. Windows
+//! calls it on every mouse event and silently drops hooks that answer slowly,
+//! so it does nothing but compare one number and post a message, the thread
+//! runs at high priority while it's installed, and it's only installed while
+//! a button is picked.
+//!
 //! This and `pill/windows.rs` are the only places allowed `unsafe` (AGENTS.md, Rules).
 #![allow(unsafe_code, reason = "Win32 hotkeys and key state; see the module docs")]
 
-use super::Binding;
+use super::{Binding, MouseTrigger};
 use crate::dictation::Input;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, OnceLock};
-use windows::Win32::Foundation::{LPARAM, WPARAM};
-use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Threading::{
+    GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_HIGHEST, THREAD_PRIORITY_NORMAL,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, RegisterHotKey,
     UnregisterHotKey, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetMessageW, KillTimer, MSG, PostThreadMessageW, SetTimer, WM_APP, WM_HOTKEY, WM_TIMER,
+    CallNextHookEx, GetMessageW, HC_ACTION, HHOOK, KillTimer, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PostThreadMessageW,
+    SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, WH_MOUSE_LL, WM_APP, WM_HOTKEY, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_TIMER, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
 };
 
 const SHORTCUT: i32 = 1;
@@ -29,6 +41,12 @@ const POLL_MS: u32 = 15;
 const WATCH_ESCAPE: u32 = WM_APP + 1;
 const REBIND: u32 = WM_APP + 2;
 const PAUSE: u32 = WM_APP + 3;
+const SET_MOUSE: u32 = WM_APP + 4;
+const MOUSE_DOWN: u32 = WM_APP + 5;
+const MOUSE_UP: u32 = WM_APP + 6;
+
+/// The picked mouse button, as `mouse_code`; read by the hook on every mouse event.
+static MOUSE: AtomicU8 = AtomicU8::new(0);
 
 /// The hotkey thread's id, for posting it commands.
 static THREAD: OnceLock<u32> = OnceLock::new();
@@ -39,13 +57,14 @@ struct RebindRequest {
 }
 static REBIND_REQUEST: Mutex<Option<RebindRequest>> = Mutex::new(None);
 
-pub fn spawn(dictation: Sender<Input>, binding: Binding) -> Result<(), String> {
+pub fn spawn(dictation: Sender<Input>, binding: Binding, mouse: MouseTrigger) -> Result<(), String> {
     let (ready_tx, ready_rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("likh-hotkey".into())
         .spawn(move || {
             // SAFETY: no arguments; this thread's id.
             let _ = THREAD.set(unsafe { GetCurrentThreadId() });
+            MOUSE.store(mouse_code(mouse), Ordering::SeqCst);
             let _ = ready_tx.send(register(binding));
             // Keep running even if another app owns the shortcut: a rebind can still fix it.
             run(dictation, binding);
@@ -62,6 +81,75 @@ pub fn rebind(binding: Binding) -> Result<(), String> {
     reply_rx
         .recv_timeout(std::time::Duration::from_secs(2))
         .map_err(|_| "the shortcut thread didn't answer".to_string())?
+}
+
+pub fn set_mouse(mouse: MouseTrigger) -> Result<(), String> {
+    post(SET_MOUSE, usize::from(mouse_code(mouse)))
+}
+
+fn mouse_code(mouse: MouseTrigger) -> u8 {
+    match mouse {
+        MouseTrigger::Off => 0,
+        MouseTrigger::Middle => 1,
+        MouseTrigger::Back => 2,
+        MouseTrigger::Forward => 3,
+    }
+}
+
+/// Runs on this thread for every mouse event while installed. It must answer fast.
+unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let picked = MOUSE.load(Ordering::Relaxed);
+    if code == HC_ACTION as i32 && picked != 0 {
+        // SAFETY: for WH_MOUSE_LL with HC_ACTION, lparam points at an MSLLHOOKSTRUCT Windows owns for this call.
+        let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
+        let message = wparam.0 as u32;
+        let button = match message {
+            WM_MBUTTONDOWN | WM_MBUTTONUP => 1,
+            WM_XBUTTONDOWN | WM_XBUTTONUP => match (info.mouseData >> 16) as u16 {
+                XBUTTON1 => 2,
+                XBUTTON2 => 3,
+                _ => 0,
+            },
+            _ => 0,
+        };
+        // Injected clicks (remote tools, macros) pass through untouched.
+        if button == picked && info.flags & LLMHF_INJECTED == 0 {
+            let down = matches!(message, WM_MBUTTONDOWN | WM_XBUTTONDOWN);
+            let _ = post(if down { MOUSE_DOWN } else { MOUSE_UP }, 0);
+            // Swallowed, so the click doesn't also go back a page or open a link.
+            return LRESULT(1);
+        }
+    }
+    // SAFETY: passes the event on unchanged, as every hook must.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+/// Installs or removes the mouse hook to match `MOUSE`.
+fn hook_mouse(hook: &mut Option<HHOOK>) {
+    let wanted = MOUSE.load(Ordering::SeqCst) != 0;
+    match (wanted, *hook) {
+        (true, None) => {
+            // SAFETY: our own module handle; the hook proc lives as long as the program.
+            let module = unsafe { GetModuleHandleW(None) }.ok().map(Into::into);
+            // SAFETY: a global low-level hook owned by this thread, which pumps messages in `run`.
+            match unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0) } {
+                Ok(installed) => {
+                    *hook = Some(installed);
+                    // SAFETY: changes this thread's own priority, so a busy machine doesn't time the hook out.
+                    let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST) };
+                }
+                Err(error) => eprintln!("likh: the mouse button won't work: {error}"),
+            }
+        }
+        (false, Some(installed)) => {
+            // SAFETY: the hook this thread installed above.
+            let _ = unsafe { UnhookWindowsHookEx(installed) };
+            *hook = None;
+            // SAFETY: back to normal once nothing time-critical runs here.
+            let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL) };
+        }
+        _ => {}
+    }
 }
 
 pub fn pause(paused: bool) {
@@ -118,6 +206,8 @@ fn still_held(binding: Binding) -> bool {
 fn run(dictation: Sender<Input>, mut binding: Binding) {
     let mut held = false;
     let mut timer = 0usize;
+    let mut mouse_hook: Option<HHOOK> = None;
+    hook_mouse(&mut mouse_hook);
     let mut msg = MSG::default();
     // SAFETY: `msg` is ours; GetMessageW fills it.
     while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {
@@ -136,6 +226,16 @@ fn run(dictation: Sender<Input>, mut binding: Binding) {
                 // SAFETY: the thread timer we started above.
                 let _ = unsafe { KillTimer(None, timer) };
                 let _ = dictation.send(Input::Release);
+            }
+            MOUSE_DOWN if !held => {
+                let _ = dictation.send(Input::Hold);
+            }
+            MOUSE_UP if !held => {
+                let _ = dictation.send(Input::Release);
+            }
+            SET_MOUSE => {
+                MOUSE.store(msg.wParam.0 as u8, Ordering::SeqCst);
+                hook_mouse(&mut mouse_hook);
             }
             WATCH_ESCAPE if msg.wParam.0 == 1 => {
                 // SAFETY: registers Esc for this thread while a recording can be cancelled.
@@ -179,7 +279,7 @@ mod tests {
         let _ui = crate::shared::test_ui::lock();
         let binding = Binding::new(true, true, true, false, KeyName("F10")).expect("test shortcut");
         let (dictation, _inputs) = mpsc::channel();
-        spawn(dictation, binding).expect("register test shortcut");
+        spawn(dictation, binding, MouseTrigger::Off).expect("register test shortcut");
         let mut onboarding = Onboarding::new(CodexStatus::SignedOut);
         let _ = onboarding.update(Message::ChangeShortcut);
         assert!(wait_for_availability(binding, true), "capture should release the shortcut to the window");

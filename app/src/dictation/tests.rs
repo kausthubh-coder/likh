@@ -1,16 +1,17 @@
 use super::*;
 use crate::codex_auth::{Account, CodexStatus};
+use crate::commands::{Groups, Press};
 
-const HOLD_OR_TAP: Choices = Choices { mode: Mode::HoldOrTap, commands: true };
-const HOLD_ONLY: Choices = Choices { mode: Mode::Hold, commands: true };
-const TAP_ONLY: Choices = Choices { mode: Mode::Tap, commands: true };
+const HOLD_OR_TAP: Choices = Choices { mode: Mode::HoldOrTap, commands: Some(Groups::DEFAULT), silence_stop: None };
+const HOLD_ONLY: Choices = Choices { mode: Mode::Hold, ..HOLD_OR_TAP };
+const TAP_ONLY: Choices = Choices { mode: Mode::Tap, ..HOLD_OR_TAP };
 
 fn after(start: Instant, ms: u64) -> Instant {
     start + Duration::from_millis(ms)
 }
 
 fn paste(text: &str) -> Effect {
-    Effect::Paste { text: text.into(), then_enter: false }
+    Effect::Paste { text: text.into(), then: None }
 }
 
 const STARTS: [Effect; 3] = [Effect::StartRecording, Effect::Sound(Cue::Start), Effect::Pill(Show::Listening)];
@@ -109,11 +110,11 @@ fn spoken_commands_turn_into_actions_unless_switched_off() {
         d.handle(Input::Transcribed(Ok(said.into())), after(t0, 2_600), HOLD_OR_TAP),
         vec![
             Effect::Pill(Show::Done),
-            Effect::Paste { text: "Sounds good, see you at nine.".into(), then_enter: true }
+            Effect::Paste { text: "Sounds good, see you at nine.".into(), then: Some(Press::Enter) }
         ]
     );
 
-    let plain = Choices { commands: false, ..HOLD_OR_TAP };
+    let plain = Choices { commands: None, ..HOLD_OR_TAP };
     let mut d = Dictation::default();
     d.handle(Input::Hold, t0, plain);
     d.handle(Input::Release, after(t0, 2_000), plain);
@@ -210,4 +211,72 @@ fn the_last_minute_counts_down_once_per_second_then_stops_at_the_cap() {
         );
         assert_eq!(d.handle(Input::Tick, after(t0, 595_000), choices), transcribing());
     }
+}
+
+#[test]
+fn hands_free_stops_by_itself_after_the_chosen_quiet() {
+    let t0 = Instant::now();
+    let quiet_stop = Choices { silence_stop: Some(Duration::from_secs(5)), ..TAP_ONLY };
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, quiet_stop);
+    assert_eq!(d.handle(Input::Quiet(Duration::from_millis(4_900)), after(t0, 8_000), quiet_stop), vec![]);
+    assert_eq!(d.phase(), Phase::HandsFree);
+    assert_eq!(d.handle(Input::Quiet(Duration::from_secs(5)), after(t0, 8_100), quiet_stop), transcribing());
+}
+
+#[test]
+fn silence_never_stops_a_held_shortcut_or_when_switched_off() {
+    let t0 = Instant::now();
+    let quiet_stop = Choices { silence_stop: Some(Duration::from_secs(3)), ..HOLD_OR_TAP };
+    let mut held = Dictation::default();
+    held.handle(Input::Hold, t0, quiet_stop);
+    assert_eq!(held.handle(Input::Quiet(Duration::from_secs(20)), after(t0, 25_000), quiet_stop), vec![]);
+    assert_eq!(held.phase(), Phase::Recording);
+
+    let mut off = Dictation::default();
+    off.handle(Input::Hold, t0, TAP_ONLY);
+    assert_eq!(off.handle(Input::Quiet(Duration::from_secs(60)), after(t0, 70_000), TAP_ONLY), vec![]);
+    assert_eq!(off.phase(), Phase::HandsFree);
+}
+
+#[test]
+fn scratching_everything_said_pastes_nothing() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    d.handle(Input::Release, after(t0, 2_000), HOLD_OR_TAP);
+    assert_eq!(
+        d.handle(Input::Transcribed(Ok("Let's meet at two. Scratch that.".into())), after(t0, 2_600), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::Cancelled)]
+    );
+}
+
+#[test]
+fn press_tab_presses_tab_after_the_paste() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    d.handle(Input::Release, after(t0, 2_000), HOLD_OR_TAP);
+    assert_eq!(
+        d.handle(Input::Transcribed(Ok("Priya Raman, press tab.".into())), after(t0, 2_600), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::Done), Effect::Paste { text: "Priya Raman".into(), then: Some(Press::Tab) }]
+    );
+}
+
+#[test]
+fn an_engine_that_cant_listen_stops_with_its_fix() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    assert_eq!(
+        d.handle(Input::CantListen(Failure::WindowsPrivacy), after(t0, 40), HOLD_OR_TAP),
+        vec![
+            Effect::Discard,
+            Effect::Pill(Show::Error(
+                "Turn on Online speech recognition in Windows Settings, under Privacy, Speech.".into()
+            )),
+            Effect::Sound(Cue::Error)
+        ]
+    );
+    assert_eq!(d.phase(), Phase::Idle);
 }

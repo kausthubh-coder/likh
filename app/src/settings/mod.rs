@@ -1,10 +1,13 @@
-//! What the user chose: the shortcut, how it behaves, and whether likh keeps
-//! a history. One JSON file in likh's local data folder; anything missing or
+//! What the user chose: the shortcut, how it behaves, which engine
+//! transcribes, the spoken commands, and whether likh keeps a history. One JSON file in likh's local data folder; anything missing or
 //! unreadable falls back to the defaults, so a bad file never stops likh.
 
-use crate::hotkey::Binding;
+use crate::commands::Groups;
+use crate::hotkey::{Binding, MouseTrigger};
+use crate::transcriber::Engine;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 #[cfg(test)]
 mod tests;
@@ -42,17 +45,62 @@ impl Mode {
     }
 }
 
+/// Hands-free stops by itself after this much quiet, once you've said something.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SilenceStop {
+    Off,
+    #[serde(rename = "3s")]
+    Short,
+    #[default]
+    #[serde(rename = "5s")]
+    Medium,
+    #[serde(rename = "10s")]
+    Long,
+}
+
+impl SilenceStop {
+    pub const ALL: [SilenceStop; 4] = [SilenceStop::Off, SilenceStop::Short, SilenceStop::Medium, SilenceStop::Long];
+
+    pub fn after(self) -> Option<Duration> {
+        match self {
+            SilenceStop::Off => None,
+            SilenceStop::Short => Some(Duration::from_secs(3)),
+            SilenceStop::Medium => Some(Duration::from_secs(5)),
+            SilenceStop::Long => Some(Duration::from_secs(10)),
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            SilenceStop::Off => "Never",
+            SilenceStop::Short => "3 s",
+            SilenceStop::Medium => "5 s",
+            SilenceStop::Long => "10 s",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub shortcut: Binding,
+    /// A mouse button that works like the shortcut (hold, or tap for hands-free).
+    pub mouse: MouseTrigger,
     pub mode: Mode,
+    /// Which service turns speech into text.
+    pub engine: Engine,
+    pub silence_stop: SilenceStop,
+    /// Pause music and videos while you talk, and play them again after.
+    pub pause_media: bool,
     /// Keep transcripts on this computer so they can be found and pasted again.
     pub history: bool,
     /// Quiet cues when recording starts, stops or fails.
     pub sounds: bool,
     /// Spoken commands like "new line" and "press enter" (`commands/`).
     pub commands: bool,
+    /// Which kinds of spoken command are on, when `commands` is.
+    pub command_groups: Groups,
     /// Start likh when you sign in to Windows.
     pub start_with_windows: bool,
 }
@@ -61,18 +109,29 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             shortcut: Binding::default(),
+            mouse: MouseTrigger::default(),
             mode: Mode::default(),
+            engine: Engine::default(),
+            silence_stop: SilenceStop::default(),
+            // Only Windows can pause other apps' media today.
+            pause_media: cfg!(target_os = "windows"),
             history: true,
             sounds: true,
             commands: true,
+            command_groups: Groups::default(),
             start_with_windows: false,
         }
     }
 }
 
-/// `%LOCALAPPDATA%\likh` (or the platform's equivalent).
+/// `%LOCALAPPDATA%\likh` (or the platform's equivalent). `LIKH_HOME` replaces
+/// it, so an agent's test instance keeps its settings, history and onboarding
+/// apart from the user's own likh (and gets its own `likh ctl` pipe).
 pub fn folder() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|dir| dir.join("likh"))
+    match std::env::var_os("LIKH_HOME") {
+        Some(home) => Some(PathBuf::from(home)),
+        None => dirs::data_local_dir().map(|dir| dir.join("likh")),
+    }
 }
 
 /// likh was called murmur until 0.1.0-alpha.3. Moves `murmur`'s folder (settings,

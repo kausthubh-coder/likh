@@ -19,7 +19,8 @@ use crate::settings::Settings;
 use crate::shared::icon;
 use crate::shared::spring::{self, Spring};
 use crate::shared::theme::{self, Palette, palette, radius, size, space};
-use crate::shared::ui::{fade, ghost, keycap, mix, pill_fill, primary};
+use crate::shared::ui::{fade, field_style, ghost, keycap, mix, pill_fill, primary, segmented};
+use crate::transcriber::{Engine, Failure, glyph, groq};
 use flock::{Flock, Shape};
 use iced::widget::canvas::{self, Frame, Path, Stroke};
 use iced::widget::{Space, canvas as canvas_widget, column, container, mouse_area, operation, row, text, text_input};
@@ -34,6 +35,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 mod tests;
 
 const MIC_SETTINGS_URL: &str = "ms-settings:privacy-microphone";
+/// Where Windows keeps the Online speech recognition switch.
+pub const SPEECH_SETTINGS_URL: &str = "ms-settings:privacy-speech";
 pub const WINDOW: Size = Size::new(560.0, 640.0);
 
 /// When the welcome text starts to arrive, in seconds after the window opens:
@@ -47,13 +50,13 @@ const RISE: f32 = 8.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
     Welcome,
-    ConnectCodex,
+    Connect,
     Microphone,
     Shortcut,
     Done,
 }
 
-const STEPS: [Step; 5] = [Step::Welcome, Step::ConnectCodex, Step::Microphone, Step::Shortcut, Step::Done];
+const STEPS: [Step; 5] = [Step::Welcome, Step::Connect, Step::Microphone, Step::Shortcut, Step::Done];
 
 impl Step {
     fn index(self) -> usize {
@@ -87,7 +90,136 @@ struct Practice {
     notice: Option<(String, Tone)>,
 }
 
+/// Setting up Groq: the key being typed, and how saving it went.
+#[derive(Default)]
+pub struct GroqSetup {
+    pub key: String,
+    /// A key is in the credential store.
+    pub saved: bool,
+    /// Asking Groq whether the key works.
+    pub checking: bool,
+    pub notice: Option<(String, Tone)>,
+}
+
+impl GroqSetup {
+    /// What's saved: whether there's a key (never its value).
+    pub fn look() -> Self {
+        Self { saved: groq::has_key(), ..Self::default() }
+    }
+
+    /// Starts saving the typed key: refuses one that can't be a Groq key,
+    /// otherwise asks Groq about it. The answer comes back through `on_checked`.
+    pub fn save<M: Send + 'static>(&mut self, on_checked: fn(String, Option<Result<(), Failure>>) -> M) -> Task<M> {
+        let key = self.key.trim().to_string();
+        if !groq::looks_like_a_key(&key) {
+            self.notice = Some(("That isn't a Groq key. Groq keys start with gsk_.".into(), Tone::Danger));
+            return Task::none();
+        }
+        self.checking = true;
+        self.notice = None;
+        let asked = key.clone();
+        Task::perform(crate::shared::off_thread(move || groq::verify(&asked)), move |answer| {
+            on_checked(key.clone(), answer)
+        })
+    }
+
+    /// Groq answered about `key`. Keeps it unless Groq turned it down.
+    pub fn checked(&mut self, key: &str, answer: Option<Result<(), Failure>>) {
+        self.checking = false;
+        let keep = match answer {
+            Some(Ok(())) => {
+                self.notice = Some(("Saved. Groq is ready.".into(), Tone::Success));
+                true
+            }
+            Some(Err(Failure::GroqRejected)) => {
+                self.notice = Some(("Groq turned down that key. Copy it again from Groq.".into(), Tone::Danger));
+                false
+            }
+            // Groq didn't answer: keep the key; the first dictation is its real test.
+            _ => {
+                self.notice = Some(("Saved, but Groq didn't answer, so it isn't checked yet.".into(), Tone::Warning));
+                true
+            }
+        };
+        if keep {
+            match groq::save_key(key) {
+                Ok(()) => {
+                    self.saved = true;
+                    self.key.clear();
+                }
+                Err(reason) => self.notice = Some((format!("likh {reason}"), Tone::Danger)),
+            }
+        }
+    }
+
+    pub fn forget(&mut self) {
+        match groq::forget_key() {
+            Ok(()) => {
+                self.saved = false;
+                self.notice = None;
+            }
+            Err(reason) => self.notice = Some((format!("likh {reason}"), Tone::Danger)),
+        }
+    }
+}
+
+/// Whether Windows speech can listen, or why not. Never opens the mic.
+pub fn check_windows_now() -> Result<(), Failure> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::transcriber::windows_speech::check()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err(Failure::WindowsSpeech("it only exists on Windows".into()))
+    }
+}
+
+/// The words for each engine's state, beside the picker and in settings.
+pub fn engine_copy(
+    engine: Engine,
+    codex: &CodexStatus,
+    groq: &GroqSetup,
+    windows: Option<&Result<(), Failure>>,
+) -> StateCopy {
+    match engine {
+        Engine::Codex => codex_copy(codex),
+        Engine::Groq if groq.saved => StateCopy {
+            title: "Groq is ready",
+            detail: "Your key is saved on this computer, in its credential store.".into(),
+            tone: Tone::Success,
+        },
+        Engine::Groq => StateCopy {
+            title: "Add a free Groq key",
+            detail: "Make one at console.groq.com, then paste it here.".into(),
+            tone: Tone::Warning,
+        },
+        Engine::Windows => match windows {
+            None => {
+                StateCopy { title: "Looking for Windows speech\u{2026}", detail: String::new(), tone: Tone::Neutral }
+            }
+            Some(Ok(())) => StateCopy {
+                title: "Windows speech is ready",
+                detail: "Built in and free. Your audio goes to Microsoft's speech service.".into(),
+                tone: Tone::Success,
+            },
+            Some(Err(Failure::WindowsPrivacy)) => StateCopy {
+                title: "Online speech is off",
+                detail: "Turn it on in Windows Settings, under Privacy & security, Speech.".into(),
+                tone: Tone::Warning,
+            },
+            Some(Err(failure)) => {
+                StateCopy { title: "Windows speech isn't available", detail: failure.message(), tone: Tone::Danger }
+            }
+        },
+    }
+}
+
 const PRACTICE: &str = "practice";
+/// The Groq key field, so Save can hand focus back to it.
+pub const GROQ_KEY: &str = "groq-key";
+/// A body-size field with `space::S3` padding: 22 + 2 x 12, plus its 1px edges.
+const KEY_FIELD_HEIGHT: f32 = 48.0;
 /// Saying this word in the practice box moves onboarding on.
 const MAGIC_WORD: &str = "continue";
 /// Long enough to read "Heard you" before the step slides away.
@@ -102,7 +234,11 @@ pub struct Onboarding {
     practice: Practice,
     step: Step,
     finished: bool,
+    /// The engine picked on the connect step; saved to settings inside the app.
+    engine: Engine,
     codex: CodexStatus,
+    groq: GroqSetup,
+    windows: Option<Result<(), Failure>>,
     /// 0 → 1 as a step arrives. `direction` is +1 going forward, -1 going back.
     arrival: Spring,
     direction: f32,
@@ -120,6 +256,13 @@ pub enum Message {
     Back,
     Recheck,
     GetCodex,
+    Engine(Engine),
+    GroqKey(String),
+    SaveGroqKey,
+    GroqChecked(String, Option<Result<(), Failure>>),
+    ReplaceGroqKey,
+    GetGroqKey,
+    OpenSpeechSettings,
     OpenMicSettings,
     Finish,
     Frame(Instant),
@@ -144,7 +287,10 @@ impl Onboarding {
             practice: Practice::default(),
             step: Step::Welcome,
             finished: false,
+            engine: Engine::default(),
             codex,
+            groq: GroqSetup::default(),
+            windows: None,
             arrival: Spring::new(spring::DEFAULT, 1.0),
             direction: 1.0,
             progress: Spring::new(spring::DEFAULT, 0.0),
@@ -155,16 +301,37 @@ impl Onboarding {
     }
 
     fn boot() -> (Self, Task<Message>) {
-        (Self::new(check_codex_now()), window::oldest().map(Message::WindowFound))
+        let app = Self { engine: Settings::load().engine, groq: GroqSetup::look(), ..Self::new(check_codex_now()) };
+        (app, window::oldest().map(Message::WindowFound))
     }
 
     /// Onboarding inside the running app, in a window the tray opened.
     pub fn in_app(window: window::Id, dictation: Arc<Mutex<Status>>, settings: Arc<RwLock<Settings>>) -> Self {
+        let engine = settings.read().map(|s| s.engine).unwrap_or_default();
         Self {
             window: Some(window),
             dictation: Some(dictation),
             settings: Some(settings),
+            engine,
+            groq: GroqSetup::look(),
             ..Self::new(check_codex_now())
+        }
+    }
+
+    /// Saves the picked engine: into the running app's settings, or the file when on its own.
+    fn save_engine(&mut self, engine: Engine) {
+        self.engine = engine;
+        let saved = match &self.settings {
+            Some(settings) => {
+                let mut chosen = settings.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+                chosen.engine = engine;
+                chosen.save()
+            }
+            // `likh onboarding` and tests: nothing running to tell.
+            None => Ok(()),
+        };
+        if let Err(reason) = saved {
+            eprintln!("likh: couldn't save the engine: {reason}");
         }
     }
 
@@ -185,8 +352,35 @@ impl Onboarding {
         match message {
             Message::Next => return self.go(STEPS.get(self.step.index() + 1).copied().unwrap_or(Step::Done)),
             Message::Back => return self.go(STEPS[self.step.index().saturating_sub(1)]),
-            Message::Recheck => self.codex = check_codex_now(),
+            Message::Recheck => match self.engine {
+                Engine::Codex => self.codex = check_codex_now(),
+                Engine::Windows => self.windows = Some(check_windows_now()),
+                Engine::Groq => {}
+            },
             Message::GetCodex => crate::shared::open_url(crate::shared::CODEX_SETUP),
+            Message::Engine(engine) => {
+                self.save_engine(engine);
+                if engine == Engine::Windows {
+                    self.windows = Some(check_windows_now());
+                }
+                if engine == Engine::Groq && !self.groq.saved {
+                    return operation::focus(GROQ_KEY);
+                }
+            }
+            Message::GroqKey(key) => {
+                self.groq.key = key;
+                self.groq.notice = None;
+            }
+            Message::SaveGroqKey if self.groq.checking => {}
+            Message::SaveGroqKey => return self.groq.save(Message::GroqChecked),
+            Message::GroqChecked(key, answer) => self.groq.checked(&key, answer),
+            Message::ReplaceGroqKey => {
+                self.groq.saved = false;
+                self.groq.notice = None;
+                return operation::focus(GROQ_KEY);
+            }
+            Message::GetGroqKey => crate::shared::open_url(groq::KEYS_URL),
+            Message::OpenSpeechSettings => crate::shared::open_url(SPEECH_SETTINGS_URL),
             Message::OpenMicSettings => crate::shared::open_url(MIC_SETTINGS_URL),
             // Closing the window ends `likh onboarding`; inside the app, likh stays in the tray.
             Message::Finish => {
@@ -316,8 +510,8 @@ impl Onboarding {
     pub fn subscription(&self) -> Subscription<Message> {
         let frames = if self.wants_frames() { window::frames().map(Message::Frame) } else { Subscription::none() };
         let step = match (&self.step, &self.codex) {
-            (Step::ConnectCodex, CodexStatus::Connected(_)) => Subscription::none(),
-            (Step::ConnectCodex, _) => time::every(Duration::from_secs(2)).map(|_| Message::Recheck),
+            (Step::Connect, _) if self.wants_recheck() => time::every(Duration::from_secs(2)).map(|_| Message::Recheck),
+            (Step::Connect, _) => Subscription::none(),
             (Step::Microphone, _) => Subscription::run(microphone::listen).map(Message::Mic),
             // Picking a new shortcut reads the window's own keys.
             (Step::Shortcut, _) if self.practice.capturing.is_some() => keyboard::listen().map(Message::Key),
@@ -336,7 +530,7 @@ impl Onboarding {
         let t = self.arrival.value.clamp(0.0, 1.0);
         let page = match self.step {
             Step::Welcome => self.welcome(&p),
-            Step::ConnectCodex => connect_codex(&p, &self.codex),
+            Step::Connect => self.connect(&p),
             Step::Microphone => microphone_step(&p, &self.mic),
             Step::Shortcut => shortcut(&p, self.shortcut(), &self.practice, self.dictation.is_some()),
             Step::Done => self.done(&p),
@@ -443,7 +637,7 @@ pub fn run() -> iced::Result {
 }
 
 /// The words for each sign-in state. Kept in sync with the table in docs/brand/BRAND.md.
-pub struct CodexCopy {
+pub struct StateCopy {
     pub title: &'static str,
     pub detail: String,
     pub tone: Tone,
@@ -457,19 +651,19 @@ pub enum Tone {
     Success,
 }
 
-pub fn codex_copy(status: &CodexStatus) -> CodexCopy {
+pub fn codex_copy(status: &CodexStatus) -> StateCopy {
     match status {
-        CodexStatus::NotInstalled => CodexCopy {
+        CodexStatus::NotInstalled => StateCopy {
             title: "Codex isn't installed",
             detail: "Install Codex, sign in once, then come back.".into(),
             tone: Tone::Neutral,
         },
-        CodexStatus::SignedOut => CodexCopy {
+        CodexStatus::SignedOut => StateCopy {
             title: "Codex isn't signed in",
             detail: "Open Codex (or run codex login) and sign in.".into(),
             tone: Tone::Warning,
         },
-        CodexStatus::Connected(account) => CodexCopy {
+        CodexStatus::Connected(account) => StateCopy {
             title: "Connected through Codex",
             detail: [
                 account.email_hint.clone(),
@@ -481,7 +675,7 @@ pub fn codex_copy(status: &CodexStatus) -> CodexCopy {
             .join(" · "),
             tone: Tone::Success,
         },
-        CodexStatus::Expired(_) => CodexCopy {
+        CodexStatus::Expired(_) => StateCopy {
             title: "Your Codex sign-in expired",
             detail: "Open Codex once to refresh it, then try again.".into(),
             tone: Tone::Danger,
@@ -567,30 +761,111 @@ fn flock_art<'a>(p: &Palette, shape: Shape, clock: f32) -> Element<'a, Message> 
         .into()
 }
 
-fn connect_codex<'a>(p: &Palette, status: &CodexStatus) -> Page<'a> {
-    let copy = codex_copy(status);
-    let connected = matches!(status, CodexStatus::Connected(_));
-    let actions = match status {
-        CodexStatus::Connected(_) => vec![Action::Primary("Continue", Message::Next)],
-        CodexStatus::NotInstalled => {
-            vec![Action::Secondary("Check again", Message::Recheck), Action::Primary("Get Codex", Message::GetCodex)]
+impl Onboarding {
+    /// Re-check on its own while the picked engine isn't ready, so nobody waits
+    /// on a button. A Groq key is only ever typed, so there's nothing to watch.
+    pub fn wants_recheck(&self) -> bool {
+        self.step == Step::Connect && !self.engine_ready() && self.engine != Engine::Groq
+    }
+
+    fn engine_ready(&self) -> bool {
+        match self.engine {
+            Engine::Codex => matches!(self.codex, CodexStatus::Connected(_)),
+            Engine::Groq => self.groq.saved,
+            Engine::Windows => matches!(self.windows, Some(Ok(()))),
         }
-        CodexStatus::SignedOut | CodexStatus::Expired(_) => vec![Action::Primary("Check again", Message::Recheck)],
-    };
-    // The state is the headline, so there is no card: likh on the left,
-    // Codex on the right, and the link between them says how it's going.
-    let art = canvas_widget(Link { tone: copy.tone, colors: LinkColors::from(p) }).width(240).height(64);
-    Page {
-        art: art.into(),
-        title: copy.title,
-        body: copy.detail,
-        // Say that it re-checks on its own, so nobody waits on a button.
-        note: Some(if connected {
-            ("Nothing to pay, nothing to paste.".to_string(), p.text_subtle)
+    }
+
+    /// Pick how likh transcribes, then get that engine ready. The picker sits
+    /// on top; the state of the picked engine is the headline, as before.
+    fn connect<'a>(&'a self, p: &Palette) -> Page<'a> {
+        let copy = engine_copy(self.engine, &self.codex, &self.groq, self.windows.as_ref());
+        let ready = self.engine_ready();
+        let tone = |tone: Tone| match tone {
+            Tone::Success => p.success,
+            Tone::Warning => p.warning,
+            Tone::Danger => p.danger,
+            Tone::Neutral => p.text_subtle,
+        };
+        let options: Vec<(Engine, &'static str)> =
+            Engine::available().iter().map(|engine| (*engine, engine.name())).collect();
+        // The state is the headline, so there is no card: likh on the left,
+        // the engine on the right, and the link between them says how it's going.
+        let link = canvas_widget(Link { tone: copy.tone, engine: self.engine, colors: LinkColors::from(p) })
+            .width(240)
+            .height(64);
+        let mut art = column![segmented(&options, self.engine, Message::Engine), link]
+            .spacing(space::S5)
+            .align_x(Alignment::Center);
+        // The key field's slot is always there, so the picker never jumps between engines.
+        let slot = container(Space::new()).height(KEY_FIELD_HEIGHT);
+        if self.engine != Engine::Groq || self.groq.saved {
+            art = art.push(slot);
         } else {
-            ("likh checks again every 2 seconds.".to_string(), p.text_subtle)
-        }),
-        actions,
+            let field = text_input("gsk_\u{2026}", &self.groq.key)
+                .id(GROQ_KEY)
+                .secure(true)
+                .on_input(Message::GroqKey)
+                .on_paste(Message::GroqKey)
+                .on_submit(Message::SaveGroqKey)
+                .size(size::BODY)
+                .padding(space::S3)
+                .width(320)
+                .style(|_, status| field_style(status));
+            art = art.push(container(field).height(KEY_FIELD_HEIGHT));
+        }
+        let (actions, note) = match self.engine {
+            Engine::Codex => {
+                let actions = match &self.codex {
+                    CodexStatus::Connected(_) => vec![Action::Primary("Continue", Message::Next)],
+                    CodexStatus::NotInstalled => vec![
+                        Action::Secondary("Check again", Message::Recheck),
+                        Action::Primary("Get Codex", Message::GetCodex),
+                    ],
+                    CodexStatus::SignedOut | CodexStatus::Expired(_) => {
+                        vec![Action::Primary("Check again", Message::Recheck)]
+                    }
+                };
+                let note =
+                    if ready { "Nothing to pay, nothing to paste." } else { "likh checks again every 2 seconds." };
+                (actions, (note.to_string(), p.text_subtle))
+            }
+            Engine::Groq if self.groq.saved => (
+                vec![
+                    Action::Secondary("Use another key", Message::ReplaceGroqKey),
+                    Action::Primary("Continue", Message::Next),
+                ],
+                self.groq.notice.clone().map_or_else(
+                    || ("Free for about 2,000 dictations a day.".to_string(), p.text_subtle),
+                    |(words, t)| (words, tone(t)),
+                ),
+            ),
+            Engine::Groq => (
+                vec![
+                    Action::Secondary("Get a free key", Message::GetGroqKey),
+                    Action::Primary(
+                        if self.groq.checking { "Checking\u{2026}" } else { "Save key" },
+                        Message::SaveGroqKey,
+                    ),
+                ],
+                self.groq.notice.clone().map_or_else(
+                    || ("The key stays on this computer.".to_string(), p.text_subtle),
+                    |(words, t)| (words, tone(t)),
+                ),
+            ),
+            Engine::Windows if ready => (
+                vec![Action::Primary("Continue", Message::Next)],
+                ("Less accurate than ChatGPT or Groq.".to_string(), p.text_subtle),
+            ),
+            Engine::Windows => (
+                vec![
+                    Action::Secondary("Check again", Message::Recheck),
+                    Action::Primary("Open settings", Message::OpenSpeechSettings),
+                ],
+                ("likh checks again every 2 seconds.".to_string(), p.text_subtle),
+            ),
+        };
+        Page { art: art.into(), title: copy.title, body: copy.detail, note: Some(note), actions }
     }
 }
 
@@ -726,10 +1001,11 @@ fn dots<'a>(p: &Palette, position: f32) -> Element<'a, Message> {
     .into()
 }
 
-/// The Codex step's art: likh's bars, a dotted link, and a terminal prompt
-/// for Codex. The link takes the state's colour and carries its icon.
+/// The connect step's art: likh's bars, a dotted link, and the engine's
+/// glyph. The link takes the state's colour and carries its icon.
 struct Link {
     tone: Tone,
+    engine: Engine,
     colors: LinkColors,
 }
 
@@ -791,17 +1067,8 @@ impl canvas::Program<Message> for Link {
             let bar = Path::rounded_rectangle(at(-112.0 + i as f32 * 10.0, -h / 2.0), Size::new(5.0, h), 2.5.into());
             frame.fill(&bar, colors.accent);
         }
-        // Codex: a terminal prompt, right.
-        let prompt = Stroke::default().with_width(3.0).with_color(colors.muted).with_line_cap(canvas::LineCap::Round);
-        frame.stroke(
-            &Path::new(|b| {
-                b.move_to(at(78.0, -10.0));
-                b.line_to(at(90.0, 0.0));
-                b.line_to(at(78.0, 10.0));
-            }),
-            prompt,
-        );
-        frame.stroke(&Path::line(at(96.0, 11.0), at(110.0, 11.0)), prompt);
+        // The engine, right: a prompt for Codex, a bolt for Groq, panes for Windows.
+        glyph::draw(&mut frame, self.engine, at(94.0, 0.0), colors.muted);
         // The link: dots either side of the state's icon.
         let link = if self.tone == Tone::Success { colors.success } else { colors.subtle };
         for i in 0..3 {
