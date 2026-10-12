@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>murmur · brand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: oklch(0.155 0.012 275);
+    --surface: oklch(0.19 0.014 275);
+    --elevated: oklch(0.225 0.016 275);
+    --text: oklch(0.945 0.006 275);
+    --text-muted: oklch(0.72 0.012 275);
+    --text-subtle: oklch(0.56 0.014 275);
+    --accent: oklch(0.78 0.11 45);
+    --on-accent: oklch(0.22 0.03 45);
+    --success: oklch(0.78 0.13 155);
+    --warning: oklch(0.84 0.14 85);
+    --danger: oklch(0.68 0.17 25);
+    --hairline: oklch(1 0 0 / 0.07);
+    --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
+    --font: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, "Cascadia Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; font: 400 15px/22px var(--font); color: var(--text); -webkit-font-smoothing: antialiased; }
+  main { max-width: 1080px; margin: 0 auto; padding: 48px 32px 96px; }
+  section { margin-top: 64px; }
+  h1, h2, h3, p { margin: 0; }
+  .eyebrow { font: 500 12px/16px var(--mono); color: var(--text-subtle); letter-spacing: 0.04em; text-transform: uppercase; }
+  h2 { font: 600 20px/26px var(--font); letter-spacing: -0.01em; margin-top: 4px; }
+  .lede { color: var(--text-muted); max-width: 62ch; margin-top: 8px; text-wrap: pretty; }
+  .card { background: var(--surface); border-radius: 16px; box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 0 0 0.5px oklch(0 0 0 / 0.5); }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  button.ctl { font: 500 13px/18px var(--font); color: var(--text); background: var(--elevated); border: 0; border-radius: 10px; padding: 7px 12px; min-height: 32px; cursor: pointer; box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06); transition: transform 100ms var(--ease-snappy); }
+  button.ctl:active { transform: scale(0.97); }
+  button.ctl[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+  button.ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Hero */
+  .hero { position: relative; height: 420px; overflow: hidden; display: grid; place-items: end start; padding: 32px; }
+  .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .hero .copy { position: relative; }
+  .wordmark { font: 600 56px/60px var(--font); letter-spacing: -0.03em; }
+  .tagline { font: 600 34px/38px var(--font); letter-spacing: -0.02em; color: var(--text-muted); margin-top: 4px; }
+  .hero .story { color: var(--text-subtle); max-width: 52ch; margin-top: 16px; font-size: 13px; line-height: 18px; }
+
+  /* Logo */
+  .logos { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-top: 24px; }
+  .logo-stage { display: flex; align-items: center; gap: 32px; padding: 32px; }
+  .lockup { display: flex; align-items: center; gap: 12px; font: 600 28px/32px var(--font); letter-spacing: -0.02em; }
+
+  /* Color */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 24px; }
+  .swatch { border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 0.5px oklch(0 0 0 / 0.5); }
+  .swatch .chip { height: 64px; box-shadow: inset 0 -0.5px 0 var(--hairline); }
+  .swatch .meta { padding: 8px 12px 12px; }
+  .swatch b { font: 500 13px/18px var(--font); display: block; }
+  .swatch code { font: 500 12px/16px var(--mono); color: var(--text-subtle); }
+
+  /* Type */
+  .type { margin-top: 24px; padding: 8px 24px; }
+  .type-row { display: grid; grid-template-columns: 120px 1fr; align-items: baseline; gap: 16px; padding: 16px 0; border-bottom: 0.5px solid var(--hairline); }
+  .type-row:last-child { border-bottom: 0; }
+  .type-row .k { font: 500 12px/16px var(--mono); color: var(--text-subtle); }
+
+  /* Motion */
+  .springs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+  .spring { padding: 16px; }
+  .spring .track { position: relative; height: 56px; margin: 16px 0 12px; border-radius: 10px; background: var(--bg); }
+  .spring .dot { position: absolute; top: 12px; left: 12px; width: 32px; height: 32px; border-radius: 16px; background: var(--accent); }
+  .spring p { font-size: 13px; line-height: 18px; color: var(--text-muted); }
+  .spring code { font: 500 12px/16px var(--mono); color: var(--text-subtle); }
+
+  /* Pill stage */
+  .stage { position: relative; height: 380px; margin-top: 24px; border-radius: 16px; overflow: hidden; background: #f4f1ec; }
+  .fake-app { position: absolute; inset: 0; padding: 32px 40px; color: #23201c; font: 400 15px/24px "Segoe UI", system-ui, sans-serif; }
+  .fake-app .bar { display: flex; gap: 8px; margin-bottom: 24px; }
+  .fake-app .bar span { width: 10px; height: 10px; border-radius: 5px; background: #d9d3ca; }
+  .fake-app h3 { font: 600 22px/28px Georgia, serif; margin-bottom: 8px; }
+  .fake-app .img { position: absolute; right: 40px; top: 72px; width: 300px; height: 190px; border-radius: 12px; background: radial-gradient(circle at 30% 30%, #ffb26b, transparent 60%), radial-gradient(circle at 70% 60%, #3d5af1, transparent 55%), linear-gradient(135deg, #102542, #f87060); }
+  .fake-app p { max-width: 52ch; color: #4a443d; }
+  .caret { display: inline-block; width: 2px; height: 18px; background: #23201c; vertical-align: -3px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .typed { color: #23201c; }
+
+  .pill { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); display: grid; place-items: center; overflow: hidden;
+    background: linear-gradient(oklch(0.24 0.014 275 / 0.72), oklch(0.13 0.012 275 / 0.78));
+    -webkit-backdrop-filter: blur(18px) saturate(180%); backdrop-filter: blur(18px) saturate(180%);
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.18), 0 0 0 0.5px oklch(0 0 0 / 0.45), 0 8px 24px oklch(0 0 0 / 0.35); }
+  .pill.refract { backdrop-filter: var(--lens) blur(2px) saturate(170%); }
+  .pill.solid { background: oklch(0.19 0.014 275 / 0.96); backdrop-filter: none; }
+  .layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; opacity: 0; transition: opacity 150ms var(--ease-snappy); pointer-events: none; white-space: nowrap; }
+  .layer.on { opacity: 1; }
+  .bars { display: flex; align-items: center; gap: 4px; height: 24px; }
+  .bars i { display: block; width: 4px; height: 4px; border-radius: 2px; background: var(--accent); }
+  .thinking .bars i { background: var(--text-muted); }
+  .lock { width: 12px; height: 12px; color: var(--text-muted); }
+  .count { font: 500 12px/16px var(--mono); font-variant-numeric: tabular-nums; color: var(--warning); }
+  .err { gap: 12px; padding: 0 12px 0 16px; justify-content: flex-start; }
+  .err .msg { font: 500 13px/18px var(--font); color: var(--text); white-space: normal; flex: 1; }
+  .err .act { font: 500 12px/16px var(--font); color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 6px 10px; }
+  .err svg { flex: none; color: var(--danger); }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+  .controls .sep { width: 1px; height: 20px; background: var(--hairline); margin: 0 4px; }
+
+  /* Onboarding */
+  .onb { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+  .win { position: relative; aspect-ratio: 560 / 640; background: var(--bg); border-radius: 16px; overflow: hidden; box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06), 0 0 0 0.5px oklch(0 0 0 / 0.6), 0 16px 40px oklch(0 0 0 / 0.35); display: flex; flex-direction: column; padding: 24px; }
+  .win .dots { display: flex; gap: 6px; justify-content: center; margin-top: auto; }
+  .win .dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--elevated); }
+  .win .dots i.on { background: var(--text); width: 16px; }
+  .win h3 { font: 600 22px/26px var(--font); letter-spacing: -0.02em; margin-top: 16px; text-wrap: balance; }
+  .win p { font-size: 13px; line-height: 18px; color: var(--text-muted); margin-top: 8px; text-wrap: pretty; }
+  .win .art { flex: 1; display: grid; place-items: center; min-height: 0; }
+  .win .cta { margin-top: 16px; align-self: stretch; text-align: center; font: 500 13px/18px var(--font); padding: 9px; border-radius: 10px; background: var(--accent); color: var(--on-accent); }
+  .win .cta.ghost { background: var(--elevated); color: var(--text); }
+  .win .ctas { display: flex; gap: 8px; } .win .ctas .cta { flex: 1; }
+  .win .step { font: 500 12px/16px var(--mono); color: var(--text-subtle); }
+  .status { display: flex; align-items: center; gap: 12px; background: var(--surface); border-radius: 12px; padding: 12px; width: 100%; }
+  .status .ico { width: 32px; height: 32px; border-radius: 16px; display: grid; place-items: center; background: var(--elevated); flex: none; }
+  .status b { font: 500 13px/18px var(--font); display: block; }
+  .status span { font-size: 12px; line-height: 16px; color: var(--text-muted); }
+  .keys { display: flex; gap: 8px; align-items: center; }
+  .key { font: 500 15px/22px var(--mono); padding: 12px 16px; min-width: 64px; text-align: center; border-radius: 10px; background: var(--surface); box-shadow: inset 0 -2px 0 oklch(0 0 0 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.08); }
+  .key.down { background: var(--accent); color: var(--on-accent); transform: translateY(1px); }
+  .practice { width: 100%; background: var(--surface); border-radius: 12px; padding: 12px; font-size: 13px; line-height: 18px; min-height: 96px; }
+  .practice .hint { color: var(--text-subtle); }
+  .select { width: 100%; display: flex; justify-content: space-between; background: var(--surface); border-radius: 10px; padding: 8px 12px; font-size: 13px; margin-top: 12px; color: var(--text-muted); }
+  .bigbars { display: flex; align-items: center; gap: 6px; height: 72px; }
+  .bigbars i { width: 8px; border-radius: 4px; background: var(--accent); height: 8px; }
+  .codex-states { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .codex-states button { font: 500 12px/16px var(--font); min-height: 28px; padding: 4px 8px; }
+
+  /* Sound */
+  .sounds { display: flex; gap: 8px; margin-top: 24px; }
+  footer { margin-top: 64px; color: var(--text-subtle); font-size: 13px; }
+  @media (max-width: 860px) { .onb, .springs { grid-template-columns: 1fr 1fr; } .logos { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <defs>
+    <symbol id="mark" viewBox="0 0 64 40">
+      <rect x="0.5" y="0.5" width="63" height="39" rx="19.5" fill="oklch(0.19 0.014 275)" stroke="oklch(1 0 0 / 0.16)" />
+      <rect x="15" y="15.05" width="4" height="9.9" rx="2" fill="oklch(0.78 0.11 45)" />
+      <rect x="23" y="10.65" width="4" height="18.7" rx="2" fill="oklch(0.78 0.11 45)" />
+      <rect x="31" y="13.95" width="4" height="12.1" rx="2" fill="oklch(0.78 0.11 45)" />
+      <rect x="39" y="10.65" width="4" height="18.7" rx="2" fill="oklch(0.78 0.11 45)" />
+      <rect x="47" y="15.05" width="4" height="9.9" rx="2" fill="oklch(0.78 0.11 45)" />
+    </symbol>
+    <symbol id="mark-bare" viewBox="0 0 16 16">
+      <rect x="0.5" y="5.2" width="2" height="5.6" rx="1" fill="oklch(0.78 0.11 45)" />
+      <rect x="3.75" y="2.6" width="2" height="10.8" rx="1" fill="oklch(0.78 0.11 45)" />
+      <rect x="7" y="4.6" width="2" height="6.8" rx="1" fill="oklch(0.78 0.11 45)" />
+      <rect x="10.25" y="2.6" width="2" height="10.8" rx="1" fill="oklch(0.78 0.11 45)" />
+      <rect x="13.5" y="5.2" width="2" height="5.6" rx="1" fill="oklch(0.78 0.11 45)" />
+    </symbol>
+  </defs>
+  <filter id="lens" x="0" y="0" width="148" height="40" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+    <feImage id="lens-map" width="148" height="40" preserveAspectRatio="none" result="map" />
+    <feDisplacementMap in="SourceGraphic" in2="map" scale="24" xChannelSelector="R" yChannelSelector="G" />
+  </filter>
+</svg>
+
+<main>
+  <div class="hero card">
+    <canvas id="flock" aria-hidden="true"></canvas>
+    <div class="copy">
+      <div class="wordmark">murmur</div>
+      <div class="tagline">Talk. It types.</div>
+      <p class="story">A murmuration is thousands of starlings moving as one shape at dusk. murmur turns a stream of speech into text that lands where you're typing. Dusk palette, one liquid surface, quiet until you speak.</p>
+    </div>
+  </div>
+
+  <section>
+    <div class="eyebrow">01 · Feel</div>
+    <h2>Liquid, quiet, instant. Expressive only once.</h2>
+    <p class="lede">The pill gets used dozens of times a day, so it moves fast, never bounces, and draws nothing while idle. Onboarding happens once, so that's where the springs, the flock and the celebration go.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">02 · Logo</div>
+    <h2>The listening pill, frozen</h2>
+    <p class="lede">Five bars in a glass capsule. Their heights trace a lowercase m.</p>
+    <div class="logos">
+      <div class="card logo-stage">
+        <svg width="128" height="80"><use href="#mark" /></svg>
+        <div class="lockup"><svg width="48" height="30"><use href="#mark" /></svg>murmur</div>
+      </div>
+      <div class="card logo-stage" style="justify-content:center">
+        <svg width="48" height="30"><use href="#mark" /></svg>
+        <svg width="32" height="20"><use href="#mark" /></svg>
+        <svg width="16" height="16"><use href="#mark-bare" /></svg>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">03 · Color</div>
+    <h2>Dusk neutrals, one peach</h2>
+    <p class="lede">Neutrals do the work. Peach means "you are being heard" and marks the one primary action per screen. Green, amber and red only when they mean something.</p>
+    <div class="swatches" id="swatches"></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">04 · Type</div>
+    <h2>Geist and Geist Mono, five sizes</h2>
+    <div class="card type">
+      <div class="type-row"><span class="k">display 34</span><span style="font:600 34px/38px var(--font);letter-spacing:-0.02em">Talk. It types.</span></div>
+      <div class="type-row"><span class="k">title 20</span><span style="font:600 20px/26px var(--font);letter-spacing:-0.01em">Connect Codex</span></div>
+      <div class="type-row"><span class="k">body 15</span><span>murmur transcribes with your ChatGPT plan through Codex.</span></div>
+      <div class="type-row"><span class="k">small 13</span><span style="font-size:13px;line-height:18px;color:var(--text-muted)">Hold to talk. Let go to paste.</span></div>
+      <div class="type-row"><span class="k">caption 12 mono</span><span style="font:500 12px/16px var(--mono);font-variant-numeric:tabular-nums">CTRL + WIN · 0:55 left · 912 ms</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">05 · Motion</div>
+    <h2>Three springs, named, used everywhere</h2>
+    <p class="lede">Bounce has to be earned. Opacity and color always use a 150ms tween. Click a track to retarget mid-flight: springs keep their velocity.</p>
+    <div class="springs">
+      <div class="card spring" data-d="0.25" data-b="0"><b>spring.fast</b><div class="track"><div class="dot"></div></div><p>Pill states, toggles.</p><code>0.25s · bounce 0</code></div>
+      <div class="card spring" data-d="0.4" data-b="0"><b>spring.default</b><div class="track"><div class="dot"></div></div><p>Windows, onboarding steps.</p><code>0.4s · bounce 0</code></div>
+      <div class="card spring" data-d="0.5" data-b="0.3"><b>spring.playful</b><div class="track"><div class="dot"></div></div><p>Onboarding finish, first dictation. Nothing else.</p><code>0.5s · bounce 0.3</code></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">06 · The pill</div>
+    <h2>One liquid surface over every app</h2>
+    <p class="lede">Bottom centre, never takes focus. It grows out of its resting sliver, turns into the thinking wave, and expands into errors instead of spawning toasts. Shown over a bright page with a photo, the worst case for glass.</p>
+    <div class="stage" id="stage">
+      <div class="fake-app">
+        <div class="bar"><span></span><span></span><span></span></div>
+        <h3>Q3 planning notes</h3>
+        <p>Ship the beta to the first hundred testers, then decide on pricing. <span class="typed" id="typed"></span><span class="caret"></span></p>
+        <div class="img"></div>
+      </div>
+      <div class="pill" id="pill">
+        <div class="layer" data-for="listening handsfree warning thinking"><div class="bars" id="bars"></div><svg class="lock" id="lock" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" style="display:none"><rect x="2.5" y="5.5" width="7" height="5" rx="1.2"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5"/></svg><span class="count" id="count" style="display:none">0:55 left</span></div>
+        <div class="layer err" data-for="error"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm-.75 3.25h1.5v4.5h-1.5v-4.5Zm.75 7.1a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Z"/></svg><span class="msg">Your Codex sign-in expired. Open Codex once to refresh it.</span><span class="act">Open Codex</span></div>
+      </div>
+    </div>
+    <div class="controls" id="pill-controls">
+      <button class="ctl" data-state="resting">resting</button>
+      <button class="ctl" data-state="listening">listening</button>
+      <button class="ctl" data-state="handsfree">hands-free</button>
+      <button class="ctl" data-state="thinking">thinking</button>
+      <button class="ctl" data-state="done">done</button>
+      <button class="ctl" data-state="warning">warning</button>
+      <button class="ctl" data-state="error">error</button>
+      <button class="ctl" data-state="cancelled">cancelled</button>
+      <span class="sep"></span>
+      <button class="ctl" id="play">▶ play a dictation</button>
+      <span class="sep"></span>
+      <button class="ctl" data-rung="solid">solid</button>
+      <button class="ctl" data-rung="frosted" aria-pressed="true">frosted</button>
+      <button class="ctl" data-rung="refract">refraction</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">07 · Onboarding</div>
+    <h2>Six steps, one window, played once</h2>
+    <p class="lede">Each step slides on spring.default. Step 2 checks Codex live and has a state for every way it can be missing. Click the states to see the copy.</p>
+    <div class="onb">
+      <div class="win">
+        <span class="step">1 / 6</span>
+        <div class="art"><canvas id="flock-mini" width="240" height="160" style="width:240px;height:160px"></canvas></div>
+        <h3>Talk. It types.</h3>
+        <p>Hold a key, say it, let go. Your words land wherever you're typing.</p>
+        <div class="cta">Get started</div>
+        <div class="dots" style="margin-top:16px"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="win">
+        <span class="step">2 / 6</span>
+        <div class="art" style="align-content:center;width:100%">
+          <div class="status" id="codex-status"></div>
+          <div class="codex-states" id="codex-states"></div>
+        </div>
+        <h3>Connect Codex</h3>
+        <p>murmur uses your ChatGPT plan through Codex. Nothing to pay, nothing to paste.</p>
+        <div class="ctas" id="codex-ctas"></div>
+        <div class="dots" style="margin-top:16px"><i></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="win">
+        <span class="step">3 / 6</span>
+        <div class="art" style="width:100%"><div style="width:100%;display:grid;place-items:center"><div class="bigbars" id="bigbars"></div><div class="select"><span>Microphone</span><span>Headset (Jabra Evolve2) ▾</span></div></div></div>
+        <h3>Say something</h3>
+        <p>The bars should move when you talk. If they don't, pick another microphone.</p>
+        <div class="cta">Sounds good</div>
+        <div class="dots" style="margin-top:16px"><i></i><i></i><i class="on"></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="win">
+        <span class="step">4 / 6</span>
+        <div class="art"><div class="keys"><span class="key" id="k1">Ctrl</span><span style="color:var(--text-subtle)">+</span><span class="key" id="k2">Win</span></div></div>
+        <h3>Hold to talk. Let go to paste.</h3>
+        <p>Press it now to try. Double-tap for hands-free. Esc cancels.</p>
+        <div class="ctas"><div class="cta ghost">Change</div><div class="cta">Use Ctrl + Win</div></div>
+        <div class="dots" style="margin-top:16px"><i></i><i></i><i></i><i class="on"></i><i></i><i></i></div>
+      </div>
+      <div class="win">
+        <span class="step">5 / 6</span>
+        <div class="art" style="width:100%"><div class="practice" id="practice"><span class="hint">Hold Ctrl + Win and say: “Remind me to send the deck tomorrow at nine.”</span></div></div>
+        <h3>Try it here</h3>
+        <p>This box is a safe place to practise. Nothing is sent anywhere but ChatGPT.</p>
+        <div class="cta">Continue</div>
+        <div class="dots" style="margin-top:16px"><i></i><i></i><i></i><i></i><i class="on"></i><i></i></div>
+      </div>
+      <div class="win">
+        <span class="step">6 / 6</span>
+        <div class="art"><div style="display:grid;place-items:center;gap:12px"><svg width="128" height="80" id="done-mark"><use href="#mark" /></svg></div></div>
+        <h3>murmur lives in your tray</h3>
+        <p>Hold Ctrl + Win in any app. Usage, history and settings are one click on the tray icon.</p>
+        <div class="cta">Finish</div>
+        <div class="dots" style="margin-top:16px"><i></i><i></i><i></i><i></i><i></i><i class="on"></i></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">08 · Sound</div>
+    <h2>Quiet cues, synthesized, one switch</h2>
+    <p class="lede">They confirm what you already see. Gain 0.04 to 0.08. Nothing on paste, hover or typing.</p>
+    <div class="sounds"><button class="ctl" data-sfx="start">start</button><button class="ctl" data-sfx="stop">stop</button><button class="ctl" data-sfx="error">error</button></div>
+  </section>
+
+  <footer>Source of truth: docs/brand/BRAND.md. Concepts applied: Product Feel, Novelty Budget, Liquid Glass, Liquid Motion, Springs, Easings, Color Roles, Dark Mode, Type Scale, Interface SFX, Reduced Motion, Effect Cost.</footer>
+</main>
+
+<script>
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---- springs (Apple duration + bounce -> physics, mass 1) ----
+function makeSpring(d, b, x = 0) {
+  return { k: (2 * Math.PI / d) ** 2, c: 4 * Math.PI * (1 - b) / d, x, v: 0, t: x };
+}
+function step(s, dt) {
+  const n = Math.max(1, Math.ceil(dt / 0.004)), h = dt / n;
+  for (let i = 0; i < n; i++) { const a = -s.k * (s.x - s.t) - s.c * s.v; s.v += a * h; s.x += s.v * h; }
+  return Math.abs(s.x - s.t) < 0.05 && Math.abs(s.v) < 0.05;
+}
+
+// ---- swatches ----
+const sw = [["bg","oklch(0.155 0.012 275)","canvas"],["surface","oklch(0.19 0.014 275)","cards, inputs"],["elevated","oklch(0.225 0.016 275)","menus"],["text","oklch(0.945 0.006 275)","primary"],["text-muted","oklch(0.72 0.012 275)","secondary"],["text-subtle","oklch(0.56 0.014 275)","hints"],["accent","oklch(0.78 0.11 45)","heard, primary"],["success","oklch(0.78 0.13 155)","connected"],["warning","oklch(0.84 0.14 85)","time left"],["danger","oklch(0.68 0.17 25)","errors"]];
+document.getElementById("swatches").innerHTML = sw.map(([n,v,j]) => `<div class="swatch"><div class="chip" style="background:${v}"></div><div class="meta"><b>${n}</b><code>${v.replace("oklch","")}</code><div style="font-size:12px;color:var(--text-muted)">${j}</div></div></div>`).join("");
+
+// ---- spring demos ----
+document.querySelectorAll(".spring").forEach(el => {
+  const dot = el.querySelector(".dot"), track = el.querySelector(".track");
+  const s = makeSpring(+el.dataset.d, +el.dataset.b);
+  let raf = 0, last = 0, right = false;
+  const tick = now => { const dt = Math.min(0.032, (now - last) / 1000); last = now; const done = step(s, dt); dot.style.transform = `translateX(${s.x}px)`; raf = done ? 0 : requestAnimationFrame(tick); };
+  const go = () => { right = !right; s.t = right ? track.clientWidth - 56 : 0; if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } };
+  track.addEventListener("click", go); el.querySelector("b").addEventListener("click", go);
+  setTimeout(go, 400); setInterval(go, 2400);
+});
+
+// ---- flock (hero + mini) ----
+function flock(canvas, count, scale) {
+  const ctx = canvas.getContext("2d");
+  const dpr = devicePixelRatio || 1;
+  const resize = () => { canvas.width = canvas.clientWidth * dpr; canvas.height = canvas.clientHeight * dpr; };
+  resize(); addEventListener("resize", resize);
+  const W = () => canvas.clientWidth, H = () => canvas.clientHeight;
+  const heights = [0.45, 0.85, 0.55, 0.85, 0.45];
+  const targets = (cx, cy, sz) => { const pts = []; for (let i = 0; i < count; i++) { const b = i % 5, h = heights[b] * sz; pts.push([cx + (b - 2) * sz * 0.2 + (Math.random() - 0.5) * sz * 0.06, cy + (Math.random() - 0.5) * h]); } return pts; };
+  const birds = Array.from({ length: count }, () => ({ x: Math.random() * W(), y: Math.random() * H() * 0.6, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2 }));
+  let t0 = performance.now();
+  const frame = now => {
+    const w = W(), h = H(), phase = ((now - t0) / 1000) % 9; // 0-5 flock, 5-8 form, 8-9 release
+    const forming = phase > 5 && phase < 8;
+    const tg = targets(scale.cx(w), scale.cy(h), scale.size(w, h));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    const cx = birds.reduce((a, b) => a + b.x, 0) / count, cy = birds.reduce((a, b) => a + b.y, 0) / count;
+    const gx = w * (0.55 + 0.25 * Math.sin(now / 2300)), gy = h * (0.35 + 0.15 * Math.cos(now / 1700));
+    birds.forEach((b, i) => {
+      if (forming) { const [tx, ty] = tg[i]; b.vx += (tx - b.x) * 0.02; b.vy += (ty - b.y) * 0.02; b.vx *= 0.82; b.vy *= 0.82; }
+      else {
+        b.vx += (cx - b.x) * 0.0006 + (gx - b.x) * 0.0009; b.vy += (cy - b.y) * 0.0006 + (gy - b.y) * 0.0009;
+        const j = birds[(i * 7 + 3) % count]; const dx = b.x - j.x, dy = b.y - j.y, d2 = dx * dx + dy * dy;
+        if (d2 < 120) { b.vx += dx * 0.02; b.vy += dy * 0.02; }
+        const sp = Math.hypot(b.vx, b.vy), max = 2.4; if (sp > max) { b.vx *= max / sp; b.vy *= max / sp; }
+      }
+      b.x += b.vx; b.y += b.vy;
+      ctx.fillStyle = forming ? "oklch(0.78 0.11 45 / 0.9)" : "oklch(0.945 0.006 275 / 0.55)";
+      ctx.beginPath(); ctx.arc(b.x, b.y, 1.4, 0, 6.283); ctx.fill();
+    });
+    requestAnimationFrame(frame);
+  };
+  if (reduce) { const tg = targets(scale.cx(W()), scale.cy(H()), scale.size(W(), H())); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle = "oklch(0.78 0.11 45)"; tg.forEach(([x,y]) => { ctx.beginPath(); ctx.arc(x, y, 1.4, 0, 6.283); ctx.fill(); }); }
+  else requestAnimationFrame(frame);
+}
+flock(document.getElementById("flock"), 420, { cx: w => w * 0.74, cy: h => h * 0.42, size: (w, h) => Math.min(w, h) * 0.55 });
+flock(document.getElementById("flock-mini"), 160, { cx: w => w / 2, cy: h => h / 2, size: (w, h) => h * 0.8 });
+
+// ---- pill ----
+const pill = document.getElementById("pill"), barsEl = document.getElementById("bars");
+const NB = 7; for (let i = 0; i < NB; i++) barsEl.appendChild(document.createElement("i"));
+const bars = [...barsEl.children], levels = new Array(NB).fill(0);
+const SIZES = { resting: [40, 8], listening: [148, 40], handsfree: [172, 40], thinking: [148, 40], done: [40, 8], warning: [196, 40], error: [360, 56], cancelled: [40, 8] };
+const sw_ = makeSpring(0.25, 0, 40), sh_ = makeSpring(0.25, 0, 8);
+let state = "resting", raf = 0, last = 0, rung = "frosted", lensFor = "";
+const voiced = () => ["listening", "handsfree", "warning"].includes(state);
+function render(now) {
+  const dt = Math.min(0.032, (now - last) / 1000); last = now;
+  const a = step(sw_, dt), b = step(sh_, dt);
+  pill.style.width = sw_.x + "px"; pill.style.height = sh_.x + "px"; pill.style.borderRadius = sh_.x / 2 + "px";
+  pill.style.opacity = state === "resting" || state === "done" || state === "cancelled" ? 0.7 : 1;
+  const tt = now / 1000;
+  bars.forEach((el, i) => {
+    let target;
+    if (voiced()) { const env = 0.45 + 0.55 * Math.abs(Math.sin(tt * 1.9)); const centre = 1 - Math.abs(i - (NB - 1) / 2) / NB; target = Math.max(0.15, env * centre * (0.45 + 0.55 * Math.abs(Math.sin(tt * 9 + i * 1.7) * Math.cos(tt * 5.3 + i)))); }
+    else if (state === "thinking") target = reduce ? 0.35 : 0.2 + 0.25 * (1 + Math.sin(tt * 5.2 - i * 0.7)) / 2;
+    else target = 0.12;
+    const rate = target > levels[i] ? 0.04 : 0.14; // attack 40ms, release 140ms
+    levels[i] += (target - levels[i]) * Math.min(1, dt / rate);
+    el.style.height = 4 + levels[i] * 22 + "px";
+  });
+  const settled = a && b;
+  if (rung === "refract" && settled) applyLens(); else pill.classList.remove("refract");
+  const animating = !settled || voiced() || state === "thinking" || levels.some(l => l > 0.13);
+  raf = animating ? requestAnimationFrame(render) : 0; // idle draws zero frames
+}
+function kick() { if (!raf) { last = performance.now(); raf = requestAnimationFrame(render); } }
+function setState(s) {
+  state = s; const [w, h] = SIZES[s]; sw_.t = w; sh_.t = h;
+  pill.className = "pill" + (rung === "solid" ? " solid" : "") + (s === "thinking" ? " thinking" : "");
+  document.getElementById("lock").style.display = s === "handsfree" ? "" : "none";
+  document.getElementById("count").style.display = s === "warning" ? "" : "none";
+  pill.querySelectorAll(".layer").forEach(l => l.classList.toggle("on", l.dataset.for.split(" ").includes(s)));
+  document.querySelectorAll("#pill-controls [data-state]").forEach(b => b.setAttribute("aria-pressed", b.dataset.state === s));
+  if (s === "done" || s === "cancelled") setTimeout(() => state === s && setState("resting"), 260);
+  kick();
+}
+document.querySelectorAll("#pill-controls [data-state]").forEach(b => b.onclick = () => setState(b.dataset.state));
+document.querySelectorAll("#pill-controls [data-rung]").forEach(b => b.onclick = () => {
+  rung = b.dataset.rung; document.querySelectorAll("#pill-controls [data-rung]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  setState(state);
+});
+// Displacement map for a capsule: bend at the rim, flat in the middle (Snell-ish falloff).
+function applyLens() {
+  const w = Math.round(sw_.t), h = Math.round(sh_.t), key = w + "x" + h;
+  if (lensFor !== key) {
+    const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"), img = g.createImageData(w, h);
+    const r = h / 2, bezel = Math.min(14, r);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const cx = Math.min(Math.max(x, r), w - r), dx = x - cx, dy = y - r, d = Math.hypot(dx, dy) || 1;
+      const edge = r - d; let m = 0;
+      if (edge >= 0 && edge < bezel) { const t = 1 - edge / bezel; m = Math.pow(t, 2.2); }
+      const o = (y * w + x) * 4; img.data[o] = 128 - (dx / d) * m * 127; img.data[o + 1] = 128 - (dy / d) * m * 127; img.data[o + 2] = 128; img.data[o + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    const f = document.getElementById("lens"), m = document.getElementById("lens-map");
+    f.setAttribute("width", w); f.setAttribute("height", h); m.setAttribute("width", w); m.setAttribute("height", h);
+    m.setAttribute("href", c.toDataURL()); lensFor = key;
+    pill.style.setProperty("--lens", "url(#lens)");
+  }
+  pill.classList.add("refract");
+}
+
+// Scripted dictation: hold -> speak -> release -> think -> paste -> rest.
+const typed = document.getElementById("typed");
+let playing = false;
+document.getElementById("play").onclick = async () => {
+  if (playing) return; playing = true; typed.textContent = "";
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  sfx("start"); setState("listening"); await wait(2600);
+  sfx("stop"); setState("thinking"); await wait(900);
+  typed.textContent = "Also, remind me to send the deck to Priya tomorrow at nine."; setState("done");
+  playing = false;
+};
+setState("resting"); setTimeout(() => document.getElementById("play").click(), 900);
+
+// ---- onboarding: codex states ----
+const CODEX = {
+  checking: { ico: "…", c: "var(--text-subtle)", t: "Looking for Codex…", s: "Checking ~/.codex/auth.json", ctas: [] },
+  "not installed": { ico: "↓", c: "var(--text-muted)", t: "Codex isn't installed", s: "Install Codex, sign in once, then come back.", ctas: [["Check again", 1], ["Get Codex", 0]] },
+  "signed out": { ico: "!", c: "var(--warning)", t: "Codex isn't signed in", s: "Open Codex (or run codex login) and sign in.", ctas: [["Check again", 0]] },
+  connected: { ico: "✓", c: "var(--success)", t: "Connected through Codex", s: "k•••@gmail.com · ChatGPT Plus", ctas: [["Continue", 0]] },
+  expired: { ico: "!", c: "var(--danger)", t: "Your Codex sign-in expired", s: "Open Codex once to refresh it, then try again.", ctas: [["Check again", 1], ["Open Codex", 0]] },
+};
+const cs = document.getElementById("codex-status"), cc = document.getElementById("codex-ctas"), cb = document.getElementById("codex-states");
+function codex(k) {
+  const v = CODEX[k];
+  cs.innerHTML = `<div class="ico" style="color:${v.c}">${v.ico}</div><div><b>${v.t}</b><span>${v.s}</span></div>`;
+  cc.innerHTML = v.ctas.map(([t, ghost]) => `<div class="cta${ghost ? " ghost" : ""}">${t}</div>`).join("") || `<div class="cta ghost" style="opacity:.5">Continue</div>`;
+  cb.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.textContent === k));
+}
+cb.innerHTML = Object.keys(CODEX).map(k => `<button class="ctl">${k}</button>`).join("");
+cb.querySelectorAll("button").forEach(b => b.onclick = () => codex(b.textContent));
+codex("connected");
+
+// mic bars + key demo + practice
+const big = document.getElementById("bigbars"); for (let i = 0; i < 9; i++) big.appendChild(document.createElement("i"));
+const k1 = document.getElementById("k1"), k2 = document.getElementById("k2"), pr = document.getElementById("practice");
+if (!reduce) {
+  (function mic(now) { [...big.children].forEach((el, i) => { const t = now / 1000; el.style.height = 8 + 56 * Math.max(0.1, Math.abs(Math.sin(t * 3 + i * 0.9) * Math.sin(t * 1.3 + i * 0.3))) + "px"; }); requestAnimationFrame(mic); })(0);
+}
+setInterval(() => { k1.classList.add("down"); k2.classList.add("down"); setTimeout(() => { k1.classList.remove("down"); k2.classList.remove("down"); }, 1400); }, 2600);
+setInterval(() => {
+  pr.innerHTML = '<span class="hint">Hold Ctrl + Win and say: “Remind me to send the deck tomorrow at nine.”</span>';
+  setTimeout(() => { pr.innerHTML = '<span class="hint">Hold Ctrl + Win and say: “Remind me to send the deck tomorrow at nine.”</span><div style="margin-top:12px">Remind me to send the deck tomorrow at nine.</div>'; }, 1800);
+}, 4200);
+
+// ---- sound ----
+let ac;
+function sfx(name) {
+  try {
+    ac = ac || new AudioContext();
+    const tone = (f0, f1, at, dur, gain) => {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = "sine";
+      o.frequency.setValueAtTime(f0, ac.currentTime + at); o.frequency.exponentialRampToValueAtTime(f1, ac.currentTime + at + dur);
+      g.gain.setValueAtTime(0, ac.currentTime + at); g.gain.linearRampToValueAtTime(gain, ac.currentTime + at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + at + dur);
+      o.connect(g).connect(ac.destination); o.start(ac.currentTime + at); o.stop(ac.currentTime + at + dur + 0.02);
+    };
+    if (name === "start") { tone(660, 660, 0, 0.045, 0.06); tone(880, 880, 0.045, 0.045, 0.06); }
+    if (name === "stop") tone(1200, 1200, 0, 0.016, 0.05);
+    if (name === "error") tone(440, 330, 0, 0.16, 0.07);
+  } catch {}
+}
+document.querySelectorAll("[data-sfx]").forEach(b => b.onclick = () => sfx(b.dataset.sfx));
+</script>
+</body>
+</html>

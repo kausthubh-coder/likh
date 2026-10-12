@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["app"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/kausthubh-coder/murmur"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

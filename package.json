@@ -1,0 +1,15 @@
+{
+  "name": "murmur-workspace",
+  "private": true,
+  "scripts": {
+    "setup": "bun scripts/setup.mjs",
+    "doctor": "bun scripts/doctor.mjs",
+    "dev": "cargo run -p murmur",
+    "dev:site": "bun --cwd site run dev",
+    "build": "cargo build -p murmur --release",
+    "lint": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && bun --cwd site run lint",
+    "typecheck": "cargo check --workspace --all-targets && bun --cwd site run typecheck",
+    "test": "cargo test --workspace",
+    "check": "bun run lint && bun run typecheck && bun run test && bun --cwd site run build"
+  }
+}

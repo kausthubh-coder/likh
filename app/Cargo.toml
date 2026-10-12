@@ -1,0 +1,23 @@
+[package]
+name = "murmur"
+version = "0.1.0"
+description = "Native dictation that types with your Codex plan."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+iced = { version = "0.14", features = ["smol"] }
+base64 = "0.23"
+clap = { version = "4.6", features = ["derive"] }
+dirs = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+iced_test = "0.14"
+tempfile = "3"
+
+[lints]
+workspace = true
