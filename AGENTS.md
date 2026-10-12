@@ -1,6 +1,6 @@
 # murmur
 
-Native dictation for Windows (macOS in alpha). Hold Ctrl+Win, talk, let go, and the text pastes at the cursor, transcribed through the user's ChatGPT plan via Codex's sign-in. Users care most that it is instant, reliable, and costs nothing to leave running 24/7. Stack: Rust + iced 0.14 (software renderer, no web view) in `app/`, and a Next.js landing page in `site/`. Run with bun, deployed on Vercel.
+Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, and the text pastes at the cursor, transcribed through the user's ChatGPT plan via Codex's sign-in. Users care most that it is instant, reliable, and costs nothing to leave running 24/7. Stack: Rust + iced 0.14 (software renderer, no web view) in `app/`, and a Next.js landing page in `site/`. Run with bun, deployed on Vercel.
 
 ## Words we use
 
@@ -18,7 +18,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Win, talk, let go, and 
 |---|---|
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
 | `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it |
-| `app/src/hotkey/` | Ctrl+Win and Esc. Windows has its own keyboard hook (`windows.rs`) |
+| `app/src/hotkey/` | Ctrl+Space and Esc. Windows has its own keyboard hook (`windows.rs`) |
 | `app/src/microphone/` | levels and recordings; `MURMUR_AUDIO=file.wav` replays a file instead |
 | `app/src/transcriber/` | audio to text through Codex; `MURMUR_TRANSCRIBER=echo:<text>` fakes it |
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back |

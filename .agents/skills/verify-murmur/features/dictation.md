@@ -1,6 +1,6 @@
 # Dictation
 
-The product: hold Ctrl+Win, talk, let go, and the text pastes where the cursor is. The pill at the bottom of the screen shows listening, thinking, a countdown in the last minute, and errors. `murmur ctl` drives the same path without keys.
+The product: hold Ctrl+Space, talk, let go, and the text pastes where the cursor is. The pill at the bottom of the screen shows listening, thinking, a countdown in the last minute, and errors. `murmur ctl` drives the same path without keys.
 
 ## Sub-features
 
@@ -14,7 +14,7 @@ The product: hold Ctrl+Win, talk, let go, and the text pastes where the cursor i
 
 ## How to get to it (user POV)
 
-- Run `murmur`. Hold Ctrl+Win in any app, talk, let go.
+- Run `murmur`. Hold Ctrl+Space in any app, talk, let go.
 
 ## Driving it with scripts
 
@@ -39,7 +39,7 @@ Recipes:
 
 ## Gotchas
 
-- The real shortcut can't be scripted: murmur ignores injected keys on purpose (so its own Ctrl+V and Start-menu mask don't trigger it). Ask a person to press Ctrl+Win, or use `murmur ctl`.
+- The real shortcut can't be scripted: murmur ignores injected keys on purpose (so its own Ctrl+V paste can't trigger it). Ask a person to press Ctrl+Space, or use `murmur ctl`.
 - On a locked screen, pastes fail with "The native clipboard is not accessible" and screen grabs fail. Check for a `LogonUI` process before blaming murmur.
-- Never leave murmur running with `MURMUR_TRANSCRIBER=echo:…` when you hand the machine back: the person's next Ctrl+Win would paste your test sentence. `murmur ctl quit` first.
+- Never leave murmur running with `MURMUR_TRANSCRIBER=echo:…` when you hand the machine back: the person's next Ctrl+Space would paste your test sentence. `murmur ctl quit` first.
 - A real transcription (no `MURMUR_TRANSCRIBER`) sends audio to ChatGPT with the person's own Codex sign-in. Ask before doing that.

@@ -140,7 +140,7 @@ Five steps in one borderless window, 560 x 640, no title bar: drag it anywhere, 
 1. **Welcome**: the flock flies in from the left and lands on the mark, then title, body and button arrive 50ms apart. "Talk. It types." · Get started
 2. **Connect Codex**: murmur's bars, a dotted link, a terminal prompt for Codex. The link carries the state's icon and colour; the title is the state from the copy table above. Re-checks every 2s while visible.
 3. **Microphone**: nine live bars from the default mic, newest in the middle. The device name underneath. If no mic opens: "Can't hear a microphone" with Open settings.
-4. **Shortcut**: big key caps `Ctrl` `Win`. Inside the app this is a real first dictation: hold the keys, talk, let go, and the words land in a practice box.
-5. **Done**: the flock spells murmur in dots (`spring.playful`, the one bounce). "Hold Ctrl + Win in any app to talk." · Finish
+4. **Shortcut**: big key caps `Ctrl` `Space`. Inside the app this is a real first dictation: hold the keys, talk, let go, and the words land in a practice box.
+5. **Done**: the flock spells murmur in dots (`spring.playful`, the one bounce). "Hold Ctrl + Space in any app to talk." · Finish
 
 The opening flock plays each time the window opens; the window only opens the first time. The finish plays once. Screens on the board are rendered from the app's own views (`cargo test -p murmur brand_board -- --ignored`).

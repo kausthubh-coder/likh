@@ -1,6 +1,7 @@
 // Is this checkout healthy? Run before trusting a failure. Prints one line per
 // check and exits 1 if any required check fails. Never prints token values.
 import { execSync } from "node:child_process";
+import { cargoEnv } from "./cargo.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +9,7 @@ import { join } from "node:path";
 const root = join(import.meta.dir, "..");
 let failed = false;
 
-const sh = (cmd) => execSync(cmd, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const sh = (cmd) => execSync(cmd, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: cargoEnv }).trim();
 const check = (name, fn, { required = true } = {}) => {
   try {
     const detail = fn();

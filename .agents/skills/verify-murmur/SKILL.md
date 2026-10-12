@@ -5,7 +5,7 @@ description: Launch, drive and capture evidence from murmur, the native Windows 
 
 # Verify murmur
 
-murmur is a desktop app. The user runs `murmur`, holds Ctrl+Win anywhere to dictate and watches the pill; the first time, the onboarding window opens. Agents drive the running app with `murmur ctl` and can open onboarding alone with `murmur onboarding`.
+murmur is a desktop app. The user runs `murmur`, holds Ctrl+Space anywhere to dictate and watches the pill; the first time, the onboarding window opens. Agents drive the running app with `murmur ctl` and can open onboarding alone with `murmur onboarding`.
 
 Read `features/README.md`, then the feature file you're proving.
 

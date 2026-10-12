@@ -1,6 +1,6 @@
 # murmur
 
-**Talk. It types.** Native dictation for Windows, with macOS in alpha. Hold <kbd>Ctrl</kbd> + <kbd>Win</kbd>, say it, let go, and your words land wherever you're typing.
+**Talk. It types.** Native dictation for Windows, with macOS in alpha. Hold <kbd>Ctrl</kbd> + <kbd>Space</kbd>, say it, let go, and your words land wherever you're typing.
 
 - **Uses the ChatGPT plan you already have.** murmur transcribes through your Codex sign-in, so there's no API key and nothing extra to pay. Codex doesn't need to be running.
 - **Native and light.** Rust, drawn on the CPU, with no browser engine. Idle, it uses about 11 MB of memory and no CPU.

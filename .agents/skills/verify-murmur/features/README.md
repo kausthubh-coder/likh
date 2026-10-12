@@ -26,6 +26,6 @@ Each file has an H1 and one paragraph, then four H2s in this order: `Sub-feature
 
 ## Features
 
-- [Dictation](./dictation.md): hold Ctrl+Win, talk, let go; the pill; `murmur ctl`; idle cost.
+- [Dictation](./dictation.md): hold Ctrl+Space, talk, let go; the pill; `murmur ctl`; idle cost.
 - [Onboarding](./onboarding.md): the five first-run steps, every Codex sign-in state, the mic and the practice dictation.
 - [Status CLI](./status-cli.md): `murmur status` and `murmur status --json`.

@@ -26,7 +26,7 @@ export default function Home() {
             Talk. It types.
           </h1>
           <p className="mt-5 max-w-[34em] text-[17px] leading-[26px] text-pretty text-text-muted">
-            Hold Ctrl + Win, say it, let go. Your words land wherever you&apos;re typing, transcribed with the ChatGPT plan you
+            Hold Ctrl + Space, say it, let go. Your words land wherever you&apos;re typing, transcribed with the ChatGPT plan you
             already have.
           </p>
           <div className="mt-8 flex flex-col items-center gap-3">
@@ -45,7 +45,7 @@ export default function Home() {
         </section>
 
         <section className="mt-24 grid gap-10 sm:mt-32 sm:grid-cols-3 sm:gap-8">
-          <Step n={1} title="Hold Ctrl + Win">
+          <Step n={1} title="Hold Ctrl + Space">
             Anywhere: email, Slack, your editor, a terminal. murmur never takes focus, so your cursor stays put.
           </Step>
           <Step n={2} title="Say it">

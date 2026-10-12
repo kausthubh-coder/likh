@@ -90,7 +90,7 @@ export function Demo() {
       <div className="absolute top-4 right-5 flex items-center gap-1.5 sm:right-8" aria-hidden="true">
         <Key down={phase.keys}>Ctrl</Key>
         <span className="text-[12px] text-ink-muted">+</span>
-        <Key down={phase.keys}>Win</Key>
+        <Key down={phase.keys}>Space</Key>
       </div>
 
       <div className="absolute inset-x-0 bottom-6 flex justify-center">

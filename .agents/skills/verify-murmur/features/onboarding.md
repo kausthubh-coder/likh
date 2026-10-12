@@ -11,7 +11,7 @@ The first-run window: five steps in one borderless 560 x 640 window. It opens wi
 - `onb-codex-connected` titles it "Connected through Codex", shows the masked email and plan, and offers `Continue`. The link in the art turns green.
 - `onb-codex-live` turns not-connected into connected on its own within 2 s once a valid `auth.json` appears.
 - `onb-mic` shows nine live bars and the device name; with no mic, "Can't hear a microphone" and `Open settings`.
-- `onb-shortcut` lights the `Ctrl` `Win` key caps. Inside the app: holding the real shortcut records, and the words land in the practice box.
+- `onb-shortcut` lights the `Ctrl` `Space` key caps. Inside the app: holding the real shortcut records, and the words land in the practice box.
 - `onb-done` spells murmur in dots and `Finish` closes the window. murmur keeps running.
 - `onb-back` returns to the step before from anywhere but welcome and done.
 - `onb-drag` moves the window by dragging any empty spot (there is no title bar).

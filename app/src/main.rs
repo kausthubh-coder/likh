@@ -8,6 +8,7 @@ mod paste;
 mod pill;
 mod shared;
 mod transcriber;
+mod tray;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -23,7 +24,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run murmur: hold Ctrl+Win anywhere to dictate. The default.
+    /// Run murmur: hold Ctrl+Space anywhere to dictate. The default.
     Run {
         /// Don't open the first-run window, even the first time (agents and tests).
         #[arg(long)]
@@ -46,7 +47,7 @@ enum Command {
 fn main() -> ExitCode {
     match Cli::parse().command.unwrap_or(Command::Run { skip_onboarding: false }) {
         Command::Run { skip_onboarding } => run(skip_onboarding),
-        Command::Onboarding => match onboarding::run(None) {
+        Command::Onboarding => match onboarding::run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("murmur: {error}");
@@ -77,8 +78,8 @@ fn main() -> ExitCode {
     }
 }
 
-/// The app: the pill, the dictation thread, the shortcut and `murmur ctl`.
-/// Onboarding opens the first time. Then the main thread just waits; `murmur ctl quit` ends it.
+/// The app: the pill, the dictation thread, the shortcut, `murmur ctl`, and
+/// the tray on the main thread. Onboarding opens the first time.
 fn run(skip_onboarding: bool) -> ExitCode {
     if ctl::is_running() {
         eprintln!("murmur is already running. `murmur ctl quit` stops it.");
@@ -99,17 +100,14 @@ fn run(skip_onboarding: bool) -> ExitCode {
         }
     }
 
-    let marker = onboarded_marker();
-    if !skip_onboarding && marker.as_ref().is_some_and(|m| !m.exists()) {
-        if let Err(error) = onboarding::run(Some(status)) {
-            eprintln!("murmur: onboarding didn't open: {error}");
-        } else if let Some(marker) = &marker {
-            let _ = marker.parent().map(std::fs::create_dir_all);
-            let _ = std::fs::write(marker, "");
+    let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
+    // The tray owns the main thread until "Quit murmur".
+    match tray::run(status, first_run) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("murmur: {error}");
+            ExitCode::FAILURE
         }
-    }
-    loop {
-        std::thread::park();
     }
 }
 

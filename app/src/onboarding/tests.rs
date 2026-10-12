@@ -31,10 +31,39 @@ fn play(app: &mut Onboarding, seconds: f32) {
     }
 }
 
-fn ctrl_win(app: &mut Onboarding, held: bool) {
-    let modifiers =
-        if held { keyboard::Modifiers::CTRL | keyboard::Modifiers::LOGO } else { keyboard::Modifiers::empty() };
-    let _ = app.update(Message::Key(keyboard::Event::ModifiersChanged(modifiers)));
+/// What the window sees when someone holds (or lets go of) Ctrl, then Space.
+fn ctrl_space(app: &mut Onboarding, held: bool) {
+    let space = keyboard::Key::Named(keyboard::key::Named::Space);
+    let physical = keyboard::key::Physical::Code(keyboard::key::Code::Space);
+    let location = keyboard::Location::Standard;
+    let events = if held {
+        vec![
+            keyboard::Event::ModifiersChanged(keyboard::Modifiers::CTRL),
+            keyboard::Event::KeyPressed {
+                key: space.clone(),
+                modified_key: space,
+                physical_key: physical,
+                location,
+                modifiers: keyboard::Modifiers::CTRL,
+                text: None,
+                repeat: false,
+            },
+        ]
+    } else {
+        vec![
+            keyboard::Event::KeyReleased {
+                key: space.clone(),
+                modified_key: space,
+                physical_key: physical,
+                location,
+                modifiers: keyboard::Modifiers::CTRL,
+            },
+            keyboard::Event::ModifiersChanged(keyboard::Modifiers::empty()),
+        ]
+    };
+    for event in events {
+        let _ = app.update(Message::Key(event));
+    }
 }
 
 #[test]
@@ -113,16 +142,16 @@ fn back_returns_to_the_step_before() {
 }
 
 #[test]
-fn holding_ctrl_win_lights_the_keys_and_letting_go_confirms_it() {
+fn holding_ctrl_space_lights_the_keys_and_letting_go_confirms_it() {
     let _ui = test_ui::lock();
     let mut app = Onboarding::new(connected());
     for label in ["Get started", "Continue", "Sounds good"] {
         press(&mut app, label);
     }
     assert!(shows(&app, "Try it now: hold both keys."));
-    ctrl_win(&mut app, true);
+    ctrl_space(&mut app, true);
     assert!(shows(&app, "Now let go. That's when it pastes."));
-    ctrl_win(&mut app, false);
+    ctrl_space(&mut app, false);
     assert!(shows(&app, "That's the one. Works in any app."));
 }
 
@@ -160,7 +189,7 @@ fn inside_the_app_the_shortcut_step_follows_the_real_dictation() {
     for label in ["Get started", "Continue", "Sounds good"] {
         press(&mut app, label);
     }
-    assert!(shows(&app, "Hold Ctrl + Win and say anything."));
+    assert!(shows(&app, "Hold Ctrl + Space and say anything."));
 
     status.lock().expect("status").phase = Phase::Recording;
     let _ = app.update(Message::Watch);
@@ -235,22 +264,6 @@ fn the_finish_spells_murmur_and_settles() {
         let slot = slots[i % slots.len()];
         assert!((bird.position.x - slot.x).hypot(bird.position.y - slot.y) < 1.0, "bird {i} still moving");
     }
-}
-
-#[test]
-fn the_app_icon_is_the_mark() {
-    let icon = app_icon(64);
-    assert_eq!(icon.len(), 64 * 64 * 4);
-    let pixel = |x: usize, y: usize| &icon[(y * 64 + x) * 4..(y * 64 + x) * 4 + 4];
-    // Corners sit outside the capsule and stay transparent.
-    assert_eq!(pixel(0, 0)[3], 0);
-    // The middle bar is peach: the accent from the brand board, rgb(242, 160, 124).
-    let middle = pixel(33, 32);
-    assert!((i32::from(middle[0]) - 242).abs() <= 2 && (i32::from(middle[2]) - 124).abs() <= 2, "{middle:?}");
-    // Between two bars is the dark capsule, fully opaque.
-    let gap = pixel(29, 32);
-    assert_eq!(gap[3], 255);
-    assert!(gap[0] < 60, "{gap:?}");
 }
 
 /// Regenerates the onboarding screenshots on the brand board from the real

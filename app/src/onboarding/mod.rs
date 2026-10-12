@@ -1,6 +1,6 @@
 //! First-run window: a fixed 560 x 640 borderless window with five steps
 //! (welcome, Codex, microphone, shortcut, done). Inside the running app the
-//! shortcut step is a real first dictation: holding Ctrl+Win records through
+//! shortcut step is a real first dictation: holding Ctrl+Space records through
 //! the global shortcut and the words land in a practice box. Opened on its own
 //! (`murmur onboarding`), the step only checks the keys.
 //!
@@ -15,6 +15,7 @@ use crate::codex_auth::{self, CodexStatus};
 use crate::dictation::{Phase, Status};
 use crate::hotkey;
 use crate::microphone;
+use crate::shared::icon;
 use crate::shared::spring::{self, Spring};
 use crate::shared::theme::{self, Palette, palette, radius, size, space};
 use flock::{Flock, Shape};
@@ -75,7 +76,7 @@ struct Mic {
 #[derive(Default)]
 struct Keys {
     ctrl: bool,
-    win: bool,
+    space: bool,
     /// Held both and let go at least once.
     tried: bool,
 }
@@ -139,8 +140,13 @@ impl Onboarding {
         }
     }
 
-    fn boot(dictation: Option<Arc<Mutex<Status>>>) -> (Self, Task<Message>) {
-        (Self { dictation, ..Self::new(check_codex_now()) }, window::oldest().map(Message::WindowFound))
+    fn boot() -> (Self, Task<Message>) {
+        (Self::new(check_codex_now()), window::oldest().map(Message::WindowFound))
+    }
+
+    /// Onboarding inside the running app, in a window the tray opened.
+    pub fn in_app(window: window::Id, dictation: Arc<Mutex<Status>>) -> Self {
+        Self { window: Some(window), dictation: Some(dictation), ..Self::new(check_codex_now()) }
     }
 
     #[cfg(test)]
@@ -155,7 +161,8 @@ impl Onboarding {
             Message::Recheck => self.codex = check_codex_now(),
             Message::GetCodex => open_url(GET_CODEX_URL),
             Message::OpenMicSettings => open_url(MIC_SETTINGS_URL),
-            Message::Finish => return iced::exit(),
+            // Closing the window ends `murmur onboarding`; inside the app, murmur stays in the tray.
+            Message::Finish => return self.window.map_or_else(iced::exit, window::close),
             Message::WindowFound(id) => self.window = id,
             Message::Drag => return self.window.map_or_else(Task::none, window::drag),
             Message::Frame(now) => {
@@ -179,15 +186,19 @@ impl Onboarding {
                     self.mic.history[0] = last + (level - last) * rate;
                 }
             },
-            Message::Key(keyboard::Event::ModifiersChanged(modifiers)) => {
-                let was_held = self.keys.ctrl && self.keys.win;
-                self.keys.ctrl = modifiers.control();
-                self.keys.win = modifiers.logo();
-                if was_held && !(self.keys.ctrl && self.keys.win) {
+            Message::Key(event) => {
+                let was_held = self.keys.ctrl && self.keys.space;
+                let space = keyboard::Key::Named(keyboard::key::Named::Space);
+                match event {
+                    keyboard::Event::ModifiersChanged(modifiers) => self.keys.ctrl = modifiers.control(),
+                    keyboard::Event::KeyPressed { key, .. } if key == space => self.keys.space = true,
+                    keyboard::Event::KeyReleased { key, .. } if key == space => self.keys.space = false,
+                    _ => {}
+                }
+                if was_held && !(self.keys.ctrl && self.keys.space) {
                     self.keys.tried = true;
                 }
             }
-            Message::Key(_) => {}
             Message::Watch => {
                 let phase =
                     self.dictation.as_ref().map(|d| d.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).phase);
@@ -196,7 +207,7 @@ impl Onboarding {
                     self.keys.tried = true;
                 }
                 self.keys.ctrl = held;
-                self.keys.win = held;
+                self.keys.space = held;
             }
             Message::Practice(words) => self.practice = words,
         }
@@ -240,7 +251,7 @@ impl Onboarding {
             (Step::ConnectCodex, CodexStatus::Connected(_)) => Subscription::none(),
             (Step::ConnectCodex, _) => time::every(Duration::from_secs(2)).map(|_| Message::Recheck),
             (Step::Microphone, _) => Subscription::run(microphone::listen).map(Message::Mic),
-            // Inside the app the global shortcut swallows Ctrl+Win, so watch the dictation instead.
+            // Inside the app the global shortcut swallows Ctrl+Space, so watch the dictation instead.
             (Step::Shortcut, _) if self.dictation.is_some() => {
                 time::every(Duration::from_millis(80)).map(|_| Message::Watch)
             }
@@ -314,7 +325,7 @@ impl Onboarding {
         Page {
             art: flock_art(p, Shape::Word, self.clock),
             title: "You're all set",
-            body: "Hold Ctrl + Win in any app to talk. murmur keeps running quietly in the background.".into(),
+            body: "Hold Ctrl + Space in any app to talk. murmur waits in your tray.".into(),
             note: None,
             actions: vec![Action::Primary("Finish", Message::Finish)],
         }
@@ -329,14 +340,14 @@ pub fn check_codex_now() -> CodexStatus {
     }
 }
 
-/// `dictation` is the running app's, or None when onboarding opens on its own.
-pub fn run(dictation: Option<Arc<Mutex<Status>>>) -> iced::Result {
-    let settings = window::Settings {
+/// The window onboarding lives in: fixed size, centred, no title bar.
+pub fn window_settings() -> window::Settings {
+    window::Settings {
         size: WINDOW,
         position: window::Position::Centered,
         resizable: false,
         decorations: false,
-        icon: window::icon::from_rgba(app_icon(64), 64, 64).ok(),
+        icon: window::icon::from_rgba(icon::rgba(64), 64, 64).ok(),
         #[cfg(target_os = "windows")]
         platform_specific: window::settings::PlatformSpecific {
             undecorated_shadow: true,
@@ -344,11 +355,15 @@ pub fn run(dictation: Option<Arc<Mutex<Status>>>) -> iced::Result {
             ..window::settings::PlatformSpecific::default()
         },
         ..window::Settings::default()
-    };
-    let mut app = iced::application(move || Onboarding::boot(dictation.clone()), Onboarding::update, Onboarding::view)
+    }
+}
+
+/// `murmur onboarding`: the window on its own, without the running app.
+pub fn run() -> iced::Result {
+    let mut app = iced::application(Onboarding::boot, Onboarding::update, Onboarding::view)
         .title("murmur")
         .subscription(Onboarding::subscription)
-        .window(settings)
+        .window(window_settings())
         .theme(|_: &Onboarding| Theme::Dark)
         .default_font(theme::UI);
     for font in theme::FONT_FILES {
@@ -545,7 +560,7 @@ fn level_bars<'a>(color: Color, history: &[f32; MIC_HISTORY]) -> Element<'a, Mes
 
 /// `practice` is Some inside the running app: a box the first real dictation pastes into.
 fn shortcut<'a>(p: &Palette, keys: &Keys, practice: Option<&str>) -> Page<'a> {
-    let held = keys.ctrl && keys.win;
+    let held = keys.ctrl && keys.space;
     let key = |label: &'static str, down: bool| -> Element<'a, Message> {
         let (fill, ink) = if down { (p.accent, p.on_accent) } else { (p.surface, p.text) };
         container(text(label).size(size::BODY).font(theme::MONO).color(ink))
@@ -562,9 +577,10 @@ fn shortcut<'a>(p: &Palette, keys: &Keys, practice: Option<&str>) -> Page<'a> {
             })
             .into()
     };
-    let keycaps = row![key("Ctrl", keys.ctrl), text("+").size(size::BODY).color(p.text_subtle), key("Win", keys.win)]
-        .spacing(space::S3)
-        .align_y(Alignment::Center);
+    let keycaps =
+        row![key("Ctrl", keys.ctrl), text("+").size(size::BODY).color(p.text_subtle), key("Space", keys.space)]
+            .spacing(space::S3)
+            .align_y(Alignment::Center);
     let (art, body, note): (Element<'a, Message>, &str, (String, Color)) = match practice {
         Some(words) => {
             let (surface, ink, hint, accent) = (p.surface, p.text, p.text_subtle, p.accent);
@@ -608,7 +624,7 @@ fn shortcut<'a>(p: &Palette, keys: &Keys, practice: Option<&str>) -> Page<'a> {
             } else {
                 ("Try it now: hold both keys.".to_string(), p.text_subtle)
             };
-            (keycaps.into(), "Hold Ctrl + Win, say it, let go. Double-tap for hands-free. Esc cancels.", note)
+            (keycaps.into(), "Hold Ctrl + Space, say it, let go. Esc cancels.", note)
         }
     };
     Page {
@@ -642,6 +658,7 @@ struct Link {
 
 #[derive(Clone, Copy)]
 struct LinkColors {
+    backdrop: Color,
     accent: Color,
     muted: Color,
     subtle: Color,
@@ -654,6 +671,7 @@ struct LinkColors {
 impl LinkColors {
     fn from(p: &Palette) -> Self {
         Self {
+            backdrop: p.bg,
             accent: p.accent,
             muted: p.text_muted,
             subtle: p.text_subtle,
@@ -677,8 +695,12 @@ impl canvas::Program<Message> for Link {
         _: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
-        let c = frame.center();
         let colors = self.colors;
+        // The software renderer repaints only each shape's exact bounds, which misses
+        // stroke widths and antialiased rims, so a step sliding away left a ghost of
+        // the prompt behind. Painting the backdrop makes it repaint the whole art.
+        frame.fill_rectangle(Point::ORIGIN, bounds.size(), colors.backdrop);
+        let c = frame.center();
         let ink = match self.tone {
             Tone::Neutral => colors.muted,
             Tone::Warning => colors.warning,
@@ -815,40 +837,6 @@ fn lighten(color: Color, amount: f32) -> Color {
 fn capitalize(word: &str) -> String {
     let mut chars = word.chars();
     chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
-}
-
-/// The window and taskbar icon: the mark (a dark capsule with five peach bars)
-/// drawn into an RGBA square, antialiased with signed distances.
-fn app_icon(side: u32) -> Vec<u8> {
-    let p = palette();
-    let s = side as f32 / 64.0;
-    // Distance from a point to a rounded box centred at (cx, cy); negative inside.
-    let rounded_box = |x: f32, y: f32, cx: f32, cy: f32, half_w: f32, half_h: f32, r: f32| {
-        let (dx, dy) = ((x - cx).abs() - half_w + r, (y - cy).abs() - half_h + r);
-        dx.max(0.0).hypot(dy.max(0.0)) + dx.max(dy).min(0.0) - r
-    };
-    let mut rgba = Vec::with_capacity((side * side * 4) as usize);
-    for py in 0..side {
-        for px in 0..side {
-            let (x, y) = (px as f32 + 0.5, py as f32 + 0.5);
-            let shell = (0.5 - rounded_box(x, y, 32.0 * s, 32.0 * s, 31.0 * s, 20.0 * s, 20.0 * s)).clamp(0.0, 1.0);
-            let bar = [0.45, 0.85, 0.55, 0.85, 0.45]
-                .iter()
-                .enumerate()
-                .map(|(i, h)| {
-                    let half_h = 11.0 * h * s;
-                    let d = rounded_box(x, y, (17.0 + 8.0 * i as f32) * s, 32.0 * s, 2.0 * s, half_h, 2.0 * s);
-                    (0.5 - d).clamp(0.0, 1.0)
-                })
-                .fold(0.0, f32::max);
-            let color = mix(p.surface, p.accent, bar);
-            for channel in [color.r, color.g, color.b] {
-                rgba.push((channel * 255.0).round() as u8);
-            }
-            rgba.push((shell * 255.0).round() as u8);
-        }
-    }
-    rgba
 }
 
 fn open_url(url: &str) {
