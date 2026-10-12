@@ -6,6 +6,7 @@ const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const NAME: &str = "murmur";
 
 /// The command Windows runs at sign-in: this exe, quoted for paths with spaces.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "start at login is Windows-only for now"))]
 pub fn command(exe: &std::path::Path) -> String {
     format!("\"{}\"", exe.display())
 }
