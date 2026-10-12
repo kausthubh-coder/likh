@@ -105,8 +105,6 @@ pub struct Panel {
     updates: Updates,
     codex: CodexStatus,
     groq: GroqSetup,
-    /// None until the Transcription tab looks.
-    windows: Option<Result<(), Failure>>,
     /// Picking a new shortcut: the modifiers held so far.
     capturing: Option<keyboard::Modifiers>,
     notice: Option<(String, Tone)>,
@@ -162,7 +160,6 @@ impl Panel {
             updates,
             codex: onboarding::check_codex_now(),
             groq: GroqSetup::look(),
-            windows: None,
             capturing: None,
             notice: None,
             history: Vec::new(),
@@ -198,12 +195,10 @@ impl Panel {
         self.confirm_clear = false;
     }
 
-    /// Looks again at whichever engine is picked.
+    /// Looks again at Codex's sign-in (a Groq key only changes in likh itself).
     fn recheck(&mut self) {
-        match self.chosen().engine {
-            Engine::Codex => self.codex = onboarding::check_codex_now(),
-            Engine::Groq => {}
-            Engine::Windows => self.windows = Some(onboarding::check_windows_now()),
+        if self.chosen().engine == Engine::Codex {
+            self.codex = onboarding::check_codex_now();
         }
     }
 
@@ -216,12 +211,7 @@ impl Panel {
                 match tab {
                     Tab::History => self.load_history(),
                     // Every card says where its engine stands, so look at all of them.
-                    Tab::Transcription => {
-                        self.codex = onboarding::check_codex_now();
-                        if Engine::available().contains(&Engine::Windows) {
-                            self.windows = Some(onboarding::check_windows_now());
-                        }
-                    }
+                    Tab::Transcription => self.codex = onboarding::check_codex_now(),
                     Tab::About => self.recheck(),
                     Tab::General | Tab::Commands => {}
                 }
@@ -406,10 +396,7 @@ impl Panel {
                 Space::new().height(space::S5),
                 nav,
                 Space::new().height(Length::Fill),
-                text(format!("v{}", env!("CARGO_PKG_VERSION")))
-                    .size(size::CAPTION)
-                    .font(theme::MONO)
-                    .color(p.text_subtle),
+                self.sidebar_update(p),
             ]
             .padding([space::S5, space::S4]),
         )
@@ -420,6 +407,34 @@ impl Panel {
             ..container::Style::default()
         })
         .into()
+    }
+
+    /// The foot of the sidebar: this version, and the one update button that
+    /// fits where updating stands, on every tab.
+    fn sidebar_update(&self, p: &Palette) -> Element<'_, Message> {
+        let this = env!("CARGO_PKG_VERSION");
+        let caption = |words: String| text(words).size(size::CAPTION).font(theme::MONO).color(p.text_subtle);
+        let (button, words): (Option<Element<'_, Message>>, String) = match self.updates.state() {
+            update::State::Ready { version, .. } => {
+                (Some(primary("Restart to update", Message::Restart, 1.0)), format!("v{this} \u{2192} v{version}"))
+            }
+            update::State::Downloading { version } => (None, format!("Downloading v{version}\u{2026}")),
+            update::State::Checking => (None, "Checking\u{2026}".into()),
+            update::State::Available { version, page } => {
+                (Some(ghost("Download update", Message::OpenRelease(page), 1.0)), format!("v{version} is out"))
+            }
+            update::State::UpToDate { .. } => {
+                (Some(ghost("Check for updates", Message::CheckForUpdates, 1.0)), format!("v{this} \u{b7} newest"))
+            }
+            update::State::Idle | update::State::Failed { .. } => {
+                (Some(ghost("Check for updates", Message::CheckForUpdates, 1.0)), format!("v{this}"))
+            }
+        };
+        let mut foot = column![].spacing(space::S2);
+        if let Some(button) = button {
+            foot = foot.push(button);
+        }
+        foot.push(caption(words)).into()
     }
 
     fn nav_item(&self, p: &Palette, tab: Tab) -> Element<'_, Message> {
@@ -526,9 +541,9 @@ impl Panel {
 
     fn transcription(&self, p: &Palette) -> Element<'_, Message> {
         let picked = self.chosen().engine;
-        let cards = row(Engine::available().iter().map(|engine| self.engine_card(p, *engine, *engine == picked)))
-            .spacing(space::S2);
-        let copy = onboarding::engine_copy(picked, &self.codex, &self.groq, self.windows.as_ref());
+        let cards =
+            row(Engine::ALL.iter().map(|engine| self.engine_card(p, *engine, *engine == picked))).spacing(space::S2);
+        let copy = onboarding::engine_copy(picked, &self.codex, &self.groq);
         let tint = tone_color(p, copy.tone);
         let state = row![
             container(Space::new()).width(8).height(8).style(move |_| pill_fill(tint)),
@@ -577,12 +592,6 @@ impl Panel {
                 .spacing(space::S3)
                 .into()
             }
-            Engine::Windows => row![
-                ghost("Open speech settings", Message::Open(onboarding::SPEECH_SETTINGS_URL), 1.0),
-                ghost("Check again", Message::Recheck, 1.0),
-            ]
-            .spacing(space::S1)
-            .into(),
         };
         let groq_notice: Element<'_, Message> = match (&self.groq.notice, picked) {
             (Some((words, tone)), Engine::Groq) => {
@@ -653,12 +662,6 @@ impl Panel {
             },
             Engine::Groq if self.groq.saved => ("Key saved", true),
             Engine::Groq => ("Needs a key", false),
-            Engine::Windows => match self.windows {
-                None => ("Not checked", false),
-                Some(Ok(())) => ("Ready", true),
-                Some(Err(Failure::WindowsPrivacy)) => ("Turned off", false),
-                Some(Err(_)) => ("Unavailable", false),
-            },
         }
     }
 
@@ -766,7 +769,7 @@ impl Panel {
 
     fn about(&self, p: &Palette) -> Element<'_, Message> {
         let engine = self.chosen().engine;
-        let copy = onboarding::engine_copy(engine, &self.codex, &self.groq, self.windows.as_ref());
+        let copy = onboarding::engine_copy(engine, &self.codex, &self.groq);
         let status = self.dictation.lock().map(|s| s.clone()).unwrap_or_else(|poisoned| poisoned.into_inner().clone());
         let tint = tone_color(p, copy.tone);
         let account = row![
@@ -789,9 +792,6 @@ impl Panel {
         let audio = match engine {
             Engine::Codex => "Free and open source, MIT. Your audio goes to ChatGPT through Codex and nowhere else.",
             Engine::Groq => "Free and open source, MIT. Your audio goes to Groq with your key and nowhere else.",
-            Engine::Windows => {
-                "Free and open source, MIT. Your audio goes to Microsoft's speech service and nowhere else."
-            }
         };
         column![
             section(p, "Transcribing with", account.into()),

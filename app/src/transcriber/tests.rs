@@ -93,12 +93,10 @@ fn only_groq_shaped_keys_are_accepted() {
 
 #[test]
 fn the_fake_wins_over_every_engine() {
-    for engine in [Engine::Codex, Engine::Groq, Engine::Windows] {
+    for engine in Engine::ALL {
         assert_eq!(Transcriber::new(engine, Some("Hi.")), Transcriber::Echo("Hi.".into()));
     }
     assert_eq!(Transcriber::new(Engine::Groq, None), Transcriber::Groq);
-    assert!(Transcriber::new(Engine::Windows, None).listens_live());
-    assert!(!Transcriber::new(Engine::Codex, None).listens_live());
 }
 
 /// A real Groq round trip: likh's own WAV, multipart and parsing against the

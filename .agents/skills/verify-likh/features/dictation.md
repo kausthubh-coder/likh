@@ -5,14 +5,14 @@ The product: hold Ctrl+Space, talk, let go, and the text pastes where the cursor
 ## Sub-features
 
 - `dict-paste` pastes the transcript into the focused app and puts the old clipboard text back.
-- `dict-tap` drops a tap shorter than 300 ms quietly: no error, nothing pasted.
+- `dict-tap` a press shorter than 300 ms is a tap: hands-free in "Hold or tap", dropped quietly in "Hold only". Measured from the moment the key came up, not from when the dictation thread got to it (opening the mic holds that thread for 300 to 600 ms).
 - `dict-cancel` Esc while recording (or `likh ctl cancel`) throws the audio away. Esc never reaches the app while recording.
 - `dict-errors` shows a sentence in the pill for each failure: expired or missing Codex sign-in, ChatGPT refusing it, offline, too long, rate-limited, a busy clipboard, no microphone.
 - `dict-cap` counts down the last minute in the pill and stops at 9:55.
-- `dict-status` `likh ctl status` reports the phase, the transcriber (`codex`, `groq`, `windows` or `echo`), the dictation count and the last one's audio length, latency and error. Never the text.
-- `dict-silence-stop` in hands-free, once something above about -37 dBFS was heard, likh stops and pastes after the chosen quiet (3, 5 or 10 s; 5 by default). A held shortcut never stops by itself.
+- `dict-status` `likh ctl status` reports the phase, the transcriber (`codex`, `groq` or `echo`), the dictation count and the last one's audio length, latency and error. Never the text.
+- `dict-silence-stop` in hands-free, once something above about -37 dBFS was heard, likh stops and pastes after the chosen quiet (3, 5 or 10 s; 5 by default). After 1 s of quiet the pill shows a peach ring around the stop button that empties toward the stop, with the seconds in the last 3 s; talking again clears it. A held shortcut never stops by itself.
 - `dict-commands` "new line", "new paragraph", "new bullet" anywhere; "press enter" / "press tab" at the end; "scratch that" alone undoes the last paste, after a sentence it drops that sentence; punctuation by name ("comma", "question mark") only when switched on. Each group can be switched off.
-- `dict-engine` the engine in settings is read at every key-down: Codex, Groq (key from the credential store) or Windows speech (listens live; with Online speech recognition off the pill says how to turn it on).
+- `dict-engine` the engine in settings is read at every key-down: Codex or Groq (key from the credential store).
 - `dict-pause-media` with "Pause music and videos" on (the Windows default), what's playing pauses at key-down and plays again at key-up. Only what likh paused.
 - `dict-mouse` a picked mouse button (middle, back, forward) works like the shortcut and its normal click is blocked.
 - `pill-idle` the pill is hidden and nothing (pill, shortcut, dictation) uses CPU while idle.
@@ -51,6 +51,5 @@ Recipes:
 - On a locked screen, pastes fail with "The native clipboard is not accessible" and screen grabs fail. Check for a `LogonUI` process before blaming likh.
 - Never leave likh running with `LIKH_TRANSCRIBER=echo:…` when you hand the machine back: the person's next Ctrl+Space would paste your test sentence. `likh ctl quit` first.
 - A real transcription (no `LIKH_TRANSCRIBER`) sends audio to ChatGPT with the person's own Codex sign-in. Ask before doing that.
-- Windows speech can't be faked with `LIKH_AUDIO`: it opens the real mic itself. `LIKH_TRANSCRIBER=echo:` still replaces it. `cargo test -p likh windows_speech -- --ignored --nocapture` starts and stops a real session (needs Online speech recognition on, which is the person's setting to change).
 - Pause media pauses the person's own music. Keep `"pause_media": false` in your `LIKH_HOME` settings unless that's what you're proving, and ask first. `cargo test -p likh media -- --ignored --nocapture` only lists the sessions.
 - Never pick a mouse button in a running likh unless asked: the hook blocks that click system-wide. Injected clicks are ignored by design, so it can't be scripted anyway.

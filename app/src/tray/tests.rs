@@ -7,7 +7,23 @@ fn menu_ids_map_to_what_they_say() {
     assert_eq!(pick_for_menu("quit"), Some(Pick::Quit));
     assert_eq!(pick_for_menu("update"), Some(Pick::Update));
     assert_eq!(pick_for_menu("Hold Ctrl + Space to talk"), None);
-    assert_eq!(restart_to_update("0.1.0-alpha.6"), "Restart to update to 0.1.0-alpha.6");
+}
+
+#[test]
+fn the_update_line_says_where_updating_stands_and_only_works_when_it_can() {
+    let line = |state: State| update_line(&state);
+    assert_eq!(line(State::Idle), ("Check for updates".into(), true));
+    assert_eq!(line(State::Checking), ("Checking for updates\u{2026}".into(), false));
+    assert_eq!(line(State::UpToDate { checked_at: 0 }), ("Up to date \u{b7} Check again".into(), true));
+    assert_eq!(
+        line(State::Downloading { version: "0.1.0-alpha.6".into() }),
+        ("Downloading likh 0.1.0-alpha.6\u{2026}".into(), false)
+    );
+    assert_eq!(
+        line(State::Ready { version: "0.1.0-alpha.6".into(), installer: PathBuf::from("likh-setup.exe") }),
+        ("Restart to update to 0.1.0-alpha.6".into(), true)
+    );
+    assert_eq!(line(State::Failed { reason: "offline".into() }), ("Couldn't check \u{b7} Try again".into(), true));
 }
 
 fn app(marker: Option<PathBuf>) -> App {

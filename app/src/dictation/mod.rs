@@ -24,22 +24,24 @@ pub const LONGEST: Duration = Duration::from_millis(595_000);
 pub const WARN_AFTER: Duration = Duration::from_secs(540);
 /// A press shorter than this is a tap: hands-free in "Hold or tap", dropped in "Hold only".
 pub const TAP: Duration = Duration::from_millis(300);
+/// Hands-free shows its quiet countdown only after this much quiet, so the
+/// pauses between sentences don't make the ring flicker.
+pub const QUIET_GRACE: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Input {
     /// The shortcut went down (or `likh ctl start`).
     Hold,
-    /// The shortcut came up.
-    Release,
+    /// The shortcut came up, at this moment. Stamped where the key is seen:
+    /// opening the mic takes 300 to 600ms, and a release that waited behind it
+    /// would turn every tap into a hold.
+    Release(Instant),
     /// The pill's stop button, or `likh ctl stop`: finish and paste, however it started.
     Stop,
     /// Esc, or `likh ctl cancel`.
     Cancel,
     /// The mic couldn't open.
     MicFailed(String),
-    /// The transcriber can't listen (Windows speech switched off, say).
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows speech listens live"))]
-    CantListen(Failure),
     Transcribed(Result<String, Failure>),
     /// Sent every 250ms while recording, for the countdown and the cap.
     Tick,
@@ -89,11 +91,13 @@ pub struct Dictation {
     phase: Phase,
     started: Option<Instant>,
     warned_at: Option<u64>,
+    /// The pill is counting down to silence stop.
+    counting_quiet: bool,
 }
 
 impl Default for Dictation {
     fn default() -> Self {
-        Self { phase: Phase::Idle, started: None, warned_at: None }
+        Self { phase: Phase::Idle, started: None, warned_at: None, counting_quiet: false }
     }
 }
 
@@ -109,6 +113,7 @@ impl Dictation {
             (Phase::Idle, Input::Hold) => {
                 self.started = Some(now);
                 self.warned_at = None;
+                self.counting_quiet = false;
                 let (phase, show) = match choices.mode {
                     Mode::Tap => (Phase::HandsFree, Show::HandsFree),
                     Mode::Hold | Mode::HoldOrTap => (Phase::Recording, Show::Listening),
@@ -116,14 +121,14 @@ impl Dictation {
                 self.phase = phase;
                 vec![Effect::StartRecording, Effect::Sound(Cue::Start), Effect::Pill(show)]
             }
-            (Phase::Recording, Input::Release) if held < TAP => match choices.mode {
+            (Phase::Recording, Input::Release(at)) if self.held_until(at) < TAP => match choices.mode {
                 Mode::HoldOrTap => {
                     self.phase = Phase::HandsFree;
                     vec![Effect::Pill(Show::HandsFree)]
                 }
                 Mode::Hold | Mode::Tap => self.stop(Effect::Discard, Show::Cancelled),
             },
-            (Phase::Recording, Input::Release) => self.transcribe(),
+            (Phase::Recording, Input::Release(_)) => self.transcribe(),
             (Phase::HandsFree, Input::Hold) => self.transcribe(),
             (_, Input::Stop) if recording => self.transcribe(),
             (_, Input::Cancel) if recording => self.stop(Effect::Discard, Show::Cancelled),
@@ -133,16 +138,22 @@ impl Dictation {
                 effects.push(Effect::Sound(Cue::Error));
                 effects
             }
-            (_, Input::CantListen(failure)) if recording => {
-                let mut effects = self.stop(Effect::Discard, Show::Error(failure.message()));
-                effects.push(Effect::Sound(Cue::Error));
-                effects
-            }
             (_, Input::Tick) if recording && held >= LONGEST => self.transcribe(),
             // Holding the keys means you decide when it ends; only hands-free stops by itself.
-            (Phase::HandsFree, Input::Quiet(quiet)) if choices.silence_stop.is_some_and(|after| quiet >= after) => {
-                self.transcribe()
-            }
+            (Phase::HandsFree, Input::Quiet(quiet)) => match choices.silence_stop {
+                Some(after) if quiet >= after => self.transcribe(),
+                // The last minute's countdown owns the pill once it starts.
+                Some(after) if quiet >= QUIET_GRACE && held < WARN_AFTER => {
+                    self.counting_quiet = true;
+                    vec![Effect::Pill(Show::QuietStop { left: after - quiet, after })]
+                }
+                // Talking again puts the stop button back.
+                _ if self.counting_quiet && held < WARN_AFTER => {
+                    self.counting_quiet = false;
+                    vec![Effect::Pill(Show::HandsFree)]
+                }
+                _ => vec![],
+            },
             (_, Input::Tick) if recording && held >= WARN_AFTER => {
                 let seconds_left = (LONGEST - held).as_secs_f32().ceil() as u64;
                 if self.warned_at == Some(seconds_left) {
@@ -181,6 +192,11 @@ impl Dictation {
             // in hands-free, a late tick: nothing to do.
             _ => vec![],
         }
+    }
+
+    /// How long the keys were down, if they came up at `at`.
+    fn held_until(&self, at: Instant) -> Duration {
+        self.started.map_or(Duration::ZERO, |started| at.saturating_duration_since(started))
     }
 
     fn transcribe(&mut self) -> Vec<Effect> {
@@ -242,9 +258,6 @@ pub fn spawn(
 struct Running {
     recording: Option<Recording>,
     transcriber: Option<Arc<Transcriber>>,
-    /// Windows speech, listening alongside the recording.
-    #[cfg(target_os = "windows")]
-    listening: Option<crate::transcriber::windows_speech::Listening>,
     /// Media this dictation is pausing (pausing takes a moment, so it runs on its own thread).
     paused: Option<std::thread::JoinHandle<crate::media::Paused>>,
 }
@@ -292,7 +305,6 @@ fn run(
         let failed = match &input {
             Input::Transcribed(Err(failure)) => Some(failure.message()),
             Input::MicFailed(reason) => Some(reason.clone()),
-            Input::CantListen(failure) => Some(failure.message()),
             _ => None,
         };
         // Each tick also reports the quiet since the last speech, for silence stop.
@@ -317,15 +329,6 @@ fn run(
                     // The engine is read per dictation, so a change in settings applies to the next one.
                     let transcriber = Arc::new(Transcriber::new(chosen.engine, fake.as_deref()));
                     status.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).transcriber = transcriber.name();
-                    #[cfg(target_os = "windows")]
-                    if transcriber.listens_live() {
-                        match crate::transcriber::windows_speech::start() {
-                            Ok(listening) => running.listening = Some(listening),
-                            Err(failure) => {
-                                let _ = tx.send(Input::CantListen(failure));
-                            }
-                        }
-                    }
                     if chosen.pause_media && crate::media::SUPPORTED {
                         running.paused = Some(std::thread::spawn(crate::media::pause_playing));
                     }
@@ -347,17 +350,8 @@ fn run(
                         .transcriber
                         .take()
                         .unwrap_or_else(|| Arc::new(Transcriber::new(chosen.engine, fake.as_deref())));
-                    #[cfg(target_os = "windows")]
-                    let live = running.listening.take();
                     let tx = tx.clone();
                     std::thread::spawn(move || {
-                        #[cfg(target_os = "windows")]
-                        if let Some(live) = live {
-                            let heard = live.finish();
-                            let too_short = seconds < crate::transcriber::SHORTEST.as_secs_f32();
-                            let _ = tx.send(Input::Transcribed(if too_short { Err(Failure::TooShort) } else { heard }));
-                            return;
-                        }
                         let _ = tx.send(Input::Transcribed(transcriber.transcribe(&samples)));
                     });
                 }
@@ -365,10 +359,6 @@ fn run(
                     running.resume_media();
                     running.recording = None;
                     running.transcriber = None;
-                    #[cfg(target_os = "windows")]
-                    if let Some(live) = running.listening.take() {
-                        std::thread::spawn(move || drop(live.finish()));
-                    }
                 }
                 Effect::Sound(cue) if chosen.sounds => crate::sounds::play(cue),
                 Effect::Sound(_) => {}

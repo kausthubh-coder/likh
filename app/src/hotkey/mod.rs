@@ -309,7 +309,7 @@ mod other {
                     }
                     let input = match event.state {
                         HotkeyState::Pressed => Input::Hold,
-                        HotkeyState::Released => Input::Release,
+                        HotkeyState::Released => Input::Release(std::time::Instant::now()),
                     };
                     if event.id == id && dictation.send(input).is_err() {
                         return;

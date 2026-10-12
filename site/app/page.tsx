@@ -6,8 +6,8 @@ import { FlockMark } from "./flock-mark";
 const REPO = "https://github.com/kausthubh-coder/likh";
 /** The published build. Bump with each release; the page reads everything else from here. */
 const RELEASE = {
-  version: "0.1.0-alpha.5",
-  windows: `${REPO}/releases/download/v0.1.0-alpha.5/likh-setup-windows-x64.exe`,
+  version: "0.1.0-alpha.6",
+  windows: `${REPO}/releases/download/v0.1.0-alpha.6/likh-setup-windows-x64.exe`,
   size: "4.9 MB",
 };
 
@@ -24,7 +24,7 @@ const FEATURES = [
   { title: "Voice commands", line: "“New line”, “new bullet”, “press enter”, “scratch that”." },
   { title: "History", line: "Every dictation, kept on your computer. Click to copy." },
   { title: "Your shortcut", line: "Press the keys you want, or use a mouse button." },
-  { title: "Three free engines", line: "Your ChatGPT plan, a free Groq key, or Windows speech." },
+  { title: "Two free engines", line: "Your ChatGPT plan, or a free Groq key." },
   { title: "Keeps itself current", line: "Starts with Windows and updates when you say so." },
 ];
 

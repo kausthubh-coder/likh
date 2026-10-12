@@ -289,12 +289,6 @@ fn brand_board_onboarding() {
             app.groq = GroqSetup { key: "gsk_0123456789abcdef".into(), ..GroqSetup::default() };
             app
         }),
-        ("2-windows-off", {
-            let mut app = at(Step::Connect, connected());
-            app.engine = Engine::Windows;
-            app.windows = Some(Err(Failure::WindowsPrivacy));
-            app
-        }),
         ("3-microphone", {
             let mut app = at(Step::Microphone, connected());
             let _ = app.update(Message::Mic(microphone::Event::Opened { device: "Microphone (USB Audio)".into() }));
@@ -342,7 +336,7 @@ fn the_connect_step_offers_every_engine_and_starts_on_chatgpt() {
     let _ui = test_ui::lock();
     let mut app = Onboarding::new(connected());
     press(&mut app, "Get started");
-    for engine in Engine::available() {
+    for engine in Engine::ALL {
         assert!(shows(&app, engine.name()), "{engine:?}");
     }
     assert!(shows(&app, "Connected through Codex"));
@@ -372,20 +366,4 @@ fn a_saved_groq_key_lets_you_continue() {
     assert!(shows(&app, "Groq is ready"));
     press(&mut app, "Continue");
     assert_eq!(app.step(), Step::Microphone);
-}
-
-#[cfg(target_os = "windows")]
-#[test]
-fn windows_speech_switched_off_opens_its_settings() {
-    let _ui = test_ui::lock();
-    let mut app = Onboarding::new(CodexStatus::NotInstalled);
-    press(&mut app, "Get started");
-    let _ = app.update(Message::Engine(Engine::Windows));
-    app.windows = Some(Err(Failure::WindowsPrivacy));
-    assert!(shows(&app, "Online speech is off"));
-    assert!(shows(&app, "Open settings"));
-    assert!(app.wants_recheck(), "it re-checks by itself while off");
-    app.windows = Some(Ok(()));
-    assert!(shows(&app, "Windows speech is ready"));
-    assert!(!app.wants_recheck());
 }

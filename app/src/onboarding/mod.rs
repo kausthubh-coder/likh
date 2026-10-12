@@ -35,8 +35,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 mod tests;
 
 const MIC_SETTINGS_URL: &str = "ms-settings:privacy-microphone";
-/// Where Windows keeps the Online speech recognition switch.
-pub const SPEECH_SETTINGS_URL: &str = "ms-settings:privacy-speech";
 pub const WINDOW: Size = Size::new(560.0, 640.0);
 
 /// When the welcome text starts to arrive, in seconds after the window opens:
@@ -163,25 +161,8 @@ impl GroqSetup {
     }
 }
 
-/// Whether Windows speech can listen, or why not. Never opens the mic.
-pub fn check_windows_now() -> Result<(), Failure> {
-    #[cfg(target_os = "windows")]
-    {
-        crate::transcriber::windows_speech::check()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err(Failure::WindowsSpeech("it only exists on Windows".into()))
-    }
-}
-
 /// The words for each engine's state, beside the picker and in settings.
-pub fn engine_copy(
-    engine: Engine,
-    codex: &CodexStatus,
-    groq: &GroqSetup,
-    windows: Option<&Result<(), Failure>>,
-) -> StateCopy {
+pub fn engine_copy(engine: Engine, codex: &CodexStatus, groq: &GroqSetup) -> StateCopy {
     match engine {
         Engine::Codex => codex_copy(codex),
         Engine::Groq if groq.saved => StateCopy {
@@ -193,24 +174,6 @@ pub fn engine_copy(
             title: "Add a free Groq key",
             detail: "Make one at console.groq.com, then paste it here.".into(),
             tone: Tone::Warning,
-        },
-        Engine::Windows => match windows {
-            None => {
-                StateCopy { title: "Looking for Windows speech\u{2026}", detail: String::new(), tone: Tone::Neutral }
-            }
-            Some(Ok(())) => StateCopy {
-                title: "Windows speech is ready",
-                detail: "Built in and free. Your audio goes to Microsoft's speech service.".into(),
-                tone: Tone::Success,
-            },
-            Some(Err(Failure::WindowsPrivacy)) => StateCopy {
-                title: "Online speech is off",
-                detail: "Turn it on in Windows Settings, under Privacy & security, Speech.".into(),
-                tone: Tone::Warning,
-            },
-            Some(Err(failure)) => {
-                StateCopy { title: "Windows speech isn't available", detail: failure.message(), tone: Tone::Danger }
-            }
         },
     }
 }
@@ -238,7 +201,6 @@ pub struct Onboarding {
     engine: Engine,
     codex: CodexStatus,
     groq: GroqSetup,
-    windows: Option<Result<(), Failure>>,
     /// 0 → 1 as a step arrives. `direction` is +1 going forward, -1 going back.
     arrival: Spring,
     direction: f32,
@@ -262,7 +224,6 @@ pub enum Message {
     GroqChecked(String, Option<Result<(), Failure>>),
     ReplaceGroqKey,
     GetGroqKey,
-    OpenSpeechSettings,
     OpenMicSettings,
     Finish,
     Frame(Instant),
@@ -290,7 +251,6 @@ impl Onboarding {
             engine: Engine::default(),
             codex,
             groq: GroqSetup::default(),
-            windows: None,
             arrival: Spring::new(spring::DEFAULT, 1.0),
             direction: 1.0,
             progress: Spring::new(spring::DEFAULT, 0.0),
@@ -354,15 +314,11 @@ impl Onboarding {
             Message::Back => return self.go(STEPS[self.step.index().saturating_sub(1)]),
             Message::Recheck => match self.engine {
                 Engine::Codex => self.codex = check_codex_now(),
-                Engine::Windows => self.windows = Some(check_windows_now()),
                 Engine::Groq => {}
             },
             Message::GetCodex => crate::shared::open_url(crate::shared::CODEX_SETUP),
             Message::Engine(engine) => {
                 self.save_engine(engine);
-                if engine == Engine::Windows {
-                    self.windows = Some(check_windows_now());
-                }
                 if engine == Engine::Groq && !self.groq.saved {
                     return operation::focus(GROQ_KEY);
                 }
@@ -380,7 +336,6 @@ impl Onboarding {
                 return operation::focus(GROQ_KEY);
             }
             Message::GetGroqKey => crate::shared::open_url(groq::KEYS_URL),
-            Message::OpenSpeechSettings => crate::shared::open_url(SPEECH_SETTINGS_URL),
             Message::OpenMicSettings => crate::shared::open_url(MIC_SETTINGS_URL),
             // Closing the window ends `likh onboarding`; inside the app, likh stays in the tray.
             Message::Finish => {
@@ -772,14 +727,13 @@ impl Onboarding {
         match self.engine {
             Engine::Codex => matches!(self.codex, CodexStatus::Connected(_)),
             Engine::Groq => self.groq.saved,
-            Engine::Windows => matches!(self.windows, Some(Ok(()))),
         }
     }
 
     /// Pick how likh transcribes, then get that engine ready. The picker sits
     /// on top; the state of the picked engine is the headline, as before.
     fn connect<'a>(&'a self, p: &Palette) -> Page<'a> {
-        let copy = engine_copy(self.engine, &self.codex, &self.groq, self.windows.as_ref());
+        let copy = engine_copy(self.engine, &self.codex, &self.groq);
         let ready = self.engine_ready();
         let tone = |tone: Tone| match tone {
             Tone::Success => p.success,
@@ -787,8 +741,7 @@ impl Onboarding {
             Tone::Danger => p.danger,
             Tone::Neutral => p.text_subtle,
         };
-        let options: Vec<(Engine, &'static str)> =
-            Engine::available().iter().map(|engine| (*engine, engine.name())).collect();
+        let options: Vec<(Engine, &'static str)> = Engine::ALL.iter().map(|engine| (*engine, engine.name())).collect();
         // The state is the headline, so there is no card: likh on the left,
         // the engine on the right, and the link between them says how it's going.
         let link = canvas_widget(Link { tone: copy.tone, engine: self.engine, colors: LinkColors::from(p) })
@@ -852,17 +805,6 @@ impl Onboarding {
                     || ("The key stays on this computer.".to_string(), p.text_subtle),
                     |(words, t)| (words, tone(t)),
                 ),
-            ),
-            Engine::Windows if ready => (
-                vec![Action::Primary("Continue", Message::Next)],
-                ("Less accurate than ChatGPT or Groq.".to_string(), p.text_subtle),
-            ),
-            Engine::Windows => (
-                vec![
-                    Action::Secondary("Check again", Message::Recheck),
-                    Action::Primary("Open settings", Message::OpenSpeechSettings),
-                ],
-                ("likh checks again every 2 seconds.".to_string(), p.text_subtle),
             ),
         };
         Page { art: art.into(), title: copy.title, body: copy.detail, note: Some(note), actions }
@@ -1067,7 +1009,7 @@ impl canvas::Program<Message> for Link {
             let bar = Path::rounded_rectangle(at(-112.0 + i as f32 * 10.0, -h / 2.0), Size::new(5.0, h), 2.5.into());
             frame.fill(&bar, colors.accent);
         }
-        // The engine, right: a prompt for Codex, a bolt for Groq, panes for Windows.
+        // The engine, right: a prompt for Codex, a bolt for Groq.
         glyph::draw(&mut frame, self.engine, at(94.0, 0.0), colors.muted);
         // The link: dots either side of the state's icon.
         let link = if self.tone == Tone::Success { colors.success } else { colors.subtle };

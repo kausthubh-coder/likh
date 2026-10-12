@@ -1,20 +1,22 @@
 # Updates
 
-likh updates itself from GitHub Releases. At launch, and after a dictation once a day, it reads the release list, downloads a newer signed Windows installer in the background and verifies it. The tray then shows "Restart to update to <version>", and About shows a button for the same. Restarting quits likh, runs the installer silently, and the installer opens the new likh.
+likh updates itself from GitHub Releases. At launch, and after a dictation once a day, it reads the release list, downloads a newer signed Windows installer in the background and verifies it. The tray's update line then says "Restart to update to <version>", and the foot of the settings sidebar (every tab) and About show `Restart to update`. Restarting quits likh, runs the installer silently, and the installer opens the new likh.
 
 ## Sub-features
 
 - `upd-check` a check at launch and after dictations, at most once a day (the time is kept in `$LIKH_HOME/update-checked`), never on a timer. "Check now" in About, or `likh ctl update`.
 - `upd-pick` the newest non-draft release, alpha ones included, that is newer than the running version and has both `likh-setup-windows-x64.exe` and its `.sig`.
 - `upd-verify` the installer runs only if its Ed25519 signature matches `PUBLIC_KEY` in `app/src/update/mod.rs`; otherwise it's deleted and About says so.
-- `upd-ready` the state is `ready`: a tray line "Restart to update to <version>", and in About "likh <version> is downloaded and checked." with `Restart to update`.
+- `upd-tray` the tray always has an update line: Check for updates, Checking for updates… (greyed), Up to date · Check again, Downloading likh <version>… (greyed), Restart to update to <version>, Couldn't check · Try again.
+- `upd-sidebar` the settings sidebar's foot, on every tab: `Check for updates` above `v<version>`, `Restart to update` above `v<this> → v<new>` once one is ready.
+- `upd-ready` the state is `ready`: the tray line "Restart to update to <version>", and in About "likh <version> is downloaded and checked." with `Restart to update`.
 - `upd-apply` Restart (tray, About, or `likh ctl install-update`) quits likh and runs the installer with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /relaunch=1`. The installer opens likh again, which inherits likh's environment.
 - `upd-off` "Check for updates automatically" in About stops the automatic checks; Check now still works.
 - `upd-mac` on macOS the state is `available` with a link to the release page. Nothing is installed.
 
 ## How to get to it (user POV)
 
-- It happens on its own. About shows where it stands; the tray gains a line when an update is ready.
+- It happens on its own. The tray's update line and the foot of the settings sidebar show where it stands, and either one checks or restarts.
 
 ## Driving it with scripts
 

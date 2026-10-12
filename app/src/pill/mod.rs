@@ -14,6 +14,7 @@ use crate::shared::spring::{self, Spring};
 use crate::shared::theme::{self, palette};
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont, point};
 use std::sync::mpsc::Sender;
+use std::time::Duration;
 use tiny_skia::{
     Color, FillRule, GradientStop, LinearGradient, Mask, Paint, Path, PathBuilder, Pixmap, Point, SpreadMode, Stroke,
     Transform,
@@ -44,6 +45,8 @@ const ERROR_MAX_WIDTH: f32 = 360.0;
 const ERROR_SECONDS: f32 = 6.0;
 const SLIVER_SECONDS: f32 = 0.25;
 const FADE_SECONDS: f32 = 0.15;
+/// The quiet countdown shows its seconds instead of the stop square for this long at the end.
+const QUIET_DIGITS_SECONDS: f32 = 3.0;
 
 /// What the pill shows. Hidden draws nothing at all.
 #[derive(Debug, Clone, PartialEq)]
@@ -52,6 +55,13 @@ pub enum Show {
     Listening,
     /// Recording with nothing held; a stop button on the right finishes it.
     HandsFree,
+    /// Hands-free gone quiet: a ring around the stop button empties over `after`
+    /// and it pastes when the ring runs out. `left` keeps counting down here
+    /// between the dictation's ticks, so the ring moves smoothly.
+    QuietStop {
+        left: Duration,
+        after: Duration,
+    },
     Thinking,
     Warning {
         seconds_left: u64,
@@ -63,7 +73,12 @@ pub enum Show {
 
 impl Show {
     fn voiced(&self) -> bool {
-        matches!(self, Show::Listening | Show::HandsFree | Show::Warning { .. })
+        matches!(self, Show::Listening | Show::HandsFree | Show::QuietStop { .. } | Show::Warning { .. })
+    }
+
+    /// Both hands-free states carry the stop button.
+    fn hands_free(&self) -> bool {
+        matches!(self, Show::HandsFree | Show::QuietStop { .. })
     }
 }
 
@@ -178,7 +193,7 @@ impl Look {
         }
         let (width, height) = match &show {
             Show::Listening | Show::Thinking => (76.0, 36.0),
-            Show::Warning { .. } | Show::HandsFree => (100.0, 36.0),
+            Show::Warning { .. } | Show::HandsFree | Show::QuietStop { .. } => (100.0, 36.0),
             Show::Error(message) => {
                 self.lines = wrap(message, ERROR_MAX_WIDTH - 60.0);
                 let widest = self.lines.iter().map(|line| text_width(line, ERROR_TEXT)).fold(0.0, f32::max);
@@ -199,7 +214,7 @@ impl Look {
     /// Where the hands-free stop button is (centre x, centre y, radius, in
     /// canvas pixels), so the window can take clicks there and nowhere else.
     pub fn stop_button(&self) -> Option<(f32, f32, f32)> {
-        if self.show != Show::HandsFree {
+        if !self.show.hands_free() {
             return None;
         }
         let (w, h) = (self.width.value.max(8.0), self.height.value.max(4.0));
@@ -217,6 +232,9 @@ impl Look {
     /// Advances by `dt` seconds. Returns false once nothing moves, so the window can stop drawing.
     pub fn step(&mut self, dt: f32) -> bool {
         self.clock += dt;
+        if let Show::QuietStop { left, .. } = &mut self.show {
+            *left = left.saturating_sub(Duration::from_secs_f32(dt));
+        }
         let sized = self.width.step(dt) & self.height.step(dt);
 
         if let Some(left) = self.linger.as_mut() {
@@ -243,7 +261,7 @@ impl Look {
             let target = match self.show {
                 // Outer bars carry older levels and stand a little shorter, so a loud
                 // voice still reads as a shape, not a block.
-                Show::Listening | Show::HandsFree | Show::Warning { .. } => {
+                Show::Listening | Show::HandsFree | Show::QuietStop { .. } | Show::Warning { .. } => {
                     self.history[age] * (1.0 - 0.12 * age as f32)
                 }
                 // A slow travelling wave, left to right (1.2s loop).
@@ -318,7 +336,26 @@ impl Look {
         }
         if let Some((cx, cy, r)) = self.stop_button() {
             fill(&mut pixmap, PathBuilder::from_circle(cx, cy, r), to_skia(p.elevated, 1.0), at, Some(&clip));
-            fill(&mut pixmap, rounded_rect(cx - 4.0, cy - 4.0, 8.0, 8.0, 2.0), to_skia(p.text, 1.0), at, Some(&clip));
+            let left = match self.show {
+                Show::QuietStop { left, after } => {
+                    // Peach, not the warning yellow: stopping after quiet is the normal end, not a problem.
+                    let share = (left.as_secs_f32() / after.as_secs_f32().max(0.001)).clamp(0.0, 1.0);
+                    stroke(&mut pixmap, arc(cx, cy, r - 1.5, share), to_skia(p.accent, 1.0), 2.0, at);
+                    Some(left.as_secs_f32())
+                }
+                _ => None,
+            };
+            match left {
+                Some(left) if left > 0.0 && left <= QUIET_DIGITS_SECONDS => {
+                    let label = (left.ceil() as u64).to_string();
+                    let tw = text_width(&label, 12.0);
+                    draw_text(&mut pixmap, &label, 12.0, cx - tw / 2.0, cy + 4.0, to_skia(p.text, 1.0), scale);
+                }
+                _ => {
+                    let square = rounded_rect(cx - 4.0, cy - 4.0, 8.0, 8.0, 2.0);
+                    fill(&mut pixmap, square, to_skia(p.text, 1.0), at, Some(&clip));
+                }
+            }
         }
         if let Show::Warning { seconds_left } = self.show {
             let (cx, r) = (x + w - SLOT_INSET - SLOT / 2.0, SLOT / 2.0);

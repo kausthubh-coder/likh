@@ -102,6 +102,44 @@ fn the_error_pill_hugs_its_text_between_200_and_360() {
     assert_eq!(look.height.target, 52.0);
 }
 
+/// Near-white pixels (the stop square or the seconds) inside the stop button.
+fn bright_in_button(pixmap: &Pixmap, look: &Look) -> usize {
+    let (bx, by, _) = look.stop_button().expect("a stop button");
+    let mut bright = 0;
+    for dy in -6..=6 {
+        for dx in -6..=6 {
+            let [r, g, b, _] = rgba_at(pixmap, bx + dx as f32, by + dy as f32);
+            if r > 200 && g > 200 && b > 200 {
+                bright += 1;
+            }
+        }
+    }
+    bright
+}
+
+#[test]
+fn quiet_stop_keeps_the_stop_button_and_empties_a_peach_ring_on_its_own() {
+    let mut look = Look::default();
+    let after = Duration::from_secs(5);
+    look.set(Show::QuietStop { left: Duration::from_millis(4_500), after });
+    play(&mut look, 0.5);
+    let (bx, by, r) = look.stop_button().expect("quiet stop keeps the stop button");
+    let pixmap = look.draw(1.0).expect("pixmap");
+    // 4 of 5 seconds left: the ring still reaches nine o'clock (three quarters round).
+    let nine = rgba_at(&pixmap, bx - (r - 1.5), by);
+    assert!(nine[0] > 200 && (i32::from(nine[1]) - 160).abs() < 30, "{nine:?}");
+    assert!(bright_in_button(&pixmap, &look) >= 60, "the stop square, while more than 3 s are left");
+
+    // Between the dictation's ticks the pill keeps counting down by itself.
+    assert!(play(&mut look, 1.0), "a counting pill keeps drawing");
+    let pixmap = look.draw(1.0).expect("pixmap");
+    let nine = rgba_at(&pixmap, bx - (r - 1.5), by);
+    assert!(nine[0] < 120, "3 of 5 seconds left: the ring has left nine o'clock, {nine:?}");
+    // The last 3 seconds show the seconds instead of the square.
+    let digits = bright_in_button(&pixmap, &look);
+    assert!(digits > 0 && digits < 60, "{digits}");
+}
+
 /// Regenerates the pill pictures on the brand board from the real renderer.
 /// Run: cargo test -p likh brand_board_pill -- --ignored
 #[test]
@@ -113,6 +151,7 @@ fn brand_board_pill() {
         ("listening", Show::Listening),
         ("thinking", Show::Thinking),
         ("warning", Show::Warning { seconds_left: 55 }),
+        ("quiet-stop", Show::QuietStop { left: Duration::from_millis(2_600), after: Duration::from_secs(5) }),
         ("error", Show::Error("Your Codex sign-in expired. Open Codex once to refresh it, then try again.".into())),
     ];
     for (name, show) in states {

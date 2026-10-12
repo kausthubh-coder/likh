@@ -10,7 +10,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 - **pill**: the small solid capsule at the bottom of the screen during a dictation. It never takes focus.
 - **dictation**: one hold (or hands-free session) from key-down to paste.
 - **Codex sign-in**: `~/.codex/auth.json`, written by Codex. We only ever read it.
-- **transcriber** (or **engine**): whatever turns audio into text. The user picks one: ChatGPT through Codex's `/backend-api/transcribe` (the default), Groq's Whisper with their own free key, or Windows' built-in speech recognizer.
+- **transcriber** (or **engine**): whatever turns audio into text. The user picks one: ChatGPT through Codex's `/backend-api/transcribe` (the default), or Groq's Whisper with their own free key.
 
 ## Map
 
@@ -28,11 +28,11 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/panel/` | the likh window from the tray: General, Transcription, Commands, History, About |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings; `LIKH_AUDIO=file.wav` replays a file instead |
-| `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), Windows speech (`windows_speech.rs`, listens live), each engine's glyph (`glyph.rs`); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
+| `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), each engine's glyph (`glyph.rs`); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back; `LIKH_PASTE=<file>` logs pastes and key presses there instead |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
 | `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |
-| `app/src/update/` | updates from GitHub Releases: check at launch and after dictations (once a day), download, verify the Ed25519 signature, run the installer silently on "Restart to update". `LIKH_UPDATE_FEED=<url>` points it at a fake release list |
+| `app/src/update/` | updates from GitHub Releases: check at launch and after dictations (once a day), download, verify the Ed25519 signature, run the installer silently on "Restart to update" (the foot of the settings sidebar, or the tray's update line). `LIKH_UPDATE_FEED=<url>` points it at a fake release list |
 | `installer/windows.iss`, `.github/workflows/release.yml` | the per-user Inno Setup installer, and the workflow that builds, signs and publishes it when a `v*` tag is pushed |
 | `app/src/codex_auth/` | is Codex installed and signed in; reading credentials safely |
 | `app/src/onboarding/` | the first-run window and its flock |
