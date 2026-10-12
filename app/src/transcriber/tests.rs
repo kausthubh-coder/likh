@@ -100,3 +100,36 @@ fn the_fake_wins_over_every_engine() {
     assert!(Transcriber::new(Engine::Windows, None).listens_live());
     assert!(!Transcriber::new(Engine::Codex, None).listens_live());
 }
+
+/// A real Groq round trip: likh's own WAV, multipart and parsing against the
+/// live API. Needs a key and a recording, both from the environment, so the
+/// key is never written anywhere. Run by hand:
+/// `GROQ_API_KEY=gsk_... LIKH_TEST_WAV=.agents/qa/speech.wav cargo test -p likh groq_live -- --ignored --nocapture`
+/// (make the WAV with `scripts/tts-wav.ps1`; LIKH_TEST_TEXT is what it says,
+/// written as dictation comes out: Whisper writes "nine" as "9").
+#[test]
+#[ignore = "calls Groq with a real key"]
+fn groq_live_transcribes_a_real_recording_and_refuses_a_made_up_key() {
+    let key = std::env::var("GROQ_API_KEY").expect("set GROQ_API_KEY");
+    let path = std::env::var("LIKH_TEST_WAV").expect("set LIKH_TEST_WAV");
+    let expected = std::env::var("LIKH_TEST_TEXT").expect("set LIKH_TEST_TEXT");
+    let mut reader = hound::WavReader::open(&path).expect("read the WAV");
+    let spec = reader.spec();
+    assert_eq!((spec.sample_rate, spec.channels), (SAMPLE_RATE, 1), "tts-wav.ps1 makes 16 kHz mono");
+    let samples: Vec<f32> = reader.samples::<i16>().map(|s| f32::from(s.unwrap_or(0)) / 32768.0).collect();
+
+    assert_eq!(groq::verify(&key), Ok(()));
+    assert_eq!(groq::verify("gsk_madeUpKeyThatGroqHasNeverIssued0000000000000000"), Err(Failure::GroqRejected));
+
+    let started = std::time::Instant::now();
+    let heard =
+        groq::transcribe(&key, &wav(&samples), samples.len() as f32 / SAMPLE_RATE as f32).expect("a transcript");
+    eprintln!("Groq heard {heard:?} in {:?}", started.elapsed());
+    let words = |text: &str| -> Vec<String> {
+        text.split_whitespace()
+            .map(|w| w.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase())
+            .filter(|w| !w.is_empty())
+            .collect()
+    };
+    assert_eq!(words(&heard), words(&expected));
+}

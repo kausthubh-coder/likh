@@ -29,7 +29,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings; `LIKH_AUDIO=file.wav` replays a file instead |
 | `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), Windows speech (`windows_speech.rs`, listens live), each engine's glyph (`glyph.rs`); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
-| `app/src/paste/` | clipboard, Ctrl+V, clipboard back |
+| `app/src/paste/` | clipboard, Ctrl+V, clipboard back; `LIKH_PASTE=<file>` logs pastes and key presses there instead |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
 | `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |
 | `app/src/codex_auth/` | is Codex installed and signed in; reading credentials safely |
@@ -48,7 +48,8 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, picks a free site port)
 - Doctor: `bun run doctor`. Run it first when anything looks off.
 - Run the app: `bun run dev` (onboarding opens the first time). Agents: `likh run --skip-onboarding`, then `likh ctl status|start|stop|cancel|quit`. If my own likh is running, give yours `LIKH_HOME=<a folder under .agents/qa>`: its own settings, history and `likh ctl` pipe
-- One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` pastes into a throwaway box
+- One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
+- Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
 - Site: `bun run dev:site` (port from `site/.env.local`)
 - Test one module: `cargo test -p likh codex_auth`
