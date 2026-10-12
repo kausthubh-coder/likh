@@ -5,11 +5,11 @@
     "setup": "bun scripts/setup.mjs",
     "doctor": "bun scripts/doctor.mjs",
     "dev": "bun scripts/cargo.mjs run -p likh",
-    "dev:site": "bun --cwd site run dev",
+    "dev:site": "bun run --cwd site dev",
     "build": "bun scripts/cargo.mjs build -p likh --release",
-    "lint": "bun scripts/cargo.mjs fmt --all --check && bun scripts/cargo.mjs clippy --workspace --all-targets -- -D warnings && bun --cwd site run lint",
-    "typecheck": "bun scripts/cargo.mjs check --workspace --all-targets && bun --cwd site run typecheck",
+    "lint": "bun scripts/cargo.mjs fmt --all --check && bun scripts/cargo.mjs clippy --workspace --all-targets -- -D warnings && bun run --cwd site lint",
+    "typecheck": "bun scripts/cargo.mjs check --workspace --all-targets && bun run --cwd site typecheck",
     "test": "bun scripts/cargo.mjs test --workspace",
-    "check": "bun run lint && bun run typecheck && bun run test && bun --cwd site run build"
+    "check": "bun run lint && bun run typecheck && bun run test && bun run --cwd site build"
   }
 }

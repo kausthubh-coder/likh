@@ -126,7 +126,8 @@ impl App {
                 _ => Task::none(),
             },
             Message::Closed(id) => {
-                if self.setup.as_ref().is_some_and(|(open, _)| *open == id) {
+                if let Some((_, onboarding)) = self.setup.as_mut().filter(|(open, _)| *open == id) {
+                    onboarding.closing();
                     self.setup = None;
                     if let Some(marker) = self.first_run_marker.take() {
                         let _ = marker.parent().map(std::fs::create_dir_all);

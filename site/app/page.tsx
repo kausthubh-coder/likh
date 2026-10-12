@@ -156,8 +156,8 @@ export default function Home() {
           <h2 className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em]">Questions</h2>
           <div className="mt-6 divide-y divide-elevated">
             <Question q="Is it free?">
-              likh is free and MIT licensed. Transcription goes through your Codex sign-in, so it counts toward your Codex
-              usage the way voice in OpenAI&apos;s own app does.{" "}
+              likh is free and MIT licensed. OpenAI controls transcription access and limits; we haven&apos;t confirmed
+              how these requests count toward your usage.{" "}
               <Link href="/codex#plans" className="text-text underline-offset-4 hover:underline">
                 Which plans work
               </Link>

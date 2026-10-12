@@ -29,7 +29,7 @@ export default function CodexSetup() {
         </h1>
         <p className="mt-4 text-[17px] leading-[26px] text-pretty text-text-muted">
           likh doesn&apos;t have an account of its own. It transcribes through ChatGPT using the sign-in Codex saves on
-          your computer. Install it once, sign in, and you never need to open it again.
+          your computer. Install it and sign in once. If the sign-in expires, open Codex again to refresh it.
         </p>
 
         <ol className="mt-12 space-y-10">
@@ -67,14 +67,14 @@ export default function CodexSetup() {
           <h2 className="text-[22px] leading-[28px] font-semibold tracking-[-0.02em]">Which plans work</h2>
           <div className="mt-4 space-y-4 text-[15px] leading-[22px] text-pretty text-text-muted">
             <p>
-              Every ChatGPT plan includes Codex, Free and Go too. OpenAI lists voice dictation for Plus, Pro, Business,
-              Enterprise and Edu, so that&apos;s where likh is known to work. We haven&apos;t confirmed Free or Go yet:
-              try it, and if the pill says ChatGPT turned the sign-in down, your plan likely doesn&apos;t include
-              dictation.
+              OpenAI includes Codex with Free, Go, Plus, Pro, Business, Enterprise and Edu. Its feature table lists
+              voice dictation for Plus, Pro, Business, Enterprise and Edu, but doesn&apos;t establish Free or Go
+              support. likh has worked with a paid account. Free and Go transcription remain unverified.
             </p>
             <p>
-              likh itself costs nothing. OpenAI counts voice in its desktop app against your Codex usage, at $0.05 of
-              your allowance per minute, and likh&apos;s dictations go to the same place. See{" "}
+              likh itself is free. OpenAI controls access and limits for transcription. Its published desktop Voice
+              pricing doesn&apos;t establish how likh&apos;s dictation requests count toward usage, so we can&apos;t
+              promise unlimited transcription or quote a per-minute rate. See{" "}
               <a href={PRICING} className="text-text underline-offset-4 hover:underline">
                 OpenAI&apos;s pricing
               </a>
@@ -90,11 +90,8 @@ export default function CodexSetup() {
               Open the ChatGPT app once. It refreshes the sign-in, and likh picks it up.
             </Fix>
             <Fix problem="“ChatGPT turned down the sign-in”">
-              Sign out of the app and sign in again. On Free or Go, it may mean{" "}
-              <a href="#plans" className="text-text underline-offset-4 hover:underline">
-                your plan doesn&apos;t include dictation
-              </a>
-              .
+              Sign in to Codex again and retry. This message alone doesn&apos;t tell us whether the problem is the
+              sign-in, account permissions or plan access.
             </Fix>
             <Fix problem="likh still says Codex isn't installed">
               Sign in at least once after installing: the file only appears then. If you set{" "}

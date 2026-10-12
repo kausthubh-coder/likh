@@ -283,6 +283,13 @@ impl Onboarding {
         operation::focus(PRACTICE)
     }
 
+    /// Restore the global shortcut when the window closes during capture.
+    pub fn closing(&mut self) {
+        if self.practice.capturing.take().is_some() {
+            hotkey::pause(false);
+        }
+    }
+
     /// The flock on welcome and done, and the welcome text arriving.
     fn art_is_moving(&self) -> bool {
         match self.step {

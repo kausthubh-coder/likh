@@ -35,6 +35,25 @@ likh does what the Codex desktop app does when you dictate into it. It reads the
 
 **Later:** split long dictations at pauses into chunks well under the cap, upload each chunk while recording continues, and join the text. That removes the cap without relying on the streaming endpoint.
 
+## Plan access and usage, checked 2026-10-12
+
+OpenAI's [pricing page](https://learn.chatgpt.com/docs/pricing) includes Codex
+with Free, Go, Plus, Pro, Business, Enterprise and Edu. Its voice dictation
+feature table lists Plus, Pro, Business and Enterprise/Edu; Free and Go are
+absent from that table. This does not prove that either plan is rejected by
+`/backend-api/transcribe`. A real account test is required for each plan.
+
+The same page's $0.05/minute price is for desktop Voice and discusses GPT-Live
+conversations. It does not document billing for this internal transcription
+endpoint. Do not apply that price to likh or promise unlimited transcription.
+A 401 or 403 alone does not identify a plan restriction.
+
+The developer reported that their separate Free-account sign-in attempt did
+not work. No request reached the transcriber with verified Free credentials,
+so Free transcription remains unverified. The desktop app reportedly runs on
+Go, but Go transcription has not been tested. Existing paid-account dictations
+worked in the prior live verification.
+
 ## Risk, accepted
 
 This is an internal endpoint. OpenAI can change or block it at any time, and the user accepted that it is the product's differentiator. If it changes, ship an update. If accounts start getting flagged, take the project down. Keep the transcriber behind one interface (`transcribe(audio) -> text`) so a replacement is one file.

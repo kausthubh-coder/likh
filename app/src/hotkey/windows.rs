@@ -165,3 +165,41 @@ fn run(dictation: Sender<Input>, mut binding: Binding) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::codex_auth::CodexStatus;
+    use crate::hotkey::KeyName;
+    use crate::onboarding::{Message, Onboarding};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn closing_onboarding_during_capture_restores_the_global_shortcut() {
+        let _ui = crate::shared::test_ui::lock();
+        let binding = Binding::new(true, true, true, false, KeyName("F10")).expect("test shortcut");
+        let (dictation, _inputs) = mpsc::channel();
+        spawn(dictation, binding).expect("register test shortcut");
+        let mut onboarding = Onboarding::new(CodexStatus::SignedOut);
+        let _ = onboarding.update(Message::ChangeShortcut);
+        assert!(wait_for_availability(binding, true), "capture should release the shortcut to the window");
+        onboarding.closing();
+        assert!(wait_for_availability(binding, false), "closing should give the shortcut back to likh");
+    }
+
+    fn wait_for_availability(binding: Binding, expected: bool) -> bool {
+        let until = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < until {
+            // Register on this test thread to observe whether likh owns the keys.
+            let available = register(binding).is_ok();
+            if available {
+                unregister(SHORTCUT);
+            }
+            if available == expected {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        false
+    }
+}
