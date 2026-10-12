@@ -11,6 +11,7 @@ use crate::onboarding::{self, Onboarding};
 use crate::panel::{self, Panel};
 use crate::settings::Settings;
 use crate::shared::{icon, theme};
+use crate::update::{State, Updates};
 use iced::futures::channel::mpsc::{Sender, UnboundedReceiver};
 use iced::{Element, Subscription, Task, Theme, window};
 use std::hash::{Hash, Hasher};
@@ -25,13 +26,18 @@ mod tests;
 const OPEN: &str = "open";
 const SETUP: &str = "setup";
 const QUIT: &str = "quit";
+const UPDATE: &str = "update";
 
-/// Something the person picked from the tray.
+/// Something the person picked from the tray, or news for the windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pick {
     Open,
     Setup,
     Quit,
+    /// "Restart to update".
+    Update,
+    /// Where updating stands changed (sent by `update::Updates`): refresh the menu and windows.
+    UpdateChanged,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +51,7 @@ pub enum Message {
 struct App {
     dictation: Arc<Mutex<Status>>,
     settings: Arc<RwLock<Settings>>,
+    updates: Updates,
     tray: Option<Tray>,
     setup: Option<(window::Id, Onboarding)>,
     panel: Option<(window::Id, Panel)>,
@@ -62,11 +69,16 @@ impl Hash for UiRequests {
     }
 }
 
-/// The icon and the one menu line that changes (the shortcut). Kept alive for as
-/// long as likh runs; dropping it removes the icon.
+/// The icon and the menu lines that change: the shortcut, and "Restart to update"
+/// while an update is ready. Kept alive for as long as likh runs; dropping it
+/// removes the icon.
 struct Tray {
     icon: TrayIcon,
+    menu: Menu,
     shortcut: MenuItem,
+    update: MenuItem,
+    /// The update line is in the menu.
+    update_shown: bool,
 }
 
 /// Runs until "Quit likh". With `first_run_marker`, onboarding opens
@@ -76,6 +88,7 @@ pub fn run(
     settings: Arc<RwLock<Settings>>,
     first_run_marker: Option<PathBuf>,
     ui_requests: UnboundedReceiver<Pick>,
+    updates: Updates,
 ) -> iced::Result {
     let ui_requests = UiRequests(Arc::new(Mutex::new(Some(ui_requests))));
     let boot = move || {
@@ -83,6 +96,7 @@ pub fn run(
         let mut app = App {
             dictation: dictation.clone(),
             settings: settings.clone(),
+            updates: updates.clone(),
             tray: build(&panel::hold_to_talk(shortcut)),
             setup: None,
             panel: None,
@@ -118,7 +132,10 @@ impl App {
             return window::gain_focus(*id);
         }
         let (id, opened) = window::open(panel::window_settings());
-        self.panel = Some((id, Panel::new(id, self.settings.clone(), self.dictation.clone(), panel::Files::real())));
+        self.panel = Some((
+            id,
+            Panel::new(id, self.settings.clone(), self.dictation.clone(), self.updates.clone(), panel::Files::real()),
+        ));
         opened.discard()
     }
 
@@ -135,6 +152,14 @@ impl App {
             }
             Message::Tray(Pick::Setup) | Message::Panel(_, panel::Message::RunSetup) => self.open_setup(),
             Message::Tray(Pick::Quit) => iced::exit(),
+            Message::Tray(Pick::Update) | Message::Panel(_, panel::Message::Restart) => {
+                if let Err(reason) = self.updates.apply() {
+                    eprintln!("likh: couldn't update: {reason}");
+                }
+                Task::none()
+            }
+            // Nothing to do here: the menu below, and every window on its next draw, read the new state.
+            Message::Tray(Pick::UpdateChanged) => Task::none(),
             Message::Setup(id, message) => match &mut self.setup {
                 Some((open, onboarding)) if *open == id => {
                     onboarding.update(message).map(move |message| Message::Setup(id, message))
@@ -170,11 +195,26 @@ impl App {
             }
         };
         // The shortcut may have just changed, in either window.
-        if let Some(tray) = &self.tray {
+        if let Some(tray) = &mut self.tray {
             let line = panel::hold_to_talk(self.settings.read().map(|s| s.shortcut).unwrap_or_default());
             if tray.shortcut.text() != line {
                 tray.shortcut.set_text(&line);
                 let _ = tray.icon.set_tooltip(Some(format!("likh · {line}")));
+            }
+            // "Restart to update" is in the menu exactly while an update is ready.
+            match self.updates.state() {
+                State::Ready { version, .. } if !tray.update_shown => {
+                    tray.update.set_text(restart_to_update(&version));
+                    if tray.menu.insert(&tray.update, 2).is_ok() {
+                        tray.update_shown = true;
+                    }
+                }
+                State::Ready { .. } => {}
+                _ if tray.update_shown => {
+                    let _ = tray.menu.remove(&tray.update);
+                    tray.update_shown = false;
+                }
+                _ => {}
             }
         }
         task
@@ -231,17 +271,25 @@ fn build(hold_to_talk: &str) -> Option<Tray> {
         eprintln!("likh: no tray menu: {error}");
     }
     let image = tray_icon::Icon::from_rgba(icon::rgba(32), 32, 32).ok();
-    let mut builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(format!("likh · {hold_to_talk}"));
+    // A clone shares the same menu, so the update line can come and go later.
+    let mut builder =
+        TrayIconBuilder::new().with_menu(Box::new(menu.clone())).with_tooltip(format!("likh · {hold_to_talk}"));
     if let Some(image) = image {
         builder = builder.with_icon(image);
     }
+    let update = MenuItem::with_id(UPDATE, "", true, None);
     match builder.build() {
-        Ok(icon) => Some(Tray { icon, shortcut }),
+        Ok(icon) => Some(Tray { icon, menu, shortcut, update, update_shown: false }),
         Err(error) => {
             eprintln!("likh: no tray icon: {error}");
             None
         }
     }
+}
+
+/// The tray line and the button for a downloaded update.
+pub fn restart_to_update(version: &str) -> String {
+    format!("Restart to update to {version}")
 }
 
 /// What a menu id means.
@@ -250,6 +298,7 @@ pub fn pick_for_menu(id: &str) -> Option<Pick> {
         OPEN => Some(Pick::Open),
         SETUP => Some(Pick::Setup),
         QUIT => Some(Pick::Quit),
+        UPDATE => Some(Pick::Update),
         _ => None,
     }
 }

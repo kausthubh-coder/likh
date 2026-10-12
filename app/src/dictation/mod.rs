@@ -4,7 +4,7 @@
 //! paste, sounds, what the pill shows) come out. `run` is the thread that
 //! carries the effects out.
 
-use crate::commands::{self, Action};
+use crate::commands::{self, Action, Groups, Press};
 use crate::microphone::Recording;
 use crate::pill::{Pill, Show};
 use crate::settings::{Mode, Settings};
@@ -37,9 +37,14 @@ pub enum Input {
     Cancel,
     /// The mic couldn't open.
     MicFailed(String),
+    /// The transcriber can't listen (Windows speech switched off, say).
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows speech listens live"))]
+    CantListen(Failure),
     Transcribed(Result<String, Failure>),
     /// Sent every 250ms while recording, for the countdown and the cap.
     Tick,
+    /// Sent with each tick once someone has spoken: how long it has been quiet since.
+    Quiet(Duration),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,7 +56,7 @@ pub enum Effect {
     Discard,
     Paste {
         text: String,
-        then_enter: bool,
+        then: Option<Press>,
     },
     /// "Scratch that": undo the last paste.
     Undo,
@@ -74,7 +79,10 @@ pub enum Phase {
 #[derive(Debug, Clone, Copy)]
 pub struct Choices {
     pub mode: Mode,
-    pub commands: bool,
+    /// The spoken commands that are on, or None when they're all off.
+    pub commands: Option<Groups>,
+    /// Hands-free stops after this much quiet.
+    pub silence_stop: Option<Duration>,
 }
 
 pub struct Dictation {
@@ -125,7 +133,16 @@ impl Dictation {
                 effects.push(Effect::Sound(Cue::Error));
                 effects
             }
+            (_, Input::CantListen(failure)) if recording => {
+                let mut effects = self.stop(Effect::Discard, Show::Error(failure.message()));
+                effects.push(Effect::Sound(Cue::Error));
+                effects
+            }
             (_, Input::Tick) if recording && held >= LONGEST => self.transcribe(),
+            // Holding the keys means you decide when it ends; only hands-free stops by itself.
+            (Phase::HandsFree, Input::Quiet(quiet)) if choices.silence_stop.is_some_and(|after| quiet >= after) => {
+                self.transcribe()
+            }
             (_, Input::Tick) if recording && held >= WARN_AFTER => {
                 let seconds_left = (LONGEST - held).as_secs_f32().ceil() as u64;
                 if self.warned_at == Some(seconds_left) {
@@ -141,14 +158,17 @@ impl Dictation {
                     Ok(text) if text.is_empty() => vec![Effect::Pill(Show::Cancelled)],
                     // The pill steps aside as the text lands; the text is the feedback.
                     Ok(text) => {
-                        let action = if choices.commands {
-                            commands::interpret(&text)
-                        } else {
-                            Action::Paste { text, then_enter: false }
+                        let action = match choices.commands {
+                            Some(groups) => commands::interpret(&text, &groups),
+                            None => Action::Paste { text, then: None },
                         };
                         match action {
-                            Action::Paste { text, then_enter } => {
-                                vec![Effect::Pill(Show::Done), Effect::Paste { text, then_enter }]
+                            // "Scratch that" took back everything that was said.
+                            Action::Paste { text, then: None } if text.is_empty() => {
+                                vec![Effect::Pill(Show::Cancelled)]
+                            }
+                            Action::Paste { text, then } => {
+                                vec![Effect::Pill(Show::Done), Effect::Paste { text, then }]
                             }
                             Action::Undo => vec![Effect::Pill(Show::Done), Effect::Undo],
                         }
@@ -194,36 +214,65 @@ pub struct Status {
 }
 
 /// Starts the dictation thread on `inputs`. `sender` is the same channel's
-/// sending side (the pill and the shortcut have clones). Read `Status` any time.
+/// sending side (the pill and the shortcut have clones). `fake` is
+/// `LIKH_TRANSCRIBER`'s text, which replaces every engine. Read `Status` any time.
 pub fn spawn(
     sender: Sender<Input>,
     inputs: Receiver<Input>,
     pill: Pill,
-    transcriber: Transcriber,
+    fake: Option<String>,
     settings: Arc<RwLock<Settings>>,
+    updates: crate::update::Updates,
 ) -> Arc<Mutex<Status>> {
-    let status =
-        Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber: transcriber.name(), dictations: 0, last: None }));
+    let engine = settings.read().map(|s| s.engine).unwrap_or_default();
+    let transcriber = Transcriber::new(engine, fake.as_deref()).name();
+    let status = Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber, dictations: 0, last: None }));
     let thread_status = status.clone();
     let spawned = std::thread::Builder::new()
         .name("likh-dictation".into())
-        .spawn(move || run(inputs, sender, pill, Arc::new(transcriber), thread_status, settings));
+        .spawn(move || run(inputs, sender, pill, fake, thread_status, settings, updates));
     if let Err(error) = spawned {
         eprintln!("likh: could not start dictation: {error}");
     }
     status
 }
 
+/// The parts of one dictation that live outside the decision table.
+#[derive(Default)]
+struct Running {
+    recording: Option<Recording>,
+    transcriber: Option<Arc<Transcriber>>,
+    /// Windows speech, listening alongside the recording.
+    #[cfg(target_os = "windows")]
+    listening: Option<crate::transcriber::windows_speech::Listening>,
+    /// Media this dictation is pausing (pausing takes a moment, so it runs on its own thread).
+    paused: Option<std::thread::JoinHandle<crate::media::Paused>>,
+}
+
+impl Running {
+    /// Plays again whatever this dictation paused, without waiting for it.
+    fn resume_media(&mut self) {
+        if let Some(pausing) = self.paused.take() {
+            std::thread::spawn(move || {
+                if let Ok(paused) = pausing.join() {
+                    paused.resume();
+                }
+            });
+        }
+    }
+}
+
 fn run(
     rx: Receiver<Input>,
     tx: Sender<Input>,
     pill: Pill,
-    transcriber: Arc<Transcriber>,
+    fake: Option<String>,
     status: Arc<Mutex<Status>>,
     settings: Arc<RwLock<Settings>>,
+    updates: crate::update::Updates,
 ) {
     let mut dictation = Dictation::default();
-    let mut recording: Option<Recording> = None;
+    let mut running = Running::default();
     let mut released: Option<(Instant, f32)> = None;
     loop {
         // Idle waits without waking; only a recording needs the clock.
@@ -243,31 +292,84 @@ fn run(
         let failed = match &input {
             Input::Transcribed(Err(failure)) => Some(failure.message()),
             Input::MicFailed(reason) => Some(reason.clone()),
+            Input::CantListen(failure) => Some(failure.message()),
+            _ => None,
+        };
+        // Each tick also reports the quiet since the last speech, for silence stop.
+        let quiet = match input {
+            Input::Tick => running.recording.as_ref().and_then(Recording::quiet_for),
             _ => None,
         };
         let chosen = settings.read().map(|s| s.clone()).unwrap_or_else(|poisoned| poisoned.into_inner().clone());
-        let choices = Choices { mode: chosen.mode, commands: chosen.commands };
-        for effect in dictation.handle(input, Instant::now(), choices) {
+        let choices = Choices {
+            mode: chosen.mode,
+            commands: chosen.commands.then_some(chosen.command_groups),
+            silence_stop: chosen.silence_stop.after(),
+        };
+        let now = Instant::now();
+        let mut effects = dictation.handle(input, now, choices);
+        if let Some(quiet) = quiet {
+            effects.extend(dictation.handle(Input::Quiet(quiet), now, choices));
+        }
+        for effect in effects {
             match effect {
                 Effect::StartRecording => {
+                    // The engine is read per dictation, so a change in settings applies to the next one.
+                    let transcriber = Arc::new(Transcriber::new(chosen.engine, fake.as_deref()));
+                    status.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).transcriber = transcriber.name();
+                    #[cfg(target_os = "windows")]
+                    if transcriber.listens_live() {
+                        match crate::transcriber::windows_speech::start() {
+                            Ok(listening) => running.listening = Some(listening),
+                            Err(failure) => {
+                                let _ = tx.send(Input::CantListen(failure));
+                            }
+                        }
+                    }
+                    if chosen.pause_media && crate::media::SUPPORTED {
+                        running.paused = Some(std::thread::spawn(crate::media::pause_playing));
+                    }
                     let levels = pill.clone();
                     match Recording::start(move |level| levels.level(level)) {
-                        Ok(started) => recording = Some(started),
+                        Ok(started) => running.recording = Some(started),
                         Err(reason) => {
                             let _ = tx.send(Input::MicFailed(reason));
                         }
                     }
+                    running.transcriber = Some(transcriber);
                 }
                 Effect::Transcribe => {
-                    let samples = recording.take().map(Recording::finish).unwrap_or_default();
+                    running.resume_media();
+                    let samples = running.recording.take().map(Recording::finish).unwrap_or_default();
                     let seconds = samples.len() as f32 / crate::transcriber::SAMPLE_RATE as f32;
                     released = Some((Instant::now(), seconds));
-                    let (tx, transcriber) = (tx.clone(), transcriber.clone());
+                    let transcriber = running
+                        .transcriber
+                        .take()
+                        .unwrap_or_else(|| Arc::new(Transcriber::new(chosen.engine, fake.as_deref())));
+                    #[cfg(target_os = "windows")]
+                    let live = running.listening.take();
+                    let tx = tx.clone();
                     std::thread::spawn(move || {
+                        #[cfg(target_os = "windows")]
+                        if let Some(live) = live {
+                            let heard = live.finish();
+                            let too_short = seconds < crate::transcriber::SHORTEST.as_secs_f32();
+                            let _ = tx.send(Input::Transcribed(if too_short { Err(Failure::TooShort) } else { heard }));
+                            return;
+                        }
                         let _ = tx.send(Input::Transcribed(transcriber.transcribe(&samples)));
                     });
                 }
-                Effect::Discard => recording = None,
+                Effect::Discard => {
+                    running.resume_media();
+                    running.recording = None;
+                    running.transcriber = None;
+                    #[cfg(target_os = "windows")]
+                    if let Some(live) = running.listening.take() {
+                        std::thread::spawn(move || drop(live.finish()));
+                    }
+                }
                 Effect::Sound(cue) if chosen.sounds => crate::sounds::play(cue),
                 Effect::Sound(_) => {}
                 Effect::Undo => {
@@ -275,7 +377,7 @@ fn run(
                         pill.show(Show::Error(format!("likh couldn't undo. {reason}")));
                     }
                 }
-                Effect::Paste { text, then_enter } => {
+                Effect::Paste { text, then } => {
                     let pasted = crate::paste::paste(&text);
                     let (at, seconds) = released.take().unwrap_or((Instant::now(), 0.0));
                     let mut last = Last {
@@ -307,9 +409,16 @@ fn run(
                         status.dictations += 1;
                         status.last = Some(last);
                     }
+                    // Someone is using likh right now: a fine moment for the daily update check,
+                    // which never needs a timer of its own.
+                    if chosen.auto_update {
+                        updates.check_if_due();
+                    }
                     if let Some(restore) = restore {
-                        if then_enter && let Err(reason) = crate::paste::press_enter() {
-                            pill.show(Show::Error(format!("likh couldn't press Enter. {reason}")));
+                        if let Some(key) = then
+                            && let Err(reason) = crate::paste::press(key)
+                        {
+                            pill.show(Show::Error(format!("likh couldn't press {}. {reason}", key.name())));
                         }
                         restore.finish();
                     }

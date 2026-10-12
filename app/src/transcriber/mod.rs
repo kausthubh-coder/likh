@@ -1,14 +1,21 @@
-//! Turns a recording into text. Today that's Codex's `/backend-api/transcribe`
-//! (docs/codex.md); anything else that can do `transcribe(audio) -> text`
-//! slots in here.
+//! Turns a recording into text. Three engines, picked in settings:
+//!
+//! - ChatGPT through Codex's sign-in, `/backend-api/transcribe` (docs/codex.md).
+//! - Groq's Whisper with the user's own free key (`groq.rs`).
+//! - Windows' own speech recognizer, no account at all (`windows_speech.rs`).
 //!
 //! `LIKH_TRANSCRIBER=echo:<text>` swaps in a fake that returns `<text>`, so
-//! tests and agents can drive whole dictations without touching ChatGPT.
+//! tests and agents can drive whole dictations without touching any of them.
 
 use crate::codex_auth::{self, CodexStatus, Credentials};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+pub mod glyph;
+pub mod groq;
+#[cfg(target_os = "windows")]
+pub mod windows_speech;
 
 #[cfg(test)]
 mod tests;
@@ -17,49 +24,123 @@ pub const SAMPLE_RATE: u32 = 16_000;
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/transcribe";
 /// What the Codex desktop app sends (docs/codex.md, The request).
 const USER_AGENT: &str = "Codex Desktop/26.1007.2314.0 (Windows NT 10.0; x64)";
-/// Anything shorter is a stray tap, not speech; the server rejects it anyway.
+/// Anything shorter is a stray tap, not speech; the servers reject it anyway.
 pub const SHORTEST: Duration = Duration::from_millis(300);
 
+/// Which service turns speech into text. Saved in settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Engine {
+    #[default]
+    Codex,
+    Groq,
+    Windows,
+}
+
+impl Engine {
+    /// The engines this computer can use. Windows speech exists only on Windows.
+    pub fn available() -> &'static [Engine] {
+        if cfg!(target_os = "windows") {
+            &[Engine::Codex, Engine::Groq, Engine::Windows]
+        } else {
+            &[Engine::Codex, Engine::Groq]
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Engine::Codex => "ChatGPT",
+            Engine::Groq => "Groq",
+            Engine::Windows => "Windows",
+        }
+    }
+
+    /// One line on what it costs and what it's like.
+    pub fn explain(self) -> &'static str {
+        match self {
+            Engine::Codex => "Your ChatGPT plan, through Codex. The most accurate.",
+            Engine::Groq => "Whisper on a free Groq key. The fastest.",
+            Engine::Windows => "Built into Windows. No account, less accurate.",
+        }
+    }
+
+    /// For `likh ctl status`.
+    pub fn id(self) -> &'static str {
+        match self {
+            Engine::Codex => "codex",
+            Engine::Groq => "groq",
+            Engine::Windows => "windows",
+        }
+    }
+}
+
+/// What turns one dictation into text: the chosen engine, or the test fake.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Transcriber {
     Codex,
+    Groq,
+    Windows,
     Echo(String),
 }
 
 impl Transcriber {
-    pub fn from_env() -> Self {
-        match std::env::var("LIKH_TRANSCRIBER").ok().and_then(|v| v.strip_prefix("echo:").map(str::to_owned)) {
-            Some(text) => Transcriber::Echo(text),
-            None => Transcriber::Codex,
+    /// `LIKH_TRANSCRIBER=echo:<text>`, if set. It wins over the engine in settings.
+    pub fn fake_from_env() -> Option<String> {
+        std::env::var("LIKH_TRANSCRIBER").ok().and_then(|v| v.strip_prefix("echo:").map(str::to_owned))
+    }
+
+    pub fn new(engine: Engine, fake: Option<&str>) -> Self {
+        match (fake, engine) {
+            (Some(text), _) => Transcriber::Echo(text.to_owned()),
+            (None, Engine::Codex) => Transcriber::Codex,
+            (None, Engine::Groq) => Transcriber::Groq,
+            (None, Engine::Windows) => Transcriber::Windows,
         }
     }
 
     pub fn name(&self) -> &'static str {
         match self {
-            Transcriber::Codex => "codex",
+            Transcriber::Codex => Engine::Codex.id(),
+            Transcriber::Groq => Engine::Groq.id(),
+            Transcriber::Windows => Engine::Windows.id(),
             Transcriber::Echo(_) => "echo",
         }
     }
 
-    /// `samples` are 16 kHz mono in -1..1. Blocks until ChatGPT answers.
+    /// Windows speech hears the microphone itself while the dictation runs,
+    /// instead of being handed the recording afterwards.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows has a live engine"))]
+    pub fn listens_live(&self) -> bool {
+        matches!(self, Transcriber::Windows)
+    }
+
+    /// `samples` are 16 kHz mono in -1..1. Blocks until the service answers.
     pub fn transcribe(&self, samples: &[f32]) -> Result<String, Failure> {
         if samples.len() < (SAMPLE_RATE as f32 * SHORTEST.as_secs_f32()) as usize {
             return Err(Failure::TooShort);
         }
+        let seconds = samples.len() as f32 / SAMPLE_RATE as f32;
         match self {
             Transcriber::Echo(text) => Ok(text.clone()),
             Transcriber::Codex => {
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
                 let home = codex_auth::codex_home().ok_or(Failure::SignIn(CodexStatus::NotInstalled))?;
                 let credentials = codex_auth::credentials(&home, now).map_err(Failure::SignIn)?;
-                let seconds = samples.len() as f32 / SAMPLE_RATE as f32;
                 post(&credentials, &wav(samples), seconds)
             }
+            Transcriber::Groq => {
+                let key = groq::saved_key().ok_or(Failure::GroqNoKey)?;
+                groq::transcribe(&key, &wav(samples), seconds)
+            }
+            // The dictation finishes the live session instead (`windows_speech::Listening::finish`).
+            Transcriber::Windows => Err(Failure::WindowsSpeech("it wasn't listening".into())),
         }
     }
 }
 
 /// Why a dictation didn't turn into text, in words the pill can show.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "the Windows speech failures only happen on Windows"))]
 pub enum Failure {
     TooShort,
     SignIn(CodexStatus),
@@ -69,6 +150,17 @@ pub enum Failure {
     RateLimited,
     Server(u16),
     Unreadable,
+    GroqNoKey,
+    GroqRejected,
+    GroqRateLimited,
+    GroqOffline,
+    GroqServer(u16),
+    /// Online speech recognition is off in Windows' privacy settings.
+    WindowsPrivacy,
+    WindowsLanguage,
+    WindowsMicrophone,
+    WindowsOffline,
+    WindowsSpeech(String),
 }
 
 impl Failure {
@@ -84,26 +176,30 @@ impl Failure {
             Failure::SignIn(_) => "Codex isn't signed in. Open Codex (or run codex login) and sign in.".into(),
             Failure::Rejected => "ChatGPT turned down the sign-in. Sign in to Codex again.".into(),
             Failure::Offline => "Can't reach ChatGPT. Check your connection and try again.".into(),
-            Failure::TooLong => "That recording was too long for ChatGPT. Try a shorter one.".into(),
+            Failure::TooLong => "That recording was too long to send. Try a shorter one.".into(),
             Failure::RateLimited => "ChatGPT is busy with your dictations. Try again in a minute.".into(),
             Failure::Server(code) => format!("ChatGPT couldn't transcribe that (error {code}). Try again."),
-            Failure::Unreadable => "ChatGPT sent back something likh can't read. Try again.".into(),
+            Failure::Unreadable => "The transcriber sent back something likh can't read. Try again.".into(),
+            Failure::GroqNoKey => "Add your Groq key in likh's settings, under Transcription.".into(),
+            Failure::GroqRejected => "Groq turned down your key. Paste a new one in likh's settings.".into(),
+            Failure::GroqRateLimited => "You've hit Groq's free limit for now. Try again in a minute.".into(),
+            Failure::GroqOffline => "Can't reach Groq. Check your connection and try again.".into(),
+            Failure::GroqServer(code) => format!("Groq couldn't transcribe that (error {code}). Try again."),
+            Failure::WindowsPrivacy => {
+                "Turn on Online speech recognition in Windows Settings, under Privacy, Speech.".into()
+            }
+            Failure::WindowsLanguage => "Windows speech doesn't support your display language yet.".into(),
+            Failure::WindowsMicrophone => "Windows speech can't open your microphone.".into(),
+            Failure::WindowsOffline => "Windows speech needs the internet. Check your connection.".into(),
+            Failure::WindowsSpeech(detail) => format!("Windows speech didn't work ({detail}). Try again."),
         }
     }
 }
 
 fn post(credentials: &Credentials, wav: &[u8], seconds: f32) -> Result<String, Failure> {
-    let boundary = format!("likh-{:016x}", SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
-    let body = multipart(&boundary, wav);
-    // Uploads scale with length; a fixed timeout cut long ones off in the prototype.
-    let timeout = Duration::from_secs(15) + Duration::from_secs_f32(seconds * 0.5);
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_global(Some(timeout))
-        .user_agent(USER_AGENT)
-        .build()
-        .into();
-    let mut request = agent
+    let boundary = boundary();
+    let body = multipart(&boundary, wav, &[]);
+    let mut request = agent(seconds, USER_AGENT)
         .post(ENDPOINT)
         .header("Authorization", format!("Bearer {}", credentials.access_token))
         .header("originator", "Codex Desktop")
@@ -117,16 +213,26 @@ fn post(credentials: &Credentials, wav: &[u8], seconds: f32) -> Result<String, F
     interpret(status, &text)
 }
 
+/// An HTTP client whose timeout grows with the recording: uploads scale with
+/// length, and a fixed timeout cut long ones off in the prototype.
+fn agent(seconds: f32, user_agent: &str) -> ureq::Agent {
+    let timeout = Duration::from_secs(15) + Duration::from_secs_f32(seconds * 0.5);
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(timeout))
+        .user_agent(user_agent)
+        .build()
+        .into()
+}
+
+fn boundary() -> String {
+    format!("likh-{:016x}", SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos()))
+}
+
 /// Maps ChatGPT's answer to text or a failure. Split out so tests can feed real-shaped responses.
 pub fn interpret(status: u16, body: &str) -> Result<String, Failure> {
-    #[derive(Deserialize)]
-    struct Transcript {
-        text: String,
-    }
     match status {
-        200..=299 => {
-            serde_json::from_str::<Transcript>(body).map(|t| t.text.trim().to_owned()).map_err(|_| Failure::Unreadable)
-        }
+        200..=299 => read_text(body),
         401 | 403 => Err(Failure::Rejected),
         429 => Err(Failure::RateLimited),
         _ if body.contains("audio_too_short") => Err(Failure::TooShort),
@@ -136,7 +242,17 @@ pub fn interpret(status: u16, body: &str) -> Result<String, Failure> {
     }
 }
 
-fn multipart(boundary: &str, wav: &[u8]) -> Vec<u8> {
+/// `{ "text": "..." }`, the answer both ChatGPT and Groq give.
+fn read_text(body: &str) -> Result<String, Failure> {
+    #[derive(Deserialize)]
+    struct Transcript {
+        text: String,
+    }
+    serde_json::from_str::<Transcript>(body).map(|t| t.text.trim().to_owned()).map_err(|_| Failure::Unreadable)
+}
+
+/// A multipart body: the WAV as the `file` part, then any plain `fields`.
+fn multipart(boundary: &str, wav: &[u8], fields: &[(&str, &str)]) -> Vec<u8> {
     let mut body = Vec::with_capacity(wav.len() + 256);
     body.extend_from_slice(
         format!(
@@ -145,11 +261,16 @@ fn multipart(boundary: &str, wav: &[u8]) -> Vec<u8> {
         .as_bytes(),
     );
     body.extend_from_slice(wav);
+    for (name, value) in fields {
+        body.extend_from_slice(
+            format!("\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}").as_bytes(),
+        );
+    }
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     body
 }
 
-/// 16 kHz mono 16-bit PCM WAV, what the endpoint expects.
+/// 16 kHz mono 16-bit PCM WAV, what the endpoints expect.
 pub fn wav(samples: &[f32]) -> Vec<u8> {
     let spec = hound::WavSpec {
         channels: 1,

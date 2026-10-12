@@ -101,6 +101,85 @@ pub fn switch<'a, M: Clone + 'a>(on: bool, flip: M) -> Element<'a, M> {
         .into()
 }
 
+/// Pick one of a few short options, side by side. The picked one sits on a
+/// lifted segment; the rest are words until you point at them.
+pub fn segmented<'a, M: Clone + 'a, T: Copy + PartialEq + 'a>(
+    options: &[(T, &'a str)],
+    picked: T,
+    on_pick: impl Fn(T) -> M,
+) -> Element<'a, M> {
+    let p = palette();
+    let (track, lifted, ink, rest) = (p.surface, p.elevated, p.text, p.text_muted);
+    let inset = 3.0;
+    let segments = row(options.iter().map(|&(value, label)| {
+        let on = value == picked;
+        button(text(label).size(size::SMALL).font(theme::UI_MEDIUM).center())
+            .on_press(on_pick(value))
+            .padding([5.0, space::S3])
+            .style(move |_, status| button::Style {
+                background: on.then_some(Background::Color(lifted)),
+                text_color: if on || matches!(status, button::Status::Hovered) { ink } else { rest },
+                // Nested inside the track: its radius minus the inset.
+                border: Border { radius: (radius::CONTROL - inset).into(), ..Border::default() },
+                shadow: if on {
+                    iced::Shadow {
+                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
+                        offset: iced::Vector::new(0.0, 1.0),
+                        blur_radius: 2.0,
+                    }
+                } else {
+                    iced::Shadow::default()
+                },
+                ..button::Style::default()
+            })
+            .into()
+    }))
+    .spacing(2);
+    container(segments)
+        .padding(inset)
+        .style(move |_| container::Style {
+            background: Some(Background::Color(track)),
+            border: Border { radius: radius::CONTROL.into(), ..Border::default() },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// A text field on `surface` that lights its edge peach while focused.
+pub fn field_style(status: iced::widget::text_input::Status) -> iced::widget::text_input::Style {
+    let p = palette();
+    iced::widget::text_input::Style {
+        background: Background::Color(p.surface),
+        border: Border {
+            radius: radius::CONTROL.into(),
+            width: 1.0,
+            color: if matches!(status, iced::widget::text_input::Status::Focused { .. }) {
+                fade(p.accent, 0.5)
+            } else {
+                Color::from_rgba(1.0, 1.0, 1.0, 0.06)
+            },
+        },
+        icon: p.text_subtle,
+        placeholder: p.text_subtle,
+        value: p.text,
+        selection: fade(p.accent, 0.35),
+    }
+}
+
+/// A phrase you say, as a small capsule in quotes: the pill's shape, at rest.
+pub fn said<'a, M: 'a>(phrase: &'a str) -> Element<'a, M> {
+    let p = palette();
+    let fill = p.surface;
+    container(text(format!("\u{201c}{phrase}\u{201d}")).size(size::CAPTION).font(theme::UI_MEDIUM).color(p.text))
+        .padding([3.0, space::S2 + 2.0])
+        .style(move |_| container::Style {
+            background: Some(Background::Color(fill)),
+            border: Border { radius: 999.0.into(), width: 1.0, color: Color::from_rgba(1.0, 1.0, 1.0, 0.06) },
+            ..container::Style::default()
+        })
+        .into()
+}
+
 pub fn pill_fill(fill: Color) -> container::Style {
     container::Style {
         background: Some(Background::Color(fill)),

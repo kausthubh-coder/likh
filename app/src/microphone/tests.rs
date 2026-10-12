@@ -86,3 +86,44 @@ fn a_missing_file_fails_to_start_and_says_which() {
     let error = Recording::start_from(Some(PathBuf::from("no/such.wav")), |_| {}).err().expect("should fail");
     assert!(error.starts_with(&format!("Can't read {}", PathBuf::from("no/such.wav").display())), "{error}");
 }
+
+/// 16 kHz mono: `speech` seconds of a -17 dBFS tone, then `silence` seconds of a quiet room.
+fn speech_then_silence(path: &std::path::Path, speech: f32, silence: f32) {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 16_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(path, spec).expect("create wav");
+    for i in 0..(16_000.0 * speech) as usize {
+        writer.write_sample((0.2 * (i as f32 * 0.17).sin() * 32767.0) as i16).expect("speech");
+    }
+    for i in 0..(16_000.0 * silence) as usize {
+        // About -60 dBFS of hiss, like a laptop mic in a quiet room.
+        writer.write_sample((0.001 * (i as f32 * 1.3).sin() * 32767.0) as i16).expect("room");
+    }
+    writer.finalize().expect("finalize");
+}
+
+#[test]
+fn quiet_is_counted_from_the_last_speech() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("then-quiet.wav");
+    speech_then_silence(&path, 0.4, 1.6);
+    let recording = Recording::start_from(Some(path), |_| {}).expect("start");
+    std::thread::sleep(Duration::from_millis(1_500));
+    let quiet = recording.quiet_for().expect("the tone counts as speech");
+    // Speech ended 0.4 s in; at 1.5 s about 1.1 s of quiet has passed.
+    assert!(quiet >= Duration::from_millis(900) && quiet <= Duration::from_millis(1_300), "{quiet:?}");
+}
+
+#[test]
+fn a_quiet_room_alone_never_counts_as_speech() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("room.wav");
+    speech_then_silence(&path, 0.0, 1.0);
+    let recording = Recording::start_from(Some(path), |_| {}).expect("start");
+    std::thread::sleep(Duration::from_millis(800));
+    assert_eq!(recording.quiet_for(), None);
+}

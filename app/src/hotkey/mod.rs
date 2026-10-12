@@ -6,6 +6,10 @@
 //! while idle. A low-level keyboard hook was tried first; Windows silently
 //! removes those when the machine is busy, and the shortcut stopped working.
 //! Letting go is noticed by looking at the keys every 15ms, only while held.
+//!
+//! A mouse button can start dictations too (`MouseTrigger`). That needs a
+//! low-level mouse hook, which wakes likh on every mouse move, so it is
+//! installed only while a button is picked; with none picked nothing runs.
 
 use crate::dictation::Input;
 use serde::{Deserialize, Serialize};
@@ -33,6 +37,33 @@ pub struct Binding {
 impl Default for Binding {
     fn default() -> Self {
         Self { ctrl: true, alt: false, shift: false, win: false, key: KeyName("Space") }
+    }
+}
+
+/// A mouse button that works like the shortcut: hold to talk, or tap for hands-free.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseTrigger {
+    #[default]
+    Off,
+    Middle,
+    /// The side button nearer you (mouse 4), "back" in browsers.
+    Back,
+    /// The other side button (mouse 5), "forward" in browsers.
+    Forward,
+}
+
+impl MouseTrigger {
+    pub const ALL: [MouseTrigger; 4] =
+        [MouseTrigger::Off, MouseTrigger::Middle, MouseTrigger::Back, MouseTrigger::Forward];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            MouseTrigger::Off => "Off",
+            MouseTrigger::Middle => "Middle",
+            MouseTrigger::Back => "Back",
+            MouseTrigger::Forward => "Forward",
+        }
     }
 }
 
@@ -169,16 +200,28 @@ impl TryFrom<String> for Binding {
     }
 }
 
-/// Starts listening for `binding` on its own thread. Err says why it couldn't
-/// (on Windows, usually that another app already owns the shortcut).
-pub fn spawn(dictation: Sender<Input>, binding: Binding) -> Result<(), String> {
+/// Starts listening for `binding` (and `mouse`) on its own thread. Err says why
+/// it couldn't (on Windows, usually that another app already owns the shortcut).
+pub fn spawn(dictation: Sender<Input>, binding: Binding, mouse: MouseTrigger) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        windows::spawn(dictation, binding)
+        windows::spawn(dictation, binding, mouse)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        other::spawn(dictation, binding)
+        other::spawn(dictation, binding, mouse)
+    }
+}
+
+/// Swaps the mouse button that starts dictations, or turns it off.
+pub fn set_mouse(mouse: MouseTrigger) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::set_mouse(mouse)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        other::set_mouse(mouse)
     }
 }
 
@@ -211,21 +254,59 @@ pub fn watch_escape(on: bool) {
     let _ = on;
 }
 
+/// macOS (alpha): handy-keys for the shortcut and the mouse button. Untested
+/// by hand; CI builds and tests it.
 #[cfg(not(target_os = "windows"))]
 mod other {
-    use super::Binding;
+    use super::{Binding, MouseTrigger};
     use crate::dictation::Input;
     use handy_keys::{Hotkey, HotkeyManager, HotkeyState};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::mpsc::Sender;
+    use std::sync::{Mutex, OnceLock};
 
-    pub fn spawn(dictation: Sender<Input>, binding: Binding) -> Result<(), String> {
+    /// Bumped on every mouse change: a listener for an older choice stops at its next event.
+    static MOUSE_GENERATION: AtomicU64 = AtomicU64::new(0);
+    static DICTATION: OnceLock<Mutex<Sender<Input>>> = OnceLock::new();
+
+    pub fn spawn(dictation: Sender<Input>, binding: Binding, mouse: MouseTrigger) -> Result<(), String> {
+        let _ = DICTATION.set(Mutex::new(dictation.clone()));
+        if let Err(reason) = set_mouse(mouse) {
+            eprintln!("likh: the mouse button won't work: {reason}");
+        }
+        listen(dictation, String::from(binding), None)
+    }
+
+    pub fn set_mouse(mouse: MouseTrigger) -> Result<(), String> {
+        let generation = MOUSE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        let button = match mouse {
+            MouseTrigger::Off => return Ok(()),
+            MouseTrigger::Middle => "MouseMiddle",
+            MouseTrigger::Back => "MouseX1",
+            MouseTrigger::Forward => "MouseX2",
+        };
+        let dictation = DICTATION
+            .get()
+            .ok_or("the shortcut isn't running")?
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        listen(dictation, button.to_string(), Some(generation))
+    }
+
+    /// One manager per hotkey, on its own thread. A mouse listener (`generation`
+    /// set) goes quiet once a newer choice replaces it.
+    fn listen(dictation: Sender<Input>, hotkey: String, generation: Option<u64>) -> Result<(), String> {
         let manager = HotkeyManager::new_with_blocking().map_err(|error| error.to_string())?;
-        let hold: Hotkey = String::from(binding).parse().map_err(|error: handy_keys::Error| error.to_string())?;
+        let hold: Hotkey = hotkey.parse().map_err(|error: handy_keys::Error| error.to_string())?;
         let id = manager.register(hold).map_err(|error| error.to_string())?;
         std::thread::Builder::new()
             .name("likh-hotkey".into())
             .spawn(move || {
                 while let Ok(event) = manager.recv() {
+                    if generation.is_some_and(|mine| mine != MOUSE_GENERATION.load(Ordering::SeqCst)) {
+                        return;
+                    }
                     let input = match event.state {
                         HotkeyState::Pressed => Input::Hold,
                         HotkeyState::Released => Input::Release,

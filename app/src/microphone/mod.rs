@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(test)]
 mod tests;
@@ -27,6 +27,9 @@ const WINDOW: Duration = Duration::from_millis(30);
 /// -10 dBFS (talking close to the mic) is full.
 const FLOOR_DB: f32 = -55.0;
 const CEILING_DB: f32 = -10.0;
+/// A level at or above this counts as speech for silence stop: about -37 dBFS,
+/// well above a quiet room (-55 to -45) and below talking at a laptop (-30 to -20).
+pub const SPEECH_LEVEL: f32 = 0.4;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
@@ -78,6 +81,8 @@ fn meter(mut output: Sender<Event>) {
 pub struct Recording {
     stop: Arc<AtomicBool>,
     heard: Arc<Mutex<Heard>>,
+    /// The last moment the level reached speech; None until someone speaks.
+    last_voice: Arc<Mutex<Option<Instant>>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -98,17 +103,30 @@ impl Recording {
     pub fn start_from(source: Option<PathBuf>, on_level: impl FnMut(f32) + Send + 'static) -> Result<Self, String> {
         let stop = Arc::new(AtomicBool::new(false));
         let heard = Arc::new(Mutex::new(Heard::default()));
+        let last_voice = Arc::new(Mutex::new(None));
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
-        let (thread_stop, thread_heard) = (stop.clone(), heard.clone());
+        let (thread_stop, thread_heard, voice) = (stop.clone(), heard.clone(), last_voice.clone());
+        let mut on_level = on_level;
+        let on_level = move |level: f32| {
+            if level >= SPEECH_LEVEL {
+                *voice.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Instant::now());
+            }
+            on_level(level);
+        };
         let thread = std::thread::Builder::new()
             .name("likh-recorder".into())
             .spawn(move || record(source, on_level, thread_stop, thread_heard, ready_tx))
             .map_err(|error| error.to_string())?;
         match ready_rx.recv() {
-            Ok(Ok(())) => Ok(Self { stop, heard, thread: Some(thread) }),
+            Ok(Ok(())) => Ok(Self { stop, heard, last_voice, thread: Some(thread) }),
             Ok(Err(reason)) => Err(reason),
             Err(_) => Err("The microphone thread stopped before it started.".into()),
         }
+    }
+
+    /// How long it has been quiet since the last speech; None if nobody has spoken yet.
+    pub fn quiet_for(&self) -> Option<Duration> {
+        self.last_voice.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).map(|at| at.elapsed())
     }
 
     /// Stops and returns what was heard, as 16 kHz mono.

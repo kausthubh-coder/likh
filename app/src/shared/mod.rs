@@ -11,6 +11,16 @@ pub mod ui;
 pub const SITE: &str = "https://getlikh.vercel.app";
 pub const CODEX_SETUP: &str = "https://getlikh.vercel.app/codex";
 
+/// Runs blocking work (a network check) on its own thread, for `Task::perform`,
+/// so the window keeps drawing while it waits. None if the thread died.
+pub async fn off_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (done, result) = iced::futures::channel::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(work());
+    });
+    result.await.ok()
+}
+
 /// Opens a web page or a Windows settings page (`ms-settings:`) with the system's default handler.
 pub fn open_url(url: &str) {
     #[cfg(target_os = "windows")]

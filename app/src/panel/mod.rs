@@ -1,20 +1,26 @@
-//! The likh window, opened from the tray: the shortcut and how it behaves,
-//! sounds, voice commands, history and start-with-Windows (General), what you
-//! dictated (History), and the Codex sign-in (About).
+//! The likh window, opened from the tray: the shortcut, mouse button and how
+//! dictation starts and stops (General), which engine transcribes
+//! (Transcription), the spoken commands (Commands), what you dictated
+//! (History), and the version and links (About).
 //!
 //! Borderless like onboarding: drag it from anywhere empty, close it with the
 //! × or Esc. Nothing in it animates, so it draws only when something changes.
 
 use crate::codex_auth::CodexStatus;
+use crate::commands::Group;
 use crate::dictation::Status;
 use crate::history::{self, Entry};
-use crate::hotkey::{self, Binding, capture};
-use crate::onboarding::{self, Tone};
-use crate::settings::{Mode, Settings};
+use crate::hotkey::{self, Binding, MouseTrigger, capture};
+use crate::onboarding::{self, GroqSetup, Tone};
+use crate::settings::{Mode, Settings, SilenceStop};
 use crate::shared::icon;
 use crate::shared::theme::{self, Palette, palette, radius, size, space};
-use crate::shared::ui::{ghost, keycap, keycaps, lighten, pill_fill, switch};
-use iced::widget::{Space, button, column, container, mouse_area, row, scrollable, text};
+use crate::shared::ui::{field_style, ghost, keycap, keycaps, lighten, pill_fill, primary, said, segmented, switch};
+use crate::transcriber::{Engine, Failure, glyph, groq};
+use crate::update::{self, Updates};
+use iced::widget::{
+    Space, button, canvas as canvas_widget, column, container, mouse_area, operation, row, scrollable, text, text_input,
+};
 use iced::{Alignment, Background, Border, Color, Element, Length, Size, Subscription, Task, keyboard, window};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -29,12 +35,29 @@ const REPO: &str = "https://github.com/kausthubh-coder/likh";
 const HISTORY_SHOWN: usize = 200;
 /// Long dictations are cut in the list; copying still copies all of it.
 const PREVIEW_CHARS: usize = 240;
+const GROQ_KEY: &str = "panel-groq-key";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
     General,
+    Transcription,
+    Commands,
     History,
     About,
+}
+
+impl Tab {
+    const ALL: [Tab; 5] = [Tab::General, Tab::Transcription, Tab::Commands, Tab::History, Tab::About];
+
+    fn name(self) -> &'static str {
+        match self {
+            Tab::General => "General",
+            Tab::Transcription => "Transcription",
+            Tab::Commands => "Commands",
+            Tab::History => "History",
+            Tab::About => "About",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -43,11 +66,28 @@ pub enum Message {
     ChangeShortcut,
     KeepShortcut,
     Key(keyboard::Event),
+    Mouse(MouseTrigger),
     Mode(Mode),
+    SilenceStop(SilenceStop),
     Sounds(bool),
+    PauseMedia(bool),
     Commands(bool),
+    CommandGroup(Group, bool),
     KeepHistory(bool),
     StartWithWindows(bool),
+    Engine(Engine),
+    Recheck,
+    GroqKey(String),
+    SaveGroqKey,
+    GroqChecked(String, Option<Result<(), Failure>>),
+    ReplaceGroqKey,
+    ForgetGroqKey,
+    CheckForUpdates,
+    /// A newer release's page (macOS, where likh can't install it itself).
+    OpenRelease(String),
+    /// "Restart to update". Handled by the tray, like the tray's own line.
+    Restart,
+    AutoUpdate(bool),
     Copy(usize),
     Clear,
     /// Handled by the tray, which owns onboarding.
@@ -62,7 +102,11 @@ pub struct Panel {
     tab: Tab,
     settings: Arc<RwLock<Settings>>,
     dictation: Arc<Mutex<Status>>,
+    updates: Updates,
     codex: CodexStatus,
+    groq: GroqSetup,
+    /// None until the Transcription tab looks.
+    windows: Option<Result<(), Failure>>,
     /// Picking a new shortcut: the modifiers held so far.
     capturing: Option<keyboard::Modifiers>,
     notice: Option<(String, Tone)>,
@@ -107,6 +151,7 @@ impl Panel {
         window: window::Id,
         settings: Arc<RwLock<Settings>>,
         dictation: Arc<Mutex<Status>>,
+        updates: Updates,
         files: Files,
     ) -> Self {
         Self {
@@ -114,7 +159,10 @@ impl Panel {
             tab: Tab::General,
             settings,
             dictation,
+            updates,
             codex: onboarding::check_codex_now(),
+            groq: GroqSetup::look(),
+            windows: None,
             capturing: None,
             notice: None,
             history: Vec::new(),
@@ -150,6 +198,15 @@ impl Panel {
         self.confirm_clear = false;
     }
 
+    /// Looks again at whichever engine is picked.
+    fn recheck(&mut self) {
+        match self.chosen().engine {
+            Engine::Codex => self.codex = onboarding::check_codex_now(),
+            Engine::Groq => {}
+            Engine::Windows => self.windows = Some(onboarding::check_windows_now()),
+        }
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Tab(tab) => {
@@ -158,8 +215,15 @@ impl Panel {
                 self.notice = None;
                 match tab {
                     Tab::History => self.load_history(),
-                    Tab::About => self.codex = onboarding::check_codex_now(),
-                    Tab::General => {}
+                    // Every card says where its engine stands, so look at all of them.
+                    Tab::Transcription => {
+                        self.codex = onboarding::check_codex_now();
+                        if Engine::available().contains(&Engine::Windows) {
+                            self.windows = Some(onboarding::check_windows_now());
+                        }
+                    }
+                    Tab::About => self.recheck(),
+                    Tab::General | Tab::Commands => {}
                 }
             }
             Message::ChangeShortcut => {
@@ -188,19 +252,53 @@ impl Panel {
                 None if is_escape(&event) => return window::close(self.window),
                 None => {}
             },
+            Message::Mouse(trigger) => {
+                self.change(|s| s.mouse = trigger);
+                if let Err(reason) = hotkey::set_mouse(trigger) {
+                    self.notice = Some((format!("The mouse button won't work yet: {reason}"), Tone::Danger));
+                }
+            }
             Message::Mode(mode) => self.change(|s| s.mode = mode),
+            Message::SilenceStop(after) => self.change(|s| s.silence_stop = after),
             Message::Sounds(on) => {
                 self.change(|s| s.sounds = on);
                 if on {
                     crate::sounds::play(crate::sounds::Cue::Start);
                 }
             }
+            Message::PauseMedia(on) => self.change(|s| s.pause_media = on),
             Message::Commands(on) => self.change(|s| s.commands = on),
+            Message::CommandGroup(group, on) => self.change(|s| group.set(&mut s.command_groups, on)),
             Message::KeepHistory(on) => self.change(|s| s.history = on),
             Message::StartWithWindows(on) => match crate::autostart::set(on) {
                 Ok(()) => self.change(|s| s.start_with_windows = on),
                 Err(reason) => self.notice = Some((format!("Windows didn't allow that: {reason}"), Tone::Danger)),
             },
+            Message::Engine(engine) => {
+                self.change(|s| s.engine = engine);
+                self.recheck();
+                if engine == Engine::Groq && !self.groq.saved {
+                    return operation::focus(GROQ_KEY);
+                }
+            }
+            Message::Recheck => self.recheck(),
+            Message::GroqKey(key) => {
+                self.groq.key = key;
+                self.groq.notice = None;
+            }
+            Message::SaveGroqKey if self.groq.checking => {}
+            Message::SaveGroqKey => return self.groq.save(Message::GroqChecked),
+            Message::GroqChecked(key, answer) => self.groq.checked(&key, answer),
+            Message::ReplaceGroqKey => {
+                self.groq.saved = false;
+                self.groq.notice = None;
+                return operation::focus(GROQ_KEY);
+            }
+            Message::ForgetGroqKey => self.groq.forget(),
+            Message::CheckForUpdates => self.updates.check_now(),
+            Message::OpenRelease(page) => crate::shared::open_url(&page),
+            Message::Restart => {}
+            Message::AutoUpdate(on) => self.change(|s| s.auto_update = on),
             Message::Copy(index) => {
                 if let Some(entry) = self.history.get(index) {
                     match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_text(entry.text.clone())) {
@@ -246,20 +344,20 @@ impl Panel {
         let p = palette();
         let content = match self.tab {
             Tab::General => self.general(&p),
+            Tab::Transcription => self.transcription(&p),
+            Tab::Commands => self.commands(&p),
             Tab::History => self.history_list(&p),
             Tab::About => self.about(&p),
-        };
-        let title = match self.tab {
-            Tab::General => "General",
-            Tab::History => "History",
-            Tab::About => "About",
         };
         let notice: Element<'_, Message> = match &self.notice {
             Some((words, tone)) => text(words.clone()).size(size::SMALL).color(tone_color(&p, *tone)).into(),
             None => Space::new().into(),
         };
         let header = row![
-            text(title).size(size::TITLE).line_height(theme::line_height(size::TITLE)).font(theme::UI_SEMIBOLD),
+            text(self.tab.name())
+                .size(size::TITLE)
+                .line_height(theme::line_height(size::TITLE))
+                .font(theme::UI_SEMIBOLD),
             Space::new().width(Length::Fill),
             ghost("×", Message::Close, 1.0),
         ]
@@ -301,7 +399,7 @@ impl Panel {
         let brand = row![mark, text("likh").size(size::BODY).font(theme::UI_SEMIBOLD)]
             .spacing(space::S2)
             .align_y(Alignment::Center);
-        let nav = column([Tab::General, Tab::History, Tab::About].map(|tab| self.nav_item(p, tab))).spacing(space::S1);
+        let nav = column(Tab::ALL.map(|tab| self.nav_item(p, tab))).spacing(space::S1);
         container(
             column![
                 brand,
@@ -325,14 +423,9 @@ impl Panel {
     }
 
     fn nav_item(&self, p: &Palette, tab: Tab) -> Element<'_, Message> {
-        let label = match tab {
-            Tab::General => "General",
-            Tab::History => "History",
-            Tab::About => "About",
-        };
         let selected = self.tab == tab;
         let (on, hover, rest, ink) = (p.elevated, lighten(p.surface, 0.02), p.text_muted, p.text);
-        button(text(label).size(size::SMALL).font(theme::UI_MEDIUM))
+        button(text(tab.name()).size(size::SMALL).font(theme::UI_MEDIUM))
             .on_press(Message::Tab(tab))
             .width(Length::Fill)
             .padding([space::S2, space::S3])
@@ -374,46 +467,239 @@ impl Panel {
             .align_y(Alignment::Center)
             .into(),
         };
+        let mouse_options = MouseTrigger::ALL.map(|trigger| (trigger, trigger.name()));
+        let mouse = labelled(
+            p,
+            "Mouse button",
+            "Hold it to talk, like the shortcut. Its usual click stops while it's picked.",
+            segmented(&mouse_options, chosen.mouse, Message::Mouse),
+        );
         let modes = column(Mode::ALL.map(|mode| choice(p, mode, chosen.mode == mode))).spacing(space::S1);
-        let switches = column![
-            setting(
+        let quiet_options = SilenceStop::ALL.map(|after| (after, after.name()));
+        let quiet = labelled(
+            p,
+            "Stop after quiet",
+            "In hands-free, once you've said something, likh pastes after this much quiet.",
+            segmented(&quiet_options, chosen.silence_stop, Message::SilenceStop),
+        );
+        let mut switches = column![setting(
+            p,
+            "Sounds",
+            "Quiet cues when recording starts and stops.",
+            chosen.sounds,
+            Message::Sounds(!chosen.sounds)
+        )]
+        .spacing(space::S4);
+        if crate::media::SUPPORTED {
+            switches = switches.push(setting(
                 p,
-                "Sounds",
-                "Quiet cues when recording starts and stops.",
-                chosen.sounds,
-                Message::Sounds(!chosen.sounds)
-            ),
-            setting(
-                p,
-                "Voice commands",
-                "Say \u{201c}new line\u{201d}, \u{201c}press enter\u{201d} or \u{201c}scratch that\u{201d}.",
-                chosen.commands,
-                Message::Commands(!chosen.commands)
-            ),
-            setting(
+                "Pause music and videos",
+                "While you talk, then they play again.",
+                chosen.pause_media,
+                Message::PauseMedia(!chosen.pause_media),
+            ));
+        }
+        let switches = switches
+            .push(setting(
                 p,
                 "Keep history",
                 "Your dictations stay on this computer, nowhere else.",
                 chosen.history,
-                Message::KeepHistory(!chosen.history)
-            ),
-            setting(
+                Message::KeepHistory(!chosen.history),
+            ))
+            .push(setting(
                 p,
                 "Start with Windows",
                 "likh is ready as soon as you sign in.",
                 chosen.start_with_windows,
-                Message::StartWithWindows(!chosen.start_with_windows)
-            ),
-        ]
-        .spacing(space::S4);
+                Message::StartWithWindows(!chosen.start_with_windows),
+            ));
         column![
-            section(p, "Shortcut", shortcut),
-            section(p, "How it starts", modes.into()),
+            section(p, "Shortcut", column![shortcut, mouse].spacing(space::S5).into()),
+            section(p, "How it starts", column![modes, quiet].spacing(space::S5).into()),
             section(p, "While you talk", switches.into()),
         ]
         .spacing(space::S6)
         .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
         .into()
+    }
+
+    fn transcription(&self, p: &Palette) -> Element<'_, Message> {
+        let picked = self.chosen().engine;
+        let cards = row(Engine::available().iter().map(|engine| self.engine_card(p, *engine, *engine == picked)))
+            .spacing(space::S2);
+        let copy = onboarding::engine_copy(picked, &self.codex, &self.groq, self.windows.as_ref());
+        let tint = tone_color(p, copy.tone);
+        let state = row![
+            container(Space::new()).width(8).height(8).style(move |_| pill_fill(tint)),
+            column![
+                text(copy.title).size(size::BODY).font(theme::UI_MEDIUM),
+                text(copy.detail).size(size::SMALL).color(p.text_muted),
+            ]
+            .spacing(2),
+        ]
+        .spacing(space::S3)
+        .align_y(Alignment::Center);
+        let actions: Element<'_, Message> = match picked {
+            Engine::Codex => {
+                let mut actions = row![ghost("Check again", Message::Recheck, 1.0)].spacing(space::S1);
+                if self.codex == CodexStatus::NotInstalled {
+                    actions = actions.push(ghost("Get Codex", Message::Open(crate::shared::CODEX_SETUP), 1.0));
+                }
+                actions.into()
+            }
+            Engine::Groq if self.groq.saved => row![
+                ghost("Use another key", Message::ReplaceGroqKey, 1.0),
+                ghost("Remove key", Message::ForgetGroqKey, 1.0),
+            ]
+            .spacing(space::S1)
+            .into(),
+            Engine::Groq => {
+                let field = text_input("Paste your key, gsk_\u{2026}", &self.groq.key)
+                    .id(GROQ_KEY)
+                    .secure(true)
+                    .on_input(Message::GroqKey)
+                    .on_paste(Message::GroqKey)
+                    .on_submit(Message::SaveGroqKey)
+                    .size(size::BODY)
+                    .padding(space::S3)
+                    .style(|_, status| field_style(status));
+                let save = if self.groq.checking { "Checking\u{2026}" } else { "Save key" };
+                column![
+                    field,
+                    row![
+                        primary(save, Message::SaveGroqKey, 1.0),
+                        ghost("Get a free key", Message::Open(groq::KEYS_URL), 1.0)
+                    ]
+                    .spacing(space::S2)
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(space::S3)
+                .into()
+            }
+            Engine::Windows => row![
+                ghost("Open speech settings", Message::Open(onboarding::SPEECH_SETTINGS_URL), 1.0),
+                ghost("Check again", Message::Recheck, 1.0),
+            ]
+            .spacing(space::S1)
+            .into(),
+        };
+        let groq_notice: Element<'_, Message> = match (&self.groq.notice, picked) {
+            (Some((words, tone)), Engine::Groq) => {
+                text(words.clone()).size(size::SMALL).color(tone_color(p, *tone)).into()
+            }
+            _ => Space::new().into(),
+        };
+        column![
+            section(p, "Transcribe with", cards.into()),
+            section(p, picked.explain(), column![state, groq_notice, actions].spacing(space::S3).into()),
+        ]
+        .spacing(space::S6)
+        .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
+        .into()
+    }
+
+    /// One engine as a card: its glyph, its name, and a word on its state.
+    /// The picked card lifts and takes the peach edge; its glyph turns peach.
+    fn engine_card<'a>(&self, p: &Palette, engine: Engine, picked: bool) -> Element<'a, Message> {
+        let (status, ok) = self.short_status(engine);
+        let (lifted, rest, accent, ink, muted) = (p.elevated, p.surface, p.accent, p.text, p.text_muted);
+        let backdrop = if picked { lifted } else { rest };
+        let mark = canvas_widget(glyph::Glyph { engine, color: if picked { accent } else { muted }, backdrop })
+            .width(40)
+            .height(32);
+        let dot = if ok { p.success } else { p.text_subtle };
+        let card = column![
+            mark,
+            text(engine.name()).size(size::BODY).font(theme::UI_MEDIUM).color(ink),
+            row![
+                container(Space::new()).width(6).height(6).style(move |_| pill_fill(dot)),
+                text(status).size(size::CAPTION).color(muted),
+            ]
+            .spacing(space::S2)
+            .align_y(Alignment::Center),
+        ]
+        .spacing(space::S2);
+        let hover = lighten(rest, 0.02);
+        button(card)
+            .on_press(Message::Engine(engine))
+            .width(Length::Fill)
+            .padding(space::S4)
+            .style(move |_, status| button::Style {
+                background: Some(Background::Color(match (picked, status) {
+                    (true, _) => lifted,
+                    (false, button::Status::Hovered | button::Status::Pressed) => hover,
+                    _ => rest,
+                })),
+                text_color: ink,
+                border: Border {
+                    radius: radius::CARD.into(),
+                    width: if picked { 1.5 } else { 1.0 },
+                    color: if picked { accent } else { Color::from_rgba(1.0, 1.0, 1.0, 0.04) },
+                },
+                ..button::Style::default()
+            })
+            .into()
+    }
+
+    /// A few words for a card: what state the engine is in, and whether it's ready.
+    fn short_status(&self, engine: Engine) -> (&'static str, bool) {
+        match engine {
+            Engine::Codex => match self.codex {
+                CodexStatus::Connected(_) => ("Connected", true),
+                CodexStatus::NotInstalled => ("Needs Codex", false),
+                CodexStatus::SignedOut => ("Signed out", false),
+                CodexStatus::Expired(_) => ("Sign-in expired", false),
+            },
+            Engine::Groq if self.groq.saved => ("Key saved", true),
+            Engine::Groq => ("Needs a key", false),
+            Engine::Windows => match self.windows {
+                None => ("Not checked", false),
+                Some(Ok(())) => ("Ready", true),
+                Some(Err(Failure::WindowsPrivacy)) => ("Turned off", false),
+                Some(Err(_)) => ("Unavailable", false),
+            },
+        }
+    }
+
+    fn commands(&self, p: &Palette) -> Element<'_, Message> {
+        let chosen = self.chosen();
+        let master = setting(
+            p,
+            "Spoken commands",
+            "Phrases that do something instead of being typed.",
+            chosen.commands,
+            Message::Commands(!chosen.commands),
+        );
+        if !chosen.commands {
+            return column![master, hint(p, "Off. Everything you say is typed as you said it.")]
+                .spacing(space::S4)
+                .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
+                .into();
+        }
+        let groups = column(Group::ALL.map(|group| {
+            let on = group.is_on(&chosen.command_groups);
+            let phrases = row(group.phrases().iter().map(|(phrase, result)| {
+                row![said(phrase), text(*result).size(size::CAPTION).font(theme::MONO).color(p.text_subtle)]
+                    .spacing(space::S1 + 2.0)
+                    .align_y(Alignment::Center)
+                    .into()
+            }))
+            .spacing(space::S4)
+            .wrap()
+            .vertical_spacing(space::S2);
+            let mut block = column![setting(p, group.name(), group.explain(), on, Message::CommandGroup(group, !on))]
+                .spacing(space::S3);
+            if on {
+                block = block.push(phrases);
+            }
+            block.into()
+        }))
+        .spacing(space::S5);
+        column![master, section(p, "Say", groups.into())]
+            .spacing(space::S6)
+            .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
+            .into()
     }
 
     fn history_list(&self, p: &Palette) -> Element<'_, Message> {
@@ -479,7 +765,8 @@ impl Panel {
     }
 
     fn about(&self, p: &Palette) -> Element<'_, Message> {
-        let copy = onboarding::codex_copy(&self.codex);
+        let engine = self.chosen().engine;
+        let copy = onboarding::engine_copy(engine, &self.codex, &self.groq, self.windows.as_ref());
         let status = self.dictation.lock().map(|s| s.clone()).unwrap_or_else(|poisoned| poisoned.into_inner().clone());
         let tint = tone_color(p, copy.tone);
         let account = row![
@@ -499,14 +786,22 @@ impl Panel {
             }
             (n, _) => format!("{n} since likh started."),
         };
+        let audio = match engine {
+            Engine::Codex => "Free and open source, MIT. Your audio goes to ChatGPT through Codex and nowhere else.",
+            Engine::Groq => "Free and open source, MIT. Your audio goes to Groq with your key and nowhere else.",
+            Engine::Windows => {
+                "Free and open source, MIT. Your audio goes to Microsoft's speech service and nowhere else."
+            }
+        };
         column![
             section(p, "Transcribing with", account.into()),
             section(p, "This session", hint(p, &session)),
+            section(p, "Updates", self.updates_view(p)),
             section(
                 p,
                 "likh",
                 column![
-                    hint(p, "Free and open source, MIT. Your audio goes to ChatGPT through Codex and nowhere else."),
+                    hint(p, audio),
                     row![
                         ghost("Website", Message::Open(crate::shared::SITE), 1.0),
                         ghost("Source on GitHub", Message::Open(REPO), 1.0),
@@ -519,6 +814,62 @@ impl Panel {
             ),
         ]
         .spacing(space::S6)
+        .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
+        .into()
+    }
+
+    /// The running version, where updating stands, and what you can do about it.
+    fn updates_view(&self, p: &Palette) -> Element<'_, Message> {
+        let chosen = self.chosen();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let this = format!("This is likh {}.", env!("CARGO_PKG_VERSION"));
+        let (line, tone, action): (String, Tone, Option<Element<'_, Message>>) = match self.updates.state() {
+            update::State::Idle => (this, Tone::Neutral, Some(ghost("Check now", Message::CheckForUpdates, 1.0))),
+            update::State::Checking => ("Checking for a newer likh\u{2026}".into(), Tone::Neutral, None),
+            update::State::UpToDate { checked_at } => (
+                format!("{this} It's the newest, checked {}.", history::ago(checked_at, now)),
+                Tone::Neutral,
+                Some(ghost("Check now", Message::CheckForUpdates, 1.0)),
+            ),
+            update::State::Downloading { version } => {
+                (format!("Downloading likh {version}\u{2026}"), Tone::Neutral, None)
+            }
+            update::State::Ready { version, .. } => (
+                format!("likh {version} is downloaded and checked."),
+                Tone::Success,
+                Some(primary("Restart to update", Message::Restart, 1.0)),
+            ),
+            update::State::Available { version, page } => (
+                format!("likh {version} is out."),
+                Tone::Success,
+                Some(ghost("Download it", Message::OpenRelease(page), 1.0)),
+            ),
+            update::State::Failed { reason } => {
+                (reason, Tone::Warning, Some(ghost("Try again", Message::CheckForUpdates, 1.0)))
+            }
+        };
+        let status = row![
+            text(line).size(size::SMALL).color(tone_color(p, tone)).width(Length::Fill),
+            action.unwrap_or_else(|| Space::new().into()),
+        ]
+        .spacing(space::S4)
+        .align_y(Alignment::Center);
+        let what = if update::INSTALLS {
+            "Once a day, when you open likh or dictate. You choose when it restarts."
+        } else {
+            "Once a day, when you open likh or dictate. On macOS you download it yourself."
+        };
+        column![
+            status,
+            setting(
+                p,
+                "Check for updates automatically",
+                what,
+                chosen.auto_update,
+                Message::AutoUpdate(!chosen.auto_update)
+            ),
+        ]
+        .spacing(space::S4)
         .into()
     }
 }
@@ -546,6 +897,20 @@ fn hint<'a>(p: &Palette, words: &str) -> Element<'a, Message> {
 /// A labelled group: small heading, then its controls.
 fn section<'a>(p: &Palette, label: &'a str, body: Element<'a, Message>) -> Element<'a, Message> {
     column![text(label).size(size::CAPTION).font(theme::UI_MEDIUM).color(p.text_subtle), body].spacing(space::S3).into()
+}
+
+/// A name and what it does, with a wider control (a segmented pick) underneath.
+fn labelled<'a>(p: &Palette, label: &'a str, explain: &'a str, control: Element<'a, Message>) -> Element<'a, Message> {
+    column![
+        column![
+            text(label).size(size::BODY).font(theme::UI_MEDIUM),
+            text(explain).size(size::SMALL).color(p.text_muted)
+        ]
+        .spacing(2),
+        control,
+    ]
+    .spacing(space::S3)
+    .into()
 }
 
 /// One row of a pick-one list: a round marker, the name, and what it does.

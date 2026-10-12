@@ -1,4 +1,7 @@
-# Saves a PNG of a process's window, as it looks on screen (glass and all).
+# Saves a PNG of a process's window by asking Windows for the window's own
+# pixels (PrintWindow), not by copying the screen: it works while the window
+# sits behind others, never brings it to the front, and never captures anything
+# else on the person's screen.
 # Usage: powershell -File scripts/screenshot-window.ps1 -ProcessId 1234 -Out .agents/qa/shot.png [-Title likh]
 param(
   [Parameter(Mandatory)] [int] $ProcessId,
@@ -15,10 +18,9 @@ public static class Win {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
   public struct RECT { public int L, T, R, B; }
   public static List<IntPtr> For(uint want) {
     var found = new List<IntPtr>();
@@ -32,17 +34,15 @@ $match = [Win]::For([uint32]$ProcessId) | Where-Object {
   $sb = New-Object System.Text.StringBuilder 256; [Win]::GetWindowText($_, $sb, 256) | Out-Null; $sb.ToString() -eq $Title
 } | Select-Object -First 1
 if (-not $match) { throw "No visible window titled '$Title' for process $ProcessId" }
-[Win]::SetForegroundWindow($match) | Out-Null
-Start-Sleep -Milliseconds 500
-if ([Win]::GetForegroundWindow() -ne $match) {
-  throw "The likh window did not gain focus, so no screenshot was taken."
-}
 $r = New-Object Win+RECT
-# DWMWA_EXTENDED_FRAME_BOUNDS (9): the visible frame, without the invisible resize border.
-[Win]::DwmGetWindowAttribute($match, 9, [ref]$r, 16) | Out-Null
+[Win]::GetClientRect($match, [ref]$r) | Out-Null
 $bmp = New-Object System.Drawing.Bitmap ([int]($r.R - $r.L)), ([int]($r.B - $r.T))
 $g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($r.L, $r.T, 0, 0, $bmp.Size)
+$dc = $g.GetHdc()
+# PW_CLIENTONLY (1) | PW_RENDERFULLCONTENT (2): the client area, drawn by DWM even when covered.
+$ok = [Win]::PrintWindow($match, $dc, 3)
+$g.ReleaseHdc($dc)
+if (-not $ok) { throw "Windows wouldn't print the likh window." }
 New-Item -ItemType Directory -Force (Split-Path $Out) | Out-Null
 $bmp.Save((Join-Path (Get-Location) $Out), [System.Drawing.Imaging.ImageFormat]::Png)
-"saved $Out ($($bmp.Width)x$($bmp.Height))"
+"saved $Out ($($bmp.Width)x$($bmp.Height)), without bringing it forward"

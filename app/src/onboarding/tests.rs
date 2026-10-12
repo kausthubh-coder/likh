@@ -39,7 +39,7 @@ fn get_started_works_before_the_intro_has_finished() {
     // No frames played: the flock is still flying, and the button already answers.
     let mut app = Onboarding::new(CodexStatus::NotInstalled);
     press(&mut app, "Get started");
-    assert_eq!(app.step(), Step::ConnectCodex);
+    assert_eq!(app.step(), Step::Connect);
     assert!(shows(&app, "Codex isn't installed"));
 }
 
@@ -104,7 +104,7 @@ fn back_returns_to_the_step_before() {
     press(&mut app, "Get started");
     press(&mut app, "Continue");
     press(&mut app, "Back");
-    assert_eq!(app.step(), Step::ConnectCodex);
+    assert_eq!(app.step(), Step::Connect);
     assert!(shows(&app, "Connected through Codex"));
 }
 
@@ -281,8 +281,20 @@ fn brand_board_onboarding() {
     };
     let screens: Vec<(&str, Onboarding)> = vec![
         ("1-welcome", Onboarding { clock: 5.0, ..Onboarding::new(connected()) }),
-        ("2-codex-missing", at(Step::ConnectCodex, CodexStatus::NotInstalled)),
-        ("2-codex-connected", at(Step::ConnectCodex, connected())),
+        ("2-codex-missing", at(Step::Connect, CodexStatus::NotInstalled)),
+        ("2-codex-connected", at(Step::Connect, connected())),
+        ("2-groq-key", {
+            let mut app = at(Step::Connect, connected());
+            app.engine = Engine::Groq;
+            app.groq = GroqSetup { key: "gsk_0123456789abcdef".into(), ..GroqSetup::default() };
+            app
+        }),
+        ("2-windows-off", {
+            let mut app = at(Step::Connect, connected());
+            app.engine = Engine::Windows;
+            app.windows = Some(Err(Failure::WindowsPrivacy));
+            app
+        }),
         ("3-microphone", {
             let mut app = at(Step::Microphone, connected());
             let _ = app.update(Message::Mic(microphone::Event::Opened { device: "Microphone (USB Audio)".into() }));
@@ -323,4 +335,57 @@ fn plans_read_the_way_chatgpt_names_them() {
     assert_eq!(plan_name("plus"), "Plus");
     assert_eq!(plan_name("prolite"), "Pro Lite");
     assert_eq!(plan_name("pro"), "Pro");
+}
+
+#[test]
+fn the_connect_step_offers_every_engine_and_starts_on_chatgpt() {
+    let _ui = test_ui::lock();
+    let mut app = Onboarding::new(connected());
+    press(&mut app, "Get started");
+    for engine in Engine::available() {
+        assert!(shows(&app, engine.name()), "{engine:?}");
+    }
+    assert!(shows(&app, "Connected through Codex"));
+}
+
+#[test]
+fn picking_groq_asks_for_a_key_and_refuses_one_from_elsewhere() {
+    let _ui = test_ui::lock();
+    let mut app = Onboarding::new(CodexStatus::NotInstalled);
+    press(&mut app, "Get started");
+    press(&mut app, "Groq");
+    assert!(shows(&app, "Add a free Groq key"));
+    assert!(shows(&app, "Get a free key"));
+    let _ = app.update(Message::GroqKey("sk-proj-0123456789abcdef0123".into()));
+    press(&mut app, "Save key");
+    assert!(shows(&app, "That isn't a Groq key. Groq keys start with gsk_."));
+    assert_eq!(app.step(), Step::Connect);
+}
+
+#[test]
+fn a_saved_groq_key_lets_you_continue() {
+    let _ui = test_ui::lock();
+    let mut app = Onboarding::new(CodexStatus::NotInstalled);
+    press(&mut app, "Get started");
+    let _ = app.update(Message::Engine(Engine::Groq));
+    app.groq.saved = true;
+    assert!(shows(&app, "Groq is ready"));
+    press(&mut app, "Continue");
+    assert_eq!(app.step(), Step::Microphone);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_speech_switched_off_opens_its_settings() {
+    let _ui = test_ui::lock();
+    let mut app = Onboarding::new(CodexStatus::NotInstalled);
+    press(&mut app, "Get started");
+    let _ = app.update(Message::Engine(Engine::Windows));
+    app.windows = Some(Err(Failure::WindowsPrivacy));
+    assert!(shows(&app, "Online speech is off"));
+    assert!(shows(&app, "Open settings"));
+    assert!(app.wants_recheck(), "it re-checks by itself while off");
+    app.windows = Some(Ok(()));
+    assert!(shows(&app, "Windows speech is ready"));
+    assert!(!app.wants_recheck());
 }

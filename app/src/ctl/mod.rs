@@ -3,24 +3,31 @@
 //! named pipe on Windows), private to the signed-in user's name.
 //!
 //! `likh ctl start` / `stop` are the shortcut going down and up, `cancel`
-//! is Esc, `status` reports what likh is doing, `quit` stops it.
+//! is Esc, `status` reports what likh is doing (and where updating stands),
+//! `update` checks for a newer likh now, `install-update` is "Restart to
+//! update", `quit` stops it.
 
 use crate::dictation::{Input, Status};
 use interprocess::local_socket::prelude::*;
 use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Name, Stream};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
 mod tests;
 
-pub const COMMANDS: [&str; 6] = ["status", "start", "stop", "cancel", "quit", "open"];
+pub const COMMANDS: [&str; 8] = ["status", "start", "stop", "cancel", "quit", "open", "update", "install-update"];
 
 fn name() -> std::io::Result<Name<'static>> {
     let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
-    format!("likh-{user}.sock").to_ns_name::<GenericNamespaced>()
+    // A test instance with its own `LIKH_HOME` gets its own pipe, named after that folder.
+    let instance = std::env::var_os("LIKH_HOME")
+        .and_then(|home| PathBuf::from(home).file_name().map(|name| format!("-{}", name.to_string_lossy())))
+        .unwrap_or_default();
+    format!("likh-{user}{instance}.sock").to_ns_name::<GenericNamespaced>()
 }
 
 /// Sends one command to the running app and returns its JSON answer.
@@ -42,6 +49,7 @@ pub fn serve(
     dictation: Sender<Input>,
     status: Arc<Mutex<Status>>,
     ui: iced::futures::channel::mpsc::UnboundedSender<crate::tray::Pick>,
+    updates: crate::update::Updates,
 ) -> std::io::Result<()> {
     let listener = ListenerOptions::new().name(name()?).create_sync()?;
     std::thread::Builder::new().name("likh-ctl".into()).spawn(move || {
@@ -52,11 +60,26 @@ pub fn serve(
                 continue;
             }
             let snapshot = status.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
-            let (answer, input) = answer(line.trim(), &snapshot);
+            if line.trim() == "update" {
+                updates.check_now();
+            }
+            let (answer, input) = answer(line.trim(), &snapshot, &updates.state());
             let answer = if line.trim() == "open" && ui.unbounded_send(crate::tray::Pick::Open).is_err() {
                 json!({ "ok": false, "error": "likh's window isn't ready. Try opening it again." })
             } else {
                 answer
+            };
+            let answer = match line.trim() {
+                // Answer first: on success likh quits for the installer and can't reply after.
+                "install-update" if matches!(updates.state(), crate::update::State::Ready { .. }) => {
+                    let _ = connection.get_mut().write_all(format!("{}\n", json!({ "ok": true })).as_bytes());
+                    let failed = updates.apply().err().unwrap_or_default();
+                    json!({ "ok": false, "error": failed })
+                }
+                "install-update" => {
+                    json!({ "ok": false, "error": "No update is ready yet. Run `likh ctl update` first." })
+                }
+                _ => answer,
             };
             let quitting = line.trim() == "quit";
             if let Some(input) = input {
@@ -73,7 +96,8 @@ pub fn serve(
 }
 
 /// What to reply to a command and what, if anything, to tell the dictation.
-pub fn answer(command: &str, status: &Status) -> (Value, Option<Input>) {
+/// `update` is where updating stands (it has already been asked to check).
+pub fn answer(command: &str, status: &Status, update: &crate::update::State) -> (Value, Option<Input>) {
     let ok = json!({ "ok": true });
     match command {
         "status" => (
@@ -82,13 +106,15 @@ pub fn answer(command: &str, status: &Status) -> (Value, Option<Input>) {
                 "version": env!("CARGO_PKG_VERSION"),
                 "dictation": status,
                 "codex": crate::onboarding::check_codex_now(),
+                "update": update,
             }),
             None,
         ),
         "start" => (ok, Some(Input::Hold)),
         "stop" => (ok, Some(Input::Stop)),
         "cancel" => (ok, Some(Input::Cancel)),
-        "quit" | "open" => (ok, None),
+        "quit" | "open" | "install-update" => (ok, None),
+        "update" => (json!({ "ok": true, "update": update }), None),
         other => (
             json!({ "ok": false, "error": format!("unknown command {other:?}; try one of {}", COMMANDS.join(", ")) }),
             None,

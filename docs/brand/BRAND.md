@@ -133,12 +133,30 @@ Codex sign-in copy (used by onboarding and errors):
 | rejected | ChatGPT turned down the sign-in. Sign in to Codex again. | Open Codex |
 | offline | Can't reach ChatGPT. Your recording is saved, retry it from History. | Retry |
 
+The other engines' copy (onboarding and settings, `onboarding::engine_copy`):
+
+| State | Message | Action |
+|---|---|---|
+| Groq, no key | Add a free Groq key. Make one at console.groq.com, then paste it here. | Get a free key · Save key |
+| Groq, key saved | Groq is ready. Your key is saved on this computer, in its credential store. | Continue |
+| Groq, key refused | Groq turned down that key. Copy it again from Groq. | Save key |
+| Windows, switch off | Online speech is off. Turn it on in Windows Settings, under Privacy & security, Speech. | Check again · Open settings |
+| Windows, ready | Windows speech is ready. Built in and free. Your audio goes to Microsoft's speech service. | Continue |
+
+## Settings window
+
+Calm and compact (Feel, above). Five tabs: General, Transcription, Commands, History, About.
+
+- **Segmented pick** (mouse button, silence stop, the onboarding engine pick): a `surface` track, radius 10, inset 3; the picked segment lifts to `elevated` with a 1px shadow, radius 10 − 3 = 7. The rest are words in `text-muted` until pointed at.
+- **Engine cards** (Transcription): one per engine, radius 12, on `surface`. The picked one lifts to `elevated` with a 1.5px peach edge and a peach glyph, the one use of the accent on that tab besides Save key. A dot says ready (`success`) or not (`text-subtle`).
+- **Command phrases**: each phrase in a small capsule in quotes (the pill's shape, at rest), then what it does in Geist Mono `text-subtle`. A group's phrases show only while it's on.
+
 ## Onboarding
 
 Five steps in one borderless window, 560 x 640, no title bar: drag it anywhere, Alt+F4 closes it. Each step slides 24px on `spring.default`; the back button and the progress dots stay still, and the wide dot slides to the new step. Every step has the same skeleton (art, display title, one line of body, a note line, the actions), so nothing jumps. No cards: the state is the headline.
 
 1. **Welcome**: the flock flies in from the left and lands on the mark, then title, body and button arrive 50ms apart. "Talk. It types." · Get started
-2. **Connect Codex**: likh's bars, a dotted link, a terminal prompt for Codex. The link carries the state's icon and colour; the title is the state from the copy table above. Re-checks every 2s while visible.
+2. **Connect**: a segmented pick on top (ChatGPT · Groq · Windows; Windows only on Windows), then likh's bars, a dotted link and the engine's glyph: a terminal prompt for ChatGPT through Codex, a bolt for Groq, four panes for Windows. The link carries the state's icon and colour; the title is the state (the Codex copy table above, or the engine copy below). A slot under the art holds the Groq key field and stays reserved for the other engines, so the pick never moves when you switch. Re-checks every 2s while the picked engine (Codex or Windows) isn't ready.
 3. **Microphone**: nine live bars from the default mic, newest in the middle. The device name underneath. If no mic opens: "Can't hear a microphone" with Open settings.
 4. **Shortcut**: big key caps `Ctrl` `Space`. Inside the app this is a real first dictation: hold the keys, talk, let go, and the words land in a practice box.
 5. **Done**: the flock spells likh in dots (`spring.playful`, the one bounce). "Hold Ctrl + Space in any app to talk." · Finish opens settings and saves setup completion. Closing setup before Finish leaves it unfinished.

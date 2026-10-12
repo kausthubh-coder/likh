@@ -7,6 +7,7 @@ mod ctl;
 mod dictation;
 mod history;
 mod hotkey;
+mod media;
 mod microphone;
 mod onboarding;
 mod panel;
@@ -17,6 +18,7 @@ mod shared;
 mod sounds;
 mod transcriber;
 mod tray;
+mod update;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -95,35 +97,41 @@ fn run(skip_onboarding: bool) -> ExitCode {
         let _ = ctl::send("open");
         return ExitCode::SUCCESS;
     }
-    if let Some(data) = dirs::data_local_dir() {
+    // A test instance (`LIKH_HOME`) leaves the user's own folders and registry alone.
+    let own_home = std::env::var_os("LIKH_HOME").is_none();
+    if let Some(data) = dirs::data_local_dir().filter(|_| own_home) {
         match settings::adopt_murmur_folder(&data) {
             Ok(true) => eprintln!("likh: moved your settings and history over from murmur."),
             Ok(false) => {}
             Err(reason) => eprintln!("likh: couldn't move murmur's settings over: {reason}"),
         }
     }
-    if let Err(reason) = autostart::adopt_murmur_value() {
+    if own_home && let Err(reason) = autostart::adopt_murmur_value() {
         eprintln!("likh: couldn't move murmur's start-with-Windows entry over: {reason}");
     }
     let settings = Arc::new(RwLock::new(settings::Settings::load()));
-    let shortcut = settings.read().map(|s| s.shortcut).unwrap_or_default();
+    let (shortcut, mouse) = settings.read().map(|s| (s.shortcut, s.mouse)).unwrap_or_default();
     // One inbox for the dictation: the shortcut, the pill's stop button and `likh ctl` all send to it.
     let (dictation, inputs) = mpsc::channel();
     let pill = pill::Pill::spawn(dictation.clone());
-    let status =
-        dictation::spawn(dictation.clone(), inputs, pill, transcriber::Transcriber::from_env(), settings.clone());
+    let fake = transcriber::Transcriber::fake_from_env();
     let (ui, ui_requests) = iced::futures::channel::mpsc::unbounded();
-    if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui) {
+    let updates = update::Updates::new(Some(ui.clone()));
+    let status = dictation::spawn(dictation.clone(), inputs, pill, fake, settings.clone(), updates.clone());
+    if settings.read().is_ok_and(|s| s.auto_update) {
+        updates.check_if_due();
+    }
+    if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui, updates.clone()) {
         eprintln!("likh: `likh ctl` won't work this time: {error}");
     }
-    match hotkey::spawn(dictation, shortcut) {
+    match hotkey::spawn(dictation, shortcut, mouse) {
         Ok(()) => eprintln!("likh is running. Hold {shortcut} to talk; `likh ctl quit` stops it."),
         Err(reason) => eprintln!("likh: {reason} `likh ctl start` still works."),
     }
 
     let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
     // The tray owns the main thread until "Quit likh".
-    match tray::run(status, settings, first_run, ui_requests) {
+    match tray::run(status, settings, first_run, ui_requests, updates) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("likh: {error}");

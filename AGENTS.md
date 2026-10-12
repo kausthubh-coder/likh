@@ -10,7 +10,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 - **pill**: the small solid capsule at the bottom of the screen during a dictation. It never takes focus.
 - **dictation**: one hold (or hands-free session) from key-down to paste.
 - **Codex sign-in**: `~/.codex/auth.json`, written by Codex. We only ever read it.
-- **transcriber**: whatever turns audio into text. Today that's Codex's `/backend-api/transcribe`.
+- **transcriber** (or **engine**): whatever turns audio into text. The user picks one: ChatGPT through Codex's `/backend-api/transcribe` (the default), Groq's Whisper with their own free key, or Windows' built-in speech recognizer.
 
 ## Map
 
@@ -18,19 +18,22 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 |---|---|
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
 | `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it |
-| `app/src/hotkey/` | the shortcut (Ctrl+Space by default) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
-| `app/src/settings/` | what the user chose (shortcut, mode, sounds, commands, history, start with Windows), one JSON file |
+| `app/src/hotkey/` | the shortcut (Ctrl+Space by default), an optional mouse button (a low-level hook, installed only while one is picked) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
+| `app/src/settings/` | what the user chose (shortcut, mouse button, mode, silence stop, engine, sounds, pause media, commands, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
 | `app/src/history/` | past dictations, one JSON line each, on this computer only |
-| `app/src/commands/` | spoken commands: "new line", "press enter", "scratch that" |
+| `app/src/commands/` | spoken commands in four groups: lines ("new line", "new bullet"), keys ("press enter", "press tab"), scratch ("scratch that"), punctuation by name (off by default) |
+| `app/src/media/` | pauses music and videos while you talk and plays them again (Windows media controls; nothing on macOS) |
 | `app/src/sounds/` | the start, stop and error cues, synthesized |
 | `app/src/autostart/` | start with Windows (the Run key) |
-| `app/src/panel/` | the likh window from the tray: General, History, About |
+| `app/src/panel/` | the likh window from the tray: General, Transcription, Commands, History, About |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings; `LIKH_AUDIO=file.wav` replays a file instead |
-| `app/src/transcriber/` | audio to text through Codex; `LIKH_TRANSCRIBER=echo:<text>` fakes it |
-| `app/src/paste/` | clipboard, Ctrl+V, clipboard back |
+| `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), Windows speech (`windows_speech.rs`, listens live), each engine's glyph (`glyph.rs`); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
+| `app/src/paste/` | clipboard, Ctrl+V, clipboard back; `LIKH_PASTE=<file>` logs pastes and key presses there instead |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
 | `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |
+| `app/src/update/` | updates from GitHub Releases: check at launch and after dictations (once a day), download, verify the Ed25519 signature, run the installer silently on "Restart to update". `LIKH_UPDATE_FEED=<url>` points it at a fake release list |
+| `installer/windows.iss`, `.github/workflows/release.yml` | the per-user Inno Setup installer, and the workflow that builds, signs and publishes it when a `v*` tag is pushed |
 | `app/src/codex_auth/` | is Codex installed and signed in; reading credentials safely |
 | `app/src/onboarding/` | the first-run window and its flock |
 | `app/src/shared/` | `theme.rs` (brand tokens), `spring.rs` (motion). Only code two features use |
@@ -46,13 +49,15 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, picks a free site port)
 - Doctor: `bun run doctor`. Run it first when anything looks off.
-- Run the app: `bun run dev` (onboarding opens the first time). Agents: `likh run --skip-onboarding`, then `likh ctl status|start|stop|cancel|quit`
-- One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` pastes into a throwaway box
+- Run the app: `bun run dev` (onboarding opens the first time). Agents: `likh run --skip-onboarding`, then `likh ctl status|start|stop|cancel|quit`. If my own likh is running, give yours `LIKH_HOME=<a folder under .agents/qa>`: its own settings, history and `likh ctl` pipe
+- One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
+- Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
 - Site: `bun run dev:site` (port from `site/.env.local`)
 - Test one module: `cargo test -p likh codex_auth`
 - Lint the Rust you changed: `cargo clippy -p likh --all-targets -- -D warnings`
 - Full check (CI runs this; run it only when asked): `bun run check`
+- Release (only with my go): bump `version` in `app/Cargo.toml` and `RELEASE` in `site/app/page.tsx`, then push the tag `v<version>`. `release.yml` builds the installer, signs it with the `LIKH_UPDATE_SIGNING_KEY` secret (`scripts/sign-release.mjs`) and publishes a prerelease; installed copies find it within a day. A local installer: `scripts/build-installer.ps1` (Inno Setup 6)
 
 ## Proving a change works
 
@@ -102,8 +107,11 @@ When I correct you for the same thing twice, add the rule here and make somethin
 ## Safety
 
 - Never write to, copy out of, or print `~/.codex/auth.json` or any token. Tests build their own fake `auth.json` in a temp dir.
+- Never save a Groq key from a test or a run of yours: it would land in my credential store. Tests take the paths that don't save (a refused or rejected key).
+- Don't switch on a mouse button in a running likh unless I ask: the hook blocks that button's normal click system-wide.
 - Never touch my nightly Studi profile or other apps' data.
-- Releases, tags and Vercel production deploys need my explicit go.
+- Releases, tags and Vercel production deploys need my explicit go. A published release reaches every installed likh through the updater.
+- The update signing key's private half is the `LIKH_UPDATE_SIGNING_KEY` secret, with my backup in `~/.likh-release/`. Never print it, copy it into the repo, or sign anything with it except a release. Changing `PUBLIC_KEY` in `update/` cuts off every installed likh from updates.
 - Stop only processes you started, by the PID you captured. Never kill by name.
 - No secrets in code, logs, screenshots or commits.
 - Git: open a PR and wait for CI and my review. Never push to `main` directly.
