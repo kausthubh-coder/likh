@@ -11,7 +11,9 @@
 #![allow(unsafe_code, reason = "Win32 layered overlay window; see the module docs")]
 
 use super::{CANVAS, Command, Look};
-use std::sync::mpsc::{self, Receiver};
+use crate::dictation::Input;
+use std::cell::{Cell, RefCell};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Instant;
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -25,16 +27,25 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SetThreadDpiAwarenessContext,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetCursorPos, GetMessageW, HTTRANSPARENT, KillTimer,
-    MA_NOACTIVATE, MSG, PostThreadMessageW, RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER,
-    SetTimer, SetWindowPos, ShowWindow, TranslateMessage, ULW_ALPHA, UpdateLayeredWindow, WM_APP, WM_MOUSEACTIVATE,
-    WM_NCHITTEST, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GWL_EXSTYLE, GetCursorPos, GetMessageW, GetWindowLongPtrW,
+    HTCLIENT, HTTRANSPARENT, IDC_HAND, KillTimer, LoadCursorW, MA_NOACTIVATE, MSG, PostThreadMessageW,
+    RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, TranslateMessage, ULW_ALPHA, UpdateLayeredWindow, WM_APP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEACTIVATE, WM_NCHITTEST, WM_SETCURSOR, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::w;
 
 const FRAME_TIMER: usize = 1;
 const FRAME_MS: u32 = 16;
+
+thread_local! {
+    // The window procedure runs on the pill thread, so what it needs lives there:
+    // where the hands-free stop button is on screen (centre and radius, in
+    // pixels), and where its click goes.
+    static STOP_BUTTON: Cell<Option<(i32, i32, i32)>> = const { Cell::new(None) };
+    static DICTATION: RefCell<Option<Sender<Input>>> = const { RefCell::new(None) };
+}
 
 /// Wakes the pill thread after a command is queued. Posting to a thread is
 /// safe from any thread and needs no window handle.
@@ -51,12 +62,13 @@ impl Waker {
     }
 }
 
-pub fn spawn(commands: Receiver<Command>) -> Result<Waker, String> {
+pub fn spawn(commands: Receiver<Command>, dictation: Sender<Input>) -> Result<Waker, String> {
     let (ready_tx, ready_rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("murmur-pill".into())
         .spawn(move || match Overlay::create() {
             Ok(overlay) => {
+                DICTATION.with(|slot| *slot.borrow_mut() = Some(dictation));
                 // SAFETY: no arguments; returns this thread's id.
                 let _ = ready_tx.send(Ok(unsafe { GetCurrentThreadId() }));
                 overlay.run(commands);
@@ -153,6 +165,7 @@ impl Overlay {
                     if let Some(pixmap) = look.draw(self.scale) {
                         self.present(&pixmap);
                     }
+                    self.take_clicks_at(look.stop_button());
                     if !moving {
                         ticking = false;
                         // SAFETY: our own window and timer id.
@@ -172,6 +185,26 @@ impl Overlay {
                     }
                 }
             }
+        }
+    }
+
+    /// The pill lets every click through, except on the hands-free stop button.
+    fn take_clicks_at(&self, button: Option<(f32, f32, f32)>) {
+        let on_screen = button.map(|(cx, cy, r)| {
+            let px = |v: f32| (v * self.scale).round() as i32;
+            (self.origin.x + px(cx), self.origin.y + px(cy), px(r))
+        });
+        if STOP_BUTTON.with(Cell::get).is_some() == on_screen.is_some() {
+            STOP_BUTTON.with(|slot| slot.set(on_screen));
+            return;
+        }
+        STOP_BUTTON.with(|slot| slot.set(on_screen));
+        // SAFETY: reads and writes our own window's extended style.
+        unsafe {
+            let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
+            let transparent = WS_EX_TRANSPARENT.0 as isize;
+            let next = if on_screen.is_some() { style & !transparent } else { style | transparent };
+            SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, next);
         }
     }
 
@@ -256,7 +289,32 @@ impl Overlay {
 extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match message {
         WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE as isize),
-        WM_NCHITTEST => LRESULT(HTTRANSPARENT as isize),
+        WM_NCHITTEST => {
+            // Screen coordinates, packed as two signed 16-bit halves.
+            let (x, y) = (i32::from(lparam.0 as i16), i32::from((lparam.0 >> 16) as i16));
+            let on_button =
+                STOP_BUTTON.with(Cell::get).is_some_and(|(cx, cy, r)| (x - cx).pow(2) + (y - cy).pow(2) <= r * r);
+            LRESULT(if on_button { HTCLIENT as isize } else { HTTRANSPARENT as isize })
+        }
+        WM_SETCURSOR => {
+            // SAFETY: the system hand cursor; no ownership involved.
+            unsafe {
+                if let Ok(hand) = LoadCursorW(None, IDC_HAND) {
+                    SetCursor(Some(hand));
+                }
+            }
+            LRESULT(1)
+        }
+        // Take the click without taking focus; act on release, like a button.
+        WM_LBUTTONDOWN => LRESULT(0),
+        WM_LBUTTONUP => {
+            DICTATION.with(|slot| {
+                if let Some(dictation) = slot.borrow().as_ref() {
+                    let _ = dictation.send(Input::Stop);
+                }
+            });
+            LRESULT(0)
+        }
         // SAFETY: default handling for a message Windows sent to our own window.
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
     }

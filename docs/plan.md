@@ -8,7 +8,7 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 - **Transcription:** Codex only (see `docs/codex.md`). Claude is out.
 - **UI:** Rust + iced 0.14 with the tiny-skia software renderer, no web view and no GPU context. We chose iced over GPUI for headless screenshot tests that run on Windows and a stabler API, and pay for it with our own spring helper and per-OS overlay code.
 - **The pill is solid, not glass** (2026-10-12). Real refraction needs a GPU renderer and continuous screen capture, and the GPU renderer alone idled at 229 to 313 MB against 7 MB. The pill is its own layered Win32 window drawn with tiny-skia (`app/src/pill/`), because iced's software renderer can't make a transparent, never-focused window and resizing an OS window per frame looked laggy.
-- **The shortcut is murmur's own keyboard hook on Windows** (2026-10-12). handy-keys woke its hook thread every 10ms and hooked the mouse too; ours sleeps until a key moves.
+- **The shortcut is a system hotkey on Windows** (2026-10-12), Ctrl+Space by default. handy-keys woke its hook thread every 10ms and hooked the mouse too. Our own low-level hook fixed that, but Windows silently removes low-level hooks that answer slowly once (it happened during heavy builds), and the shortcut died. `RegisterHotKey` can't time out and swallows the keys for us; letting go is noticed by checking the keys every 15ms, only while held.
 - **Platforms:** Windows first. macOS ships labelled alpha; nobody on the team can test it on a Mac yet.
 - **Release:** a public repo (MIT) with a landing page in `site/`. Unsigned builds on GitHub Releases. Pull requests with CI before `main`.
 - **Local only:** logs, metrics and crash reports stay on the machine. "Copy diagnostics" produces a redacted bundle for GitHub issues.
@@ -21,7 +21,7 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 | 1 | **Spikes:** idle cost of the running app; refraction cost on Windows | ✅ idle measured below; refraction dropped for a solid pill |
 | 2 | Hold the hotkey, record, transcribe, paste. The pill. Fake mic plus fake transcriber. `murmur ctl` | ✅ `scripts/e2e-dictate.ps1` pastes into a throwaway box with the fakes. A real Codex transcription and the physical Ctrl+Space still need a person (injected keys are ignored by design) |
 | 3 | Full onboarding and every pill state | ✅ five steps (Try it is folded into the shortcut step inside the app); pill: listening, thinking, countdown, error, done. Hands-free waits for phase 4 |
-| 4 | Hands-free (double-tap) with silence stop, Esc cancel, mic picker, paste-last, history, sounds, launch at login, usage panel, 9m55s cap | each has a test, and the verify skill covers it |
+| 4 | Hands-free, Esc cancel, history, sounds, voice commands, start with Windows, a settings window, a changeable shortcut, 9m55s cap | ✅ hands-free is "Hold or tap" (tap once, tap again) instead of double-tap; silence stop, mic picker and paste-last are still to do |
 | 5 | Landing page with downloads, the release workflow | `v0.1.0` on GitHub Releases |
 | later | Chunked long dictation, dictionary, snippets, cleanup, command mode, styles, stats | |
 

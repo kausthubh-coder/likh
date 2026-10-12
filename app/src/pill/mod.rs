@@ -50,8 +50,12 @@ const FADE_SECONDS: f32 = 0.15;
 pub enum Show {
     Hidden,
     Listening,
+    /// Recording with nothing held; a stop button on the right finishes it.
+    HandsFree,
     Thinking,
-    Warning { seconds_left: u64 },
+    Warning {
+        seconds_left: u64,
+    },
     Error(String),
     Done,
     Cancelled,
@@ -59,7 +63,7 @@ pub enum Show {
 
 impl Show {
     fn voiced(&self) -> bool {
-        matches!(self, Show::Listening | Show::Warning { .. })
+        matches!(self, Show::Listening | Show::HandsFree | Show::Warning { .. })
     }
 }
 
@@ -77,13 +81,14 @@ pub struct Pill {
 }
 
 impl Pill {
-    /// Opens the pill's window on its own thread. If that fails, dictation
-    /// still works; it just has nothing on screen.
-    pub fn spawn() -> Self {
+    /// Opens the pill's window on its own thread. Clicks on the hands-free stop
+    /// button go to `dictation`. If the window fails, dictation still works; it
+    /// just has nothing on screen.
+    pub fn spawn(dictation: Sender<crate::dictation::Input>) -> Self {
         #[cfg(target_os = "windows")]
         {
             let (tx, rx) = std::sync::mpsc::channel();
-            match windows::spawn(rx) {
+            match windows::spawn(rx, dictation) {
                 Ok(waker) => Self { commands: Some(tx), waker: Some(waker) },
                 Err(reason) => {
                     eprintln!("murmur: no pill on screen: {reason}");
@@ -94,6 +99,7 @@ impl Pill {
         #[cfg(not(target_os = "windows"))]
         {
             // macOS alpha: dictation works, the overlay comes later (docs/plan.md).
+            let _ = dictation;
             Self::none()
         }
     }
@@ -172,7 +178,7 @@ impl Look {
         }
         let (width, height) = match &show {
             Show::Listening | Show::Thinking => (76.0, 36.0),
-            Show::Warning { .. } => (100.0, 36.0),
+            Show::Warning { .. } | Show::HandsFree => (100.0, 36.0),
             Show::Error(message) => {
                 self.lines = wrap(message, ERROR_MAX_WIDTH - 60.0);
                 let widest = self.lines.iter().map(|line| text_width(line, ERROR_TEXT)).fold(0.0, f32::max);
@@ -188,6 +194,19 @@ impl Look {
             _ => None,
         };
         self.show = show;
+    }
+
+    /// Where the hands-free stop button is (centre x, centre y, radius, in
+    /// canvas pixels), so the window can take clicks there and nowhere else.
+    pub fn stop_button(&self) -> Option<(f32, f32, f32)> {
+        if self.show != Show::HandsFree {
+            return None;
+        }
+        let (w, h) = (self.width.value.max(8.0), self.height.value.max(4.0));
+        let right = (CANVAS.0 + w) / 2.0;
+        let cy = CANVAS.1 - LIFT - h / 2.0;
+        // Only once the pill is big enough to hold it.
+        (w >= 90.0 && h >= 30.0).then_some((right - SLOT_INSET - SLOT / 2.0, cy, SLOT / 2.0))
     }
 
     pub fn level(&mut self, level: f32) {
@@ -224,7 +243,9 @@ impl Look {
             let target = match self.show {
                 // Outer bars carry older levels and stand a little shorter, so a loud
                 // voice still reads as a shape, not a block.
-                Show::Listening | Show::Warning { .. } => self.history[age] * (1.0 - 0.12 * age as f32),
+                Show::Listening | Show::HandsFree | Show::Warning { .. } => {
+                    self.history[age] * (1.0 - 0.12 * age as f32)
+                }
                 // A slow travelling wave, left to right (1.2s loop).
                 Show::Thinking => 0.15 + 0.35 * (1.0 + (self.clock * 5.2 - i as f32 * 0.7).sin()) / 2.0,
                 _ => 0.0,
@@ -294,6 +315,10 @@ impl Look {
                     }
                 }
             }
+        }
+        if let Some((cx, cy, r)) = self.stop_button() {
+            fill(&mut pixmap, PathBuilder::from_circle(cx, cy, r), to_skia(p.elevated, 1.0), at, Some(&clip));
+            fill(&mut pixmap, rounded_rect(cx - 4.0, cy - 4.0, 8.0, 8.0, 2.0), to_skia(p.text, 1.0), at, Some(&clip));
         }
         if let Show::Warning { seconds_left } = self.show {
             let (cx, r) = (x + w - SLOT_INSET - SLOT / 2.0, SLOT / 2.0);

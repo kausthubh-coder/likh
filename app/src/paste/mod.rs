@@ -17,17 +17,33 @@ pub fn paste(text: &str) -> Result<Restore, String> {
     let previous = clipboard.get_text().ok();
     retry(|| clipboard.set_text(text))?;
 
+    shortcut('v')?;
+    Ok(Restore { clipboard, previous })
+}
+
+/// "Scratch that": the app's own undo takes back the last paste.
+pub fn undo() -> Result<(), String> {
+    shortcut('z')
+}
+
+/// "Press enter": sends what was just pasted, in chats and terminals.
+pub fn press_enter() -> Result<(), String> {
+    let mut keys = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
+    keys.key(Key::Return, Direction::Click).map_err(|error| error.to_string())
+}
+
+/// Ctrl (Cmd on macOS) plus a letter, in whatever app has focus.
+fn shortcut(letter: char) -> Result<(), String> {
     let mut keys = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
     #[cfg(target_os = "macos")]
     let modifier = Key::Meta;
     #[cfg(not(target_os = "macos"))]
     let modifier = Key::Control;
     keys.key(modifier, Direction::Press).map_err(|error| error.to_string())?;
-    let pressed = keys.key(Key::Unicode('v'), Direction::Click);
-    // Always let go of the modifier, even if the V failed.
+    let pressed = keys.key(Key::Unicode(letter), Direction::Click);
+    // Always let go of the modifier, even if the letter failed.
     let released = keys.key(modifier, Direction::Release);
-    pressed.and(released).map_err(|error| error.to_string())?;
-    Ok(Restore { clipboard, previous })
+    pressed.and(released).map_err(|error| error.to_string())
 }
 
 /// Clipboard managers and other apps hold the Windows clipboard for a few

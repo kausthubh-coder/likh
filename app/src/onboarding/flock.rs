@@ -5,9 +5,9 @@
 //! so the window only asks for frames while `t < duration()` and a test can
 //! check any moment of it.
 
-use super::mix;
 use crate::shared::spring::{self, SpringSpec};
 use crate::shared::theme::Palette;
+use crate::shared::ui::mix;
 use iced::widget::canvas::{self, Frame, Path, Stroke};
 use iced::{Color, Point, Rectangle, Renderer, Size, Theme, mouse};
 

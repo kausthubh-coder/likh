@@ -6,9 +6,9 @@ fn idle() -> Status {
 }
 
 #[test]
-fn start_and_stop_are_the_shortcut_going_down_and_up() {
+fn start_stop_and_cancel_drive_a_dictation() {
     assert_eq!(answer("start", &idle()), (json!({ "ok": true }), Some(Input::Hold)));
-    assert_eq!(answer("stop", &idle()), (json!({ "ok": true }), Some(Input::Release)));
+    assert_eq!(answer("stop", &idle()), (json!({ "ok": true }), Some(Input::Stop)));
     assert_eq!(answer("cancel", &idle()), (json!({ "ok": true }), Some(Input::Cancel)));
 }
 

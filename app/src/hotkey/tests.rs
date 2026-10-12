@@ -1,67 +1,100 @@
 use super::*;
 
-fn press(keys: &mut Keys, key: Key, down: bool) -> Reaction {
-    keys.on_key(key, down, false)
-}
-
-fn ours(input: Option<Input>) -> Reaction {
-    Reaction { input, swallow: true }
+fn parse(text: &str) -> Result<Binding, String> {
+    Binding::try_from(text.to_string())
 }
 
 #[test]
-fn ctrl_then_space_holds_and_letting_go_of_space_releases() {
-    let mut keys = Keys::default();
-    assert_eq!(press(&mut keys, Key::Ctrl, true), Reaction::default());
-    assert_eq!(press(&mut keys, Key::Space, true), ours(Some(Input::Hold)));
-    // Key repeat while held: swallowed, nothing new.
-    assert_eq!(press(&mut keys, Key::Space, true), ours(None));
-    assert_eq!(press(&mut keys, Key::Space, false), ours(Some(Input::Release)));
-    assert_eq!(press(&mut keys, Key::Ctrl, false), Reaction::default());
+fn the_default_is_ctrl_space() {
+    assert_eq!(Binding::default().to_string(), "Ctrl + Space");
+    assert_eq!(String::from(Binding::default()), "Ctrl+Space");
 }
 
 #[test]
-fn letting_go_of_ctrl_first_also_releases_and_the_space_stays_ours() {
-    let mut keys = Keys::default();
-    press(&mut keys, Key::Ctrl, true);
-    press(&mut keys, Key::Space, true);
-    assert_eq!(press(&mut keys, Key::Ctrl, false), Reaction { input: Some(Input::Release), swallow: false });
-    // The still-held Space keeps repeating; it must not type spaces into the app.
-    assert_eq!(press(&mut keys, Key::Space, true), ours(None));
-    assert_eq!(press(&mut keys, Key::Space, false), ours(None));
-}
-
-#[test]
-fn space_without_ctrl_is_just_a_space() {
-    let mut keys = Keys::default();
-    assert_eq!(press(&mut keys, Key::Space, true), Reaction::default());
-    assert_eq!(press(&mut keys, Key::Space, false), Reaction::default());
-    // Ctrl pressed after Space is not the shortcut either.
-    press(&mut keys, Key::Space, true);
-    assert_eq!(press(&mut keys, Key::Ctrl, true), Reaction::default());
-}
-
-#[test]
-fn esc_cancels_only_while_recording_and_the_app_never_sees_it() {
-    let mut keys = Keys::default();
-    assert_eq!(keys.on_key(Key::Escape, true, false), Reaction::default());
-    assert_eq!(keys.on_key(Key::Escape, true, true), ours(Some(Input::Cancel)));
-}
-
-#[test]
-fn another_key_while_held_gives_the_dictation_up() {
-    let mut keys = Keys::default();
-    press(&mut keys, Key::Ctrl, true);
-    press(&mut keys, Key::Space, true);
-    assert_eq!(press(&mut keys, Key::Other, true), Reaction { input: Some(Input::Cancel), swallow: false });
-}
-
-#[test]
-fn typing_and_ctrl_shortcuts_pass_through() {
-    let mut keys = Keys::default();
-    for down in [true, false] {
-        assert_eq!(press(&mut keys, Key::Other, down), Reaction::default());
+fn a_saved_shortcut_reads_back_the_same() {
+    for text in ["Ctrl+Space", "Ctrl+Alt+D", "Ctrl+Shift+Win+F9", "F8"] {
+        let binding = parse(text).expect(text);
+        assert_eq!(String::from(binding), text);
     }
-    // Ctrl+C and friends.
-    press(&mut keys, Key::Ctrl, true);
-    assert_eq!(press(&mut keys, Key::Other, true), Reaction::default());
+}
+
+#[test]
+fn reading_is_forgiving_about_case_and_spaces() {
+    assert_eq!(parse("ctrl + space"), Ok(Binding::default()));
+    assert_eq!(parse("Control+SPACE"), Ok(Binding::default()));
+}
+
+#[test]
+fn a_shortcut_that_typing_could_trigger_is_refused_with_a_reason() {
+    assert_eq!(parse("Space"), Err("Add Ctrl, Alt or Win, so typing never sets it off.".to_string()));
+    assert_eq!(parse("Shift+A"), Err("Add Ctrl, Alt or Win, so typing never sets it off.".to_string()));
+    // Function keys aren't typed, so they may stand alone.
+    assert!(parse("F8").is_ok());
+}
+
+#[test]
+fn nonsense_is_refused() {
+    assert_eq!(parse("Ctrl+Banana"), Err("unknown key \"Banana\"".to_string()));
+    assert_eq!(parse("Ctrl+Alt"), Err("\"Ctrl+Alt\" has no key besides modifiers".to_string()));
+}
+
+#[test]
+fn key_caps_follow_the_usual_order() {
+    let binding = Binding::new(true, true, true, true, KeyName("K")).expect("valid");
+    assert_eq!(binding.parts(), vec!["Ctrl", "Alt", "Shift", "Win", "K"]);
+}
+
+#[test]
+fn every_key_has_a_windows_code() {
+    assert_eq!(KeyName("Space").virtual_key(), 0x20);
+    assert_eq!(KeyName("F12").virtual_key(), 0x7B);
+    assert!(KEYS.iter().all(|(_, code)| *code != 0));
+}
+
+mod capturing {
+    use super::super::capture::{Outcome, held_parts, key_for, on_event};
+    use iced::keyboard::{self, Key, Location, Modifiers, key::Code, key::Physical};
+
+    fn press(code: Code, modifiers: Modifiers) -> keyboard::Event {
+        keyboard::Event::KeyPressed {
+            key: Key::Unidentified,
+            modified_key: Key::Unidentified,
+            physical_key: Physical::Code(code),
+            location: Location::Standard,
+            modifiers,
+            text: None,
+            repeat: false,
+        }
+    }
+
+    #[test]
+    fn holding_modifiers_shows_them_until_a_key_locks_it_in() {
+        let held = Modifiers::CTRL | Modifiers::ALT;
+        assert_eq!(on_event(&keyboard::Event::ModifiersChanged(held), Modifiers::empty()), Outcome::Waiting(held));
+        assert_eq!(held_parts(held), vec!["Ctrl", "Alt"]);
+        // Pressing the modifier keys themselves keeps waiting.
+        assert_eq!(on_event(&press(Code::AltLeft, held), held), Outcome::Waiting(held));
+        let chosen = on_event(&press(Code::KeyD, held), held);
+        assert_eq!(chosen, Outcome::Chosen(super::parse("Ctrl+Alt+D").expect("valid")));
+    }
+
+    #[test]
+    fn esc_backs_out() {
+        assert_eq!(on_event(&press(Code::Escape, Modifiers::CTRL), Modifiers::CTRL), Outcome::Cancelled);
+    }
+
+    #[test]
+    fn a_bare_letter_is_refused_with_the_reason() {
+        assert_eq!(
+            on_event(&press(Code::KeyD, Modifiers::empty()), Modifiers::empty()),
+            Outcome::Refused("Add Ctrl, Alt or Win, so typing never sets it off.")
+        );
+    }
+
+    #[test]
+    fn keys_murmur_cant_bind_say_so() {
+        assert!(matches!(on_event(&press(Code::CapsLock, Modifiers::CTRL), Modifiers::CTRL), Outcome::Refused(_)));
+        assert_eq!(key_for(Code::Space).map(|k| k.0), Some("Space"));
+        assert_eq!(key_for(Code::Digit7).map(|k| k.0), Some("7"));
+    }
 }

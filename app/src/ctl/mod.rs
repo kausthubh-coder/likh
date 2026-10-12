@@ -77,7 +77,7 @@ pub fn answer(command: &str, status: &Status) -> (Value, Option<Input>) {
             None,
         ),
         "start" => (ok, Some(Input::Hold)),
-        "stop" => (ok, Some(Input::Release)),
+        "stop" => (ok, Some(Input::Stop)),
         "cancel" => (ok, Some(Input::Cancel)),
         "quit" => (ok, None),
         other => (

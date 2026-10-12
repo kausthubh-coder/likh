@@ -4,8 +4,8 @@ import { FlockMark } from "./flock-mark";
 const REPO = "https://github.com/kausthubh-coder/murmur";
 /** The published build. Bump with each release; the page reads everything else from here. */
 const RELEASE = {
-  version: "0.1.0-alpha.1",
-  windows: `${REPO}/releases/download/v0.1.0-alpha.1/murmur-windows-x64.exe`,
+  version: "0.1.0-alpha.2",
+  windows: `${REPO}/releases/download/v0.1.0-alpha.2/murmur-windows-x64.exe`,
   size: "8 MB",
 };
 
@@ -17,15 +17,36 @@ const STATS = [
   { value: "0", label: "browser engines inside" },
 ];
 
-const NEXT = [
-  "Hands-free: double-tap, talk, tap to stop",
-  "History, and paste the last one again",
-  "Pick your microphone",
-  "Start with Windows",
-  "Quiet sounds for start and stop",
-  "Dictations longer than ten minutes",
-  "A dictionary for your own words",
-  "macOS, out of alpha",
+const FEATURES = [
+  { title: "Hold or tap", line: "Hold to talk. Tap once to go hands-free, tap again to stop." },
+  { title: "Voice commands", line: "“New line”, “press enter”, “scratch that”." },
+  { title: "History", line: "Every dictation, kept on your computer. Click to copy." },
+  { title: "Your shortcut", line: "Press the keys you want; murmur learns them." },
+  { title: "Quiet sounds", line: "A soft cue when it starts and stops. Or none." },
+  { title: "Starts with Windows", line: "Ready when you sign in, waiting in the tray." },
+];
+
+/**
+ * Memory while idle, in MB. murmur and Handy we measured ourselves on Windows 11
+ * (Handy: a build of Handy 0.x, all its processes together). Wispr Flow is what
+ * reviewers report for its Windows app; linked in the footnote.
+ */
+const MEMORY = [
+  { name: "murmur", mb: 14, note: "measured" },
+  { name: "Handy", mb: 140, note: "measured" },
+  { name: "Wispr Flow", mb: 800, note: "reported" },
+];
+
+const COMPARE: { label: string; murmur: string; wispr: string; handy: string }[] = [
+  { label: "Price", murmur: "Free", wispr: "Free to 2,000 words a week, then $12–15/mo", handy: "Free" },
+  {
+    label: "Transcribes with",
+    murmur: "ChatGPT, on the plan you have",
+    wispr: "Wispr's servers",
+    handy: "A model on your computer",
+  },
+  { label: "Download", murmur: "8 MB", wispr: "An Electron app", handy: "App, plus a 0.5–1.6 GB model" },
+  { label: "Open source", murmur: "Yes, MIT", wispr: "No", handy: "Yes, MIT" },
 ];
 
 export default function Home() {
@@ -81,26 +102,21 @@ export default function Home() {
               </div>
             ))}
           </dl>
-          <Shrink />
-        </section>
-
-        <section className="mt-24 grid gap-8 sm:mt-32 sm:grid-cols-3">
-          <Fact title="Your ChatGPT plan" line="Signs in through Codex. No new account, no API key, nothing to pay." />
-          <Fact title="Your voice goes one place" line="Straight to ChatGPT. No murmur account, no analytics." />
-          <Fact title="Never in the way" line="Lives in the tray. The mic is open only while you hold the keys." />
         </section>
 
         <section className="mt-24 sm:mt-32">
-          <h2 className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em]">Coming next</h2>
-          <ul className="mt-6 grid gap-x-8 gap-y-3 sm:grid-cols-2">
-            {NEXT.map((item) => (
-              <li key={item} className="flex items-center gap-3 text-[15px] leading-[22px] text-text-muted">
-                <span className="size-1.5 flex-none rounded-full bg-accent" />
-                {item}
-              </li>
+          <h2 className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em]">What it does</h2>
+          <div className="mt-8 grid gap-x-8 gap-y-6 sm:grid-cols-3">
+            {FEATURES.map((feature) => (
+              <div key={feature.title}>
+                <h3 className="text-[15px] leading-[22px] font-medium">{feature.title}</h3>
+                <p className="mt-1 text-[15px] leading-[22px] text-pretty text-text-muted">{feature.line}</p>
+              </div>
             ))}
-          </ul>
+          </div>
         </section>
+
+        <Compare />
 
         <section id="download" className="mt-24 scroll-mt-8 sm:mt-32">
           <div className="flex flex-col items-start gap-8 sm:flex-row sm:items-end sm:justify-between">
@@ -147,6 +163,10 @@ export default function Home() {
             <Question q="How long can I talk?">
               Up to ten minutes at a time, the same as Codex. The pill counts down your last minute.
             </Question>
+            <Question q="Where does my voice go?">
+              Straight to ChatGPT through your Codex sign-in, and nowhere else. History stays on your computer, and you can turn
+              it off or clear it.
+            </Question>
           </div>
         </section>
       </main>
@@ -158,6 +178,81 @@ export default function Home() {
         </a>
       </footer>
     </div>
+  );
+}
+
+function Compare() {
+  const most = Math.max(...MEMORY.map((row) => row.mb));
+  return (
+    <section className="mt-24 sm:mt-32">
+      <h2 className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em]">How it compares</h2>
+      <figure className="mt-8 max-w-[720px]">
+        <figcaption className="text-[13px] text-text-subtle">Memory while it waits, on Windows</figcaption>
+        <div className="mt-4 space-y-3">
+          {MEMORY.map((row) => (
+            <div key={row.name} className="grid grid-cols-[96px_1fr_auto] items-center gap-4">
+              <span className={`text-[13px] ${row.name === "murmur" ? "font-medium text-text" : "text-text-muted"}`}>
+                {row.name}
+              </span>
+              <span className="h-2 rounded-full bg-surface">
+                <span
+                  className={`block h-full rounded-full ${row.name === "murmur" ? "bg-accent" : "bg-text-subtle"}`}
+                  style={{ width: `${Math.max(1.5, (row.mb / most) * 100)}%` }}
+                />
+              </span>
+              <span className="w-[132px] text-right text-[13px] whitespace-nowrap tabular-nums text-text-muted">
+                ~{row.mb} MB <span className="text-text-subtle">{row.note}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </figure>
+
+      <div className="mt-12 overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-[15px] leading-[22px]">
+          <thead>
+            <tr className="text-[13px] text-text-subtle">
+              <th className="w-[20%] pb-3 font-normal" />
+              <th className="pb-3 font-medium text-text">murmur</th>
+              <th className="pb-3 font-normal">Wispr Flow</th>
+              <th className="pb-3 font-normal">Handy</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-elevated">
+            {COMPARE.map((row) => (
+              <tr key={row.label} className="align-top">
+                <td className="py-3 pr-4 text-[13px] text-text-subtle">{row.label}</td>
+                <td className="py-3 pr-4 text-text">{row.murmur}</td>
+                <td className="py-3 pr-4 text-text-muted">{row.wispr}</td>
+                <td className="py-3 text-text-muted">{row.handy}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-6 max-w-[60em] text-[13px] leading-[18px] text-text-subtle">
+        Prices from{" "}
+        <a href="https://wisprflow.ai/pricing" className="underline-offset-4 hover:underline">
+          Wispr Flow&apos;s pricing page
+        </a>{" "}
+        and model sizes from{" "}
+        <a href="https://github.com/cjpais/Handy" className="underline-offset-4 hover:underline">
+          Handy&apos;s README
+        </a>
+        , October 2026. Wispr Flow&apos;s memory is what reviewers report for its Windows app (
+        <a href="https://spokenly.app/blog/wispr-flow-review" className="underline-offset-4 hover:underline">
+          Spokenly
+        </a>
+        ,{" "}
+        <a
+          href="https://www.getvoibe.com/resources/best-wispr-flow-alternatives-windows/"
+          className="underline-offset-4 hover:underline"
+        >
+          Voibe
+        </a>
+        ); murmur we measured, and Handy from a build of its source. Handy works offline, which murmur doesn&apos;t.
+      </p>
+    </section>
   );
 }
 
@@ -185,35 +280,6 @@ function DownloadButton({ className = "" }: { className?: string }) {
   );
 }
 
-/** The one comparison we can measure honestly: murmur against its own first build. */
-function Shrink() {
-  const rows = [
-    { label: "First build, drawn on the GPU", mb: 313, tone: "bg-text-subtle" },
-    { label: "murmur today", mb: 14, tone: "bg-accent" },
-  ];
-  return (
-    <figure className="mt-12 max-w-[640px]">
-      <div className="space-y-3">
-        {rows.map((row) => (
-          <div key={row.label} className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1.5">
-            <span className="text-[13px] text-text-muted">{row.label}</span>
-            <span className="text-[13px] font-medium tabular-nums">{row.mb} MB</span>
-            <span className="col-span-2 h-2 rounded-full bg-surface">
-              <span
-                className={`block h-full rounded-full ${row.tone}`}
-                style={{ width: `${Math.max(2, (row.mb / 313) * 100)}%` }}
-              />
-            </span>
-          </div>
-        ))}
-      </div>
-      <figcaption className="mt-3 text-[13px] text-text-subtle">
-        Memory while idle. We dropped the GPU renderer and draw everything on the CPU.
-      </figcaption>
-    </figure>
-  );
-}
-
 function Bars({ className }: { className?: string }) {
   const heights = [0.45, 0.85, 0.55, 0.85, 0.45];
   return (
@@ -231,15 +297,6 @@ function Step({ n, title, line }: { n: number; title: string; line: string }) {
       <span className="font-mono text-[12px] text-text-subtle">0{n}</span>
       <h3 className="mt-2 text-[20px] leading-[26px] font-semibold tracking-[-0.01em]">{title}</h3>
       <p className="mt-1 text-[15px] leading-[22px] text-text-muted">{line}</p>
-    </div>
-  );
-}
-
-function Fact({ title, line }: { title: string; line: string }) {
-  return (
-    <div>
-      <h3 className="text-[15px] leading-[22px] font-medium">{title}</h3>
-      <p className="mt-1 text-[15px] leading-[22px] text-pretty text-text-muted">{line}</p>
     </div>
   );
 }

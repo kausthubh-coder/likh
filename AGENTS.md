@@ -18,7 +18,14 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 |---|---|
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
 | `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it |
-| `app/src/hotkey/` | Ctrl+Space and Esc. Windows has its own keyboard hook (`windows.rs`) |
+| `app/src/hotkey/` | the shortcut (Ctrl+Space by default) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
+| `app/src/settings/` | what the user chose (shortcut, mode, sounds, commands, history, start with Windows), one JSON file |
+| `app/src/history/` | past dictations, one JSON line each, on this computer only |
+| `app/src/commands/` | spoken commands: "new line", "press enter", "scratch that" |
+| `app/src/sounds/` | the start, stop and error cues, synthesized |
+| `app/src/autostart/` | start with Windows (the Run key) |
+| `app/src/panel/` | the murmur window from the tray: General, History, About |
+| `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings; `MURMUR_AUDIO=file.wav` replays a file instead |
 | `app/src/transcriber/` | audio to text through Codex; `MURMUR_TRANSCRIBER=echo:<text>` fakes it |
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back |

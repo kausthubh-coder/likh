@@ -1,7 +1,9 @@
 use super::*;
 use crate::codex_auth::Account;
+use crate::settings::Settings;
 use crate::shared::test_ui;
 use iced_test::simulator;
+use std::sync::RwLock;
 
 fn connected() -> CodexStatus {
     CodexStatus::Connected(Account {
@@ -28,41 +30,6 @@ fn play(app: &mut Onboarding, seconds: f32) {
     let start = Instant::now();
     for frame in 0..=(seconds * 60.0) as u32 {
         let _ = app.update(Message::Frame(start + Duration::from_secs_f32(frame as f32 / 60.0)));
-    }
-}
-
-/// What the window sees when someone holds (or lets go of) Ctrl, then Space.
-fn ctrl_space(app: &mut Onboarding, held: bool) {
-    let space = keyboard::Key::Named(keyboard::key::Named::Space);
-    let physical = keyboard::key::Physical::Code(keyboard::key::Code::Space);
-    let location = keyboard::Location::Standard;
-    let events = if held {
-        vec![
-            keyboard::Event::ModifiersChanged(keyboard::Modifiers::CTRL),
-            keyboard::Event::KeyPressed {
-                key: space.clone(),
-                modified_key: space,
-                physical_key: physical,
-                location,
-                modifiers: keyboard::Modifiers::CTRL,
-                text: None,
-                repeat: false,
-            },
-        ]
-    } else {
-        vec![
-            keyboard::Event::KeyReleased {
-                key: space.clone(),
-                modified_key: space,
-                physical_key: physical,
-                location,
-                modifiers: keyboard::Modifiers::CTRL,
-            },
-            keyboard::Event::ModifiersChanged(keyboard::Modifiers::empty()),
-        ]
-    };
-    for event in events {
-        let _ = app.update(Message::Key(event));
     }
 }
 
@@ -142,32 +109,6 @@ fn back_returns_to_the_step_before() {
 }
 
 #[test]
-fn holding_ctrl_space_lights_the_keys_and_letting_go_confirms_it() {
-    let _ui = test_ui::lock();
-    let mut app = Onboarding::new(connected());
-    for label in ["Get started", "Continue", "Sounds good"] {
-        press(&mut app, label);
-    }
-    assert!(shows(&app, "Try it now: hold both keys."));
-    ctrl_space(&mut app, true);
-    assert!(shows(&app, "Now let go. That's when it pastes."));
-    ctrl_space(&mut app, false);
-    assert!(shows(&app, "That's the one. Works in any app."));
-}
-
-#[test]
-fn only_ctrl_is_not_the_shortcut() {
-    let _ui = test_ui::lock();
-    let mut app = Onboarding::new(connected());
-    for label in ["Get started", "Continue", "Sounds good"] {
-        press(&mut app, label);
-    }
-    let _ = app.update(Message::Key(keyboard::Event::ModifiersChanged(keyboard::Modifiers::CTRL)));
-    let _ = app.update(Message::Key(keyboard::Event::ModifiersChanged(keyboard::Modifiers::empty())));
-    assert!(shows(&app, "Try it now: hold both keys."));
-}
-
-#[test]
 fn a_missing_microphone_shows_the_fix_and_still_lets_you_continue() {
     let _ui = test_ui::lock();
     let mut app = Onboarding::new(connected());
@@ -181,26 +122,83 @@ fn a_missing_microphone_shows_the_fix_and_still_lets_you_continue() {
     assert_eq!(app.step(), Step::Shortcut);
 }
 
-#[test]
-fn inside_the_app_the_shortcut_step_follows_the_real_dictation() {
-    let _ui = test_ui::lock();
+fn in_app() -> (Onboarding, Arc<Mutex<Status>>) {
     let status = Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber: "echo", dictations: 0, last: None }));
-    let mut app = Onboarding { dictation: Some(status.clone()), ..Onboarding::new(connected()) };
+    let settings = Arc::new(RwLock::new(Settings::default()));
+    let app = Onboarding::in_app(window::Id::unique(), status.clone(), settings);
+    (Onboarding { codex: connected(), ..app }, status)
+}
+
+fn to_the_shortcut_step(app: &mut Onboarding) {
     for label in ["Get started", "Continue", "Sounds good"] {
-        press(&mut app, label);
+        press(app, label);
     }
-    assert!(shows(&app, "Hold Ctrl + Space and say anything."));
+    assert_eq!(app.step(), Step::Shortcut);
+}
+
+#[test]
+fn on_its_own_the_shortcut_step_says_to_start_murmur() {
+    let _ui = test_ui::lock();
+    let mut app = Onboarding::new(connected());
+    to_the_shortcut_step(&mut app);
+    assert!(shows(&app, "Start murmur to try it here."));
+}
+
+#[test]
+fn saying_continue_moves_onboarding_on_by_itself() {
+    let _ui = test_ui::lock();
+    let (mut app, status) = in_app();
+    to_the_shortcut_step(&mut app);
+    assert!(shows(&app, "Hold Ctrl + Space and say \u{201c}continue\u{201d}."));
 
     status.lock().expect("status").phase = Phase::Recording;
     let _ = app.update(Message::Watch);
-    assert!(shows(&app, "Listening. Let go to paste."));
+    assert!(shows(&app, "Listening. Let go when you're done."));
 
     // The dictation pastes into the focused practice box, which is a normal text input.
     status.lock().expect("status").phase = Phase::Idle;
     let _ = app.update(Message::Watch);
     let _ = app.update(Message::Practice("Remind me to send the deck tomorrow at nine.".into()));
-    assert!(shows(&app, "That's it. It works the same in any app."));
-    assert!(shows(&app, "Remind me to send the deck tomorrow at nine."));
+    assert!(shows(&app, "That landed. Now try saying \u{201c}continue\u{201d}."));
+    assert_eq!(app.step(), Step::Shortcut);
+
+    let _ = app.update(Message::Practice("Okay. Continue.".into()));
+    assert!(shows(&app, "Heard you. On to the last step."));
+    // A moment later the step moves on without a click.
+    app.practice.advance_at = Some(Instant::now());
+    let _ = app.update(Message::Watch);
+    assert_eq!(app.step(), Step::Done);
+}
+
+#[test]
+fn changing_the_shortcut_shows_the_keys_as_they_go_down() {
+    let _ui = test_ui::lock();
+    let (mut app, _) = in_app();
+    to_the_shortcut_step(&mut app);
+    press(&mut app, "Change shortcut");
+    assert!(shows(&app, "Press your shortcut"));
+
+    let held = keyboard::Modifiers::CTRL | keyboard::Modifiers::ALT;
+    let _ = app.update(Message::Key(keyboard::Event::ModifiersChanged(held)));
+    assert!(shows(&app, "Ctrl") && shows(&app, "Alt"));
+
+    // A bare letter is refused, with the reason, and capturing goes on.
+    let bare = keyboard::Event::KeyPressed {
+        key: keyboard::Key::Unidentified,
+        modified_key: keyboard::Key::Unidentified,
+        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyD),
+        location: keyboard::Location::Standard,
+        modifiers: keyboard::Modifiers::empty(),
+        text: None,
+        repeat: false,
+    };
+    let _ = app.update(Message::Key(bare));
+    assert!(shows(&app, "Add Ctrl, Alt or Win, so typing never sets it off."));
+    assert!(shows(&app, "Press your shortcut"));
+
+    // "Keep current" backs out to the practice.
+    press(&mut app, "Keep current");
+    assert!(shows(&app, "Try it"));
 }
 
 #[test]
@@ -293,7 +291,7 @@ fn brand_board_onboarding() {
         }),
         ("4-shortcut", {
             let mut app = at(Step::Shortcut, connected());
-            app.practice = "Remind me to send the deck tomorrow at nine.".into();
+            app.practice.words = "Remind me to send the deck tomorrow at nine.".into();
             app
         }),
         ("5-done", {
@@ -317,4 +315,11 @@ fn brand_board_onboarding() {
             let _ = snapshot.matches_image(&path);
         }
     }
+}
+
+#[test]
+fn plans_read_the_way_chatgpt_names_them() {
+    assert_eq!(plan_name("plus"), "Plus");
+    assert_eq!(plan_name("prolite"), "Pro Lite");
+    assert_eq!(plan_name("pro"), "Pro");
 }

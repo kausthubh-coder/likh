@@ -1,8 +1,8 @@
 //! First-run window: a fixed 560 x 640 borderless window with five steps
 //! (welcome, Codex, microphone, shortcut, done). Inside the running app the
-//! shortcut step is a real first dictation: holding Ctrl+Space records through
-//! the global shortcut and the words land in a practice box. Opened on its own
-//! (`murmur onboarding`), the step only checks the keys.
+//! shortcut step is a real first dictation: hold the shortcut and say
+//! "continue", and the step moves on by itself once it hears it. The shortcut
+//! can be changed right there by pressing a new one.
 //!
 //! No title bar: drag it from anywhere empty, and Alt+F4 still closes it.
 //!
@@ -13,21 +13,21 @@ mod flock;
 
 use crate::codex_auth::{self, CodexStatus};
 use crate::dictation::{Phase, Status};
-use crate::hotkey;
+use crate::hotkey::{self, Binding, capture};
 use crate::microphone;
+use crate::settings::Settings;
 use crate::shared::icon;
 use crate::shared::spring::{self, Spring};
 use crate::shared::theme::{self, Palette, palette, radius, size, space};
+use crate::shared::ui::{fade, ghost, keycap, mix, pill_fill, primary};
 use flock::{Flock, Shape};
 use iced::widget::canvas::{self, Frame, Path, Stroke};
-use iced::widget::{
-    Space, button, canvas as canvas_widget, column, container, mouse_area, operation, row, text, text_input,
-};
+use iced::widget::{Space, canvas as canvas_widget, column, container, mouse_area, operation, row, text, text_input};
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Point, Rectangle, Renderer, Size, Subscription, Task, Theme,
     keyboard, mouse, time, window,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(test)]
@@ -73,23 +73,34 @@ struct Mic {
     history: [f32; MIC_HISTORY],
 }
 
+/// The practice dictation on the shortcut step.
 #[derive(Default)]
-struct Keys {
-    ctrl: bool,
-    space: bool,
-    /// Held both and let go at least once.
-    tried: bool,
+struct Practice {
+    /// What has landed in the box so far.
+    words: String,
+    /// The shortcut is held (or hands-free) right now.
+    listening: bool,
+    /// Heard "continue"; the step moves on at this moment.
+    advance_at: Option<Instant>,
+    /// Picking a new shortcut: the modifiers held so far.
+    capturing: Option<keyboard::Modifiers>,
+    /// What the last change said, good or bad.
+    notice: Option<(String, Tone)>,
 }
 
 const PRACTICE: &str = "practice";
+/// Saying this word in the practice box moves onboarding on.
+const MAGIC_WORD: &str = "continue";
+/// Long enough to read "Heard you" before the step slides away.
+const ADVANCE_AFTER: Duration = Duration::from_millis(1200);
 
 pub struct Onboarding {
     /// The window, once iced reports it; needed to move it by dragging.
     window: Option<window::Id>,
-    /// The running app's dictation, when onboarding opens inside it.
+    /// The running app's dictation and settings, when onboarding opens inside it.
     dictation: Option<Arc<Mutex<Status>>>,
-    /// Where the practice dictation lands.
-    practice: String,
+    settings: Option<Arc<RwLock<Settings>>>,
+    practice: Practice,
     step: Step,
     codex: CodexStatus,
     /// 0 → 1 as a step arrives. `direction` is +1 going forward, -1 going back.
@@ -101,7 +112,6 @@ pub struct Onboarding {
     clock: f32,
     last_frame: Option<Instant>,
     mic: Mic,
-    keys: Keys,
 }
 
 #[derive(Debug, Clone)]
@@ -114,10 +124,13 @@ pub enum Message {
     Finish,
     Frame(Instant),
     Mic(microphone::Event),
+    /// A key while picking a new shortcut.
     Key(keyboard::Event),
     /// Look at the running dictation (only on the shortcut step, inside the app).
     Watch,
     Practice(String),
+    ChangeShortcut,
+    KeepShortcut,
     WindowFound(Option<window::Id>),
     Drag,
 }
@@ -127,7 +140,8 @@ impl Onboarding {
         Self {
             window: None,
             dictation: None,
-            practice: String::new(),
+            settings: None,
+            practice: Practice::default(),
             step: Step::Welcome,
             codex,
             arrival: Spring::new(spring::DEFAULT, 1.0),
@@ -136,7 +150,6 @@ impl Onboarding {
             clock: 0.0,
             last_frame: None,
             mic: Mic::default(),
-            keys: Keys::default(),
         }
     }
 
@@ -145,8 +158,17 @@ impl Onboarding {
     }
 
     /// Onboarding inside the running app, in a window the tray opened.
-    pub fn in_app(window: window::Id, dictation: Arc<Mutex<Status>>) -> Self {
-        Self { window: Some(window), dictation: Some(dictation), ..Self::new(check_codex_now()) }
+    pub fn in_app(window: window::Id, dictation: Arc<Mutex<Status>>, settings: Arc<RwLock<Settings>>) -> Self {
+        Self {
+            window: Some(window),
+            dictation: Some(dictation),
+            settings: Some(settings),
+            ..Self::new(check_codex_now())
+        }
+    }
+
+    fn shortcut(&self) -> Binding {
+        self.settings.as_ref().and_then(|s| s.read().ok().map(|s| s.shortcut)).unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -159,8 +181,8 @@ impl Onboarding {
             Message::Next => return self.go(STEPS.get(self.step.index() + 1).copied().unwrap_or(Step::Done)),
             Message::Back => return self.go(STEPS[self.step.index().saturating_sub(1)]),
             Message::Recheck => self.codex = check_codex_now(),
-            Message::GetCodex => open_url(GET_CODEX_URL),
-            Message::OpenMicSettings => open_url(MIC_SETTINGS_URL),
+            Message::GetCodex => crate::shared::open_url(GET_CODEX_URL),
+            Message::OpenMicSettings => crate::shared::open_url(MIC_SETTINGS_URL),
             // Closing the window ends `murmur onboarding`; inside the app, murmur stays in the tray.
             Message::Finish => return self.window.map_or_else(iced::exit, window::close),
             Message::WindowFound(id) => self.window = id,
@@ -187,29 +209,50 @@ impl Onboarding {
                 }
             },
             Message::Key(event) => {
-                let was_held = self.keys.ctrl && self.keys.space;
-                let space = keyboard::Key::Named(keyboard::key::Named::Space);
-                match event {
-                    keyboard::Event::ModifiersChanged(modifiers) => self.keys.ctrl = modifiers.control(),
-                    keyboard::Event::KeyPressed { key, .. } if key == space => self.keys.space = true,
-                    keyboard::Event::KeyReleased { key, .. } if key == space => self.keys.space = false,
-                    _ => {}
-                }
-                if was_held && !(self.keys.ctrl && self.keys.space) {
-                    self.keys.tried = true;
+                let Some(held) = self.practice.capturing else { return Task::none() };
+                match capture::on_event(&event, held) {
+                    capture::Outcome::Waiting(held) => self.practice.capturing = Some(held),
+                    capture::Outcome::Cancelled => return self.stop_capturing(None),
+                    capture::Outcome::Refused(why) => self.practice.notice = Some((why.into(), Tone::Danger)),
+                    capture::Outcome::Chosen(binding) => match hotkey::rebind(binding) {
+                        Ok(()) => {
+                            let saved = self.settings.as_ref().map(|settings| {
+                                let mut chosen = settings.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+                                chosen.shortcut = binding;
+                                chosen.save()
+                            });
+                            let notice = match saved {
+                                Some(Err(reason)) => {
+                                    (format!("{binding} works now, but it wasn't saved: {reason}"), Tone::Warning)
+                                }
+                                _ => (format!("Saved. {binding} it is."), Tone::Success),
+                            };
+                            return self.stop_capturing(Some(notice));
+                        }
+                        Err(reason) => self.practice.notice = Some((reason, Tone::Danger)),
+                    },
                 }
             }
+            Message::ChangeShortcut => {
+                hotkey::pause(true);
+                self.practice.capturing = Some(keyboard::Modifiers::empty());
+                self.practice.notice = None;
+            }
+            Message::KeepShortcut => return self.stop_capturing(None),
             Message::Watch => {
                 let phase =
                     self.dictation.as_ref().map(|d| d.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).phase);
-                let held = phase == Some(Phase::Recording);
-                if self.keys.ctrl && !held {
-                    self.keys.tried = true;
+                self.practice.listening = matches!(phase, Some(Phase::Recording | Phase::HandsFree));
+                if self.practice.advance_at.is_some_and(|at| Instant::now() >= at) {
+                    return self.go(Step::Done);
                 }
-                self.keys.ctrl = held;
-                self.keys.space = held;
             }
-            Message::Practice(words) => self.practice = words,
+            Message::Practice(words) => {
+                if self.practice.advance_at.is_none() && words.to_lowercase().contains(MAGIC_WORD) {
+                    self.practice.advance_at = Some(Instant::now() + ADVANCE_AFTER);
+                }
+                self.practice.words = words;
+            }
         }
         Task::none()
     }
@@ -226,9 +269,19 @@ impl Onboarding {
         self.clock = 0.0;
         self.last_frame = None;
         self.mic = Mic::default();
-        self.keys = Keys::default();
+        if self.practice.capturing.is_some() {
+            hotkey::pause(false);
+        }
+        self.practice = Practice::default();
         // The practice box has the focus, so the first dictation pastes into it.
         if step == Step::Shortcut && self.dictation.is_some() { operation::focus(PRACTICE) } else { Task::none() }
+    }
+
+    fn stop_capturing(&mut self, notice: Option<(String, Tone)>) -> Task<Message> {
+        hotkey::pause(false);
+        self.practice.capturing = None;
+        self.practice.notice = notice;
+        operation::focus(PRACTICE)
     }
 
     /// The flock on welcome and done, and the welcome text arriving.
@@ -251,11 +304,13 @@ impl Onboarding {
             (Step::ConnectCodex, CodexStatus::Connected(_)) => Subscription::none(),
             (Step::ConnectCodex, _) => time::every(Duration::from_secs(2)).map(|_| Message::Recheck),
             (Step::Microphone, _) => Subscription::run(microphone::listen).map(Message::Mic),
-            // Inside the app the global shortcut swallows Ctrl+Space, so watch the dictation instead.
+            // Picking a new shortcut reads the window's own keys.
+            (Step::Shortcut, _) if self.practice.capturing.is_some() => keyboard::listen().map(Message::Key),
+            // Otherwise the global shortcut has the keys, so watch the dictation instead.
             (Step::Shortcut, _) if self.dictation.is_some() => {
                 time::every(Duration::from_millis(80)).map(|_| Message::Watch)
             }
-            (Step::Shortcut, _) => keyboard::listen().map(Message::Key),
+            (Step::Shortcut, _) => Subscription::none(),
             (Step::Welcome | Step::Done, _) => Subscription::none(),
         };
         Subscription::batch([frames, step])
@@ -268,7 +323,7 @@ impl Onboarding {
             Step::Welcome => self.welcome(&p),
             Step::ConnectCodex => connect_codex(&p, &self.codex),
             Step::Microphone => microphone_step(&p, &self.mic),
-            Step::Shortcut => shortcut(&p, &self.keys, self.dictation.is_some().then_some(self.practice.as_str())),
+            Step::Shortcut => shortcut(&p, self.shortcut(), &self.practice, self.dictation.is_some()),
             Step::Done => self.done(&p),
         };
 
@@ -325,7 +380,7 @@ impl Onboarding {
         Page {
             art: flock_art(p, Shape::Word, self.clock),
             title: "You're all set",
-            body: "Hold Ctrl + Space in any app to talk. murmur waits in your tray.".into(),
+            body: format!("Hold {} in any app to talk. murmur waits in your tray.", self.shortcut()),
             note: None,
             actions: vec![Action::Primary("Finish", Message::Finish)],
         }
@@ -403,7 +458,7 @@ pub fn codex_copy(status: &CodexStatus) -> CodexCopy {
             title: "Connected through Codex",
             detail: [
                 account.email_hint.clone(),
-                account.plan.as_deref().map(|plan| format!("ChatGPT {}", capitalize(plan))),
+                account.plan.as_deref().map(|plan| format!("ChatGPT {}", plan_name(plan))),
             ]
             .into_iter()
             .flatten()
@@ -558,81 +613,88 @@ fn level_bars<'a>(color: Color, history: &[f32; MIC_HISTORY]) -> Element<'a, Mes
     container(bars).center_y(96).into()
 }
 
-/// `practice` is Some inside the running app: a box the first real dictation pastes into.
-fn shortcut<'a>(p: &Palette, keys: &Keys, practice: Option<&str>) -> Page<'a> {
-    let held = keys.ctrl && keys.space;
-    let key = |label: &'static str, down: bool| -> Element<'a, Message> {
-        let (fill, ink) = if down { (p.accent, p.on_accent) } else { (p.surface, p.text) };
-        container(text(label).size(size::BODY).font(theme::MONO).color(ink))
-            .center_x(88)
-            .center_y(56)
-            .style(move |_| container::Style {
-                background: Some(Background::Color(fill)),
-                border: Border {
-                    radius: radius::CONTROL.into(),
-                    width: 1.0,
-                    color: Color::from_rgba(1.0, 1.0, 1.0, if down { 0.0 } else { 0.06 }),
-                },
-                ..container::Style::default()
-            })
-            .into()
+/// The shortcut step. Inside the app it is a real dictation: say "continue"
+/// and it moves on. Opened on its own there is no shortcut to try.
+fn shortcut<'a>(p: &Palette, binding: Binding, practice: &'a Practice, in_app: bool) -> Page<'a> {
+    let caps: Element<'a, Message> = match practice.capturing {
+        Some(held) => {
+            let mut caps = row![].spacing(space::S3).align_y(Alignment::Center);
+            for part in capture::held_parts(held) {
+                caps = caps.push(keycap(part, true, false)).push(text("+").size(size::BODY).color(p.text_subtle));
+            }
+            caps.push(keycap("…", false, true)).into()
+        }
+        None => crate::shared::ui::keycaps(&binding.parts(), practice.listening),
     };
-    let keycaps =
-        row![key("Ctrl", keys.ctrl), text("+").size(size::BODY).color(p.text_subtle), key("Space", keys.space)]
-            .spacing(space::S3)
-            .align_y(Alignment::Center);
-    let (art, body, note): (Element<'a, Message>, &str, (String, Color)) = match practice {
-        Some(words) => {
-            let (surface, ink, hint, accent) = (p.surface, p.text, p.text_subtle, p.accent);
-            let field = text_input("Your words land here.", words)
-                .id(PRACTICE)
-                .on_input(Message::Practice)
-                .size(size::BODY)
-                .padding(space::S3)
-                .width(360)
-                .style(move |_, status| text_input::Style {
-                    background: Background::Color(surface),
-                    border: Border {
-                        radius: radius::CONTROL.into(),
-                        width: 1.0,
-                        color: if matches!(status, text_input::Status::Focused { .. }) {
-                            fade(accent, 0.5)
-                        } else {
-                            Color::TRANSPARENT
-                        },
-                    },
-                    icon: hint,
-                    placeholder: hint,
-                    value: ink,
-                    selection: fade(accent, 0.35),
-                });
-            let note = if held {
-                ("Listening. Let go to paste.".to_string(), p.accent)
-            } else if !words.is_empty() {
-                ("That's it. It works the same in any app.".to_string(), p.success)
-            } else {
-                (format!("Hold {} and say anything.", hotkey::SHORTCUT), p.text_subtle)
-            };
-            let art = column![keycaps, field].spacing(space::S5).align_x(Alignment::Center);
-            (art.into(), "Hold the keys, say something, let go. Your words land in the box.", note)
-        }
-        None => {
-            let note = if held {
-                ("Now let go. That's when it pastes.".to_string(), p.accent)
-            } else if keys.tried {
-                ("That's the one. Works in any app.".to_string(), p.success)
-            } else {
-                ("Try it now: hold both keys.".to_string(), p.text_subtle)
-            };
-            (keycaps.into(), "Hold Ctrl + Space, say it, let go. Esc cancels.", note)
-        }
+    if !in_app {
+        return Page {
+            art: caps,
+            title: "Hold to talk",
+            body: format!("Hold {binding}, say it, let go. Esc cancels."),
+            note: Some(("Start murmur to try it here.".to_string(), p.text_subtle)),
+            actions: vec![Action::Primary("Continue", Message::Next)],
+        };
+    }
+    let tone = |tone: Tone| match tone {
+        Tone::Success => p.success,
+        Tone::Warning => p.warning,
+        Tone::Danger => p.danger,
+        Tone::Neutral => p.text_subtle,
+    };
+    let (surface, ink, hint, accent) = (p.surface, p.text, p.text_subtle, p.accent);
+    let field = text_input("Your words land here.", &practice.words)
+        .id(PRACTICE)
+        .on_input(Message::Practice)
+        .size(size::BODY)
+        .padding(space::S3)
+        .width(360)
+        .style(move |_, status| text_input::Style {
+            background: Background::Color(surface),
+            border: Border {
+                radius: radius::CONTROL.into(),
+                width: 1.0,
+                color: if matches!(status, text_input::Status::Focused { .. }) {
+                    fade(accent, 0.5)
+                } else {
+                    Color::TRANSPARENT
+                },
+            },
+            icon: hint,
+            placeholder: hint,
+            value: ink,
+            selection: fade(accent, 0.35),
+        });
+    let art = column![caps, field].spacing(space::S5).align_x(Alignment::Center);
+    if practice.capturing.is_some() {
+        let note = practice.notice.clone().map(|(words, t)| (words, tone(t)));
+        return Page {
+            art: art.into(),
+            title: "Press your shortcut",
+            body: "Hold the modifiers, then press the key. Esc keeps the one you have.".into(),
+            note: note.or(Some(("Ctrl, Alt or Win, plus a letter, number or Space.".to_string(), p.text_subtle))),
+            actions: vec![Action::Secondary("Keep current", Message::KeepShortcut)],
+        };
+    }
+    let note = if practice.advance_at.is_some() {
+        ("Heard you. On to the last step.".to_string(), p.success)
+    } else if practice.listening {
+        ("Listening. Let go when you're done.".to_string(), p.accent)
+    } else if let Some((words, t)) = practice.notice.clone() {
+        (words, tone(t))
+    } else if !practice.words.is_empty() {
+        ("That landed. Now try saying \u{201c}continue\u{201d}.".to_string(), p.text_subtle)
+    } else {
+        (format!("Tip: tap {binding} once to talk hands-free."), p.text_subtle)
     };
     Page {
-        art,
-        title: "Hold to talk",
-        body: body.into(),
+        art: art.into(),
+        title: if practice.advance_at.is_some() { "That's it" } else { "Try it" },
+        body: format!("Hold {binding} and say \u{201c}continue\u{201d}."),
         note: Some(note),
-        actions: vec![Action::Primary("Continue", Message::Next)],
+        actions: vec![
+            Action::Secondary("Change shortcut", Message::ChangeShortcut),
+            Action::Primary("Continue", Message::Next),
+        ],
     }
 }
 
@@ -762,91 +824,15 @@ impl canvas::Program<Message> for Link {
     }
 }
 
-fn primary<'a>(label: &'a str, on_press: Message, alpha: f32) -> Element<'a, Message> {
-    let p = palette();
-    let (fill, ink) = (fade(p.accent, alpha), fade(p.on_accent, alpha));
-    button(text(label).size(size::SMALL).font(theme::UI_MEDIUM).center().width(Length::Fill))
-        .on_press(on_press)
-        .padding([11, 16])
-        .width(200)
-        .style(move |_, status| {
-            // Hover is instant and subtle (it happens constantly); press darkens a touch more.
-            let fill = match status {
-                button::Status::Hovered => lighten(fill, 0.04),
-                button::Status::Pressed => lighten(fill, -0.04),
-                _ => fill,
-            };
-            button::Style {
-                background: Some(Background::Color(fill)),
-                text_color: ink,
-                border: Border { radius: radius::CONTROL.into(), ..Border::default() },
-                ..button::Style::default()
-            }
-        })
-        .into()
-}
-
-/// Secondary actions are just words until you point at them.
-fn ghost<'a>(label: &'a str, on_press: Message, alpha: f32) -> Element<'a, Message> {
-    let p = palette();
-    let (hover, rest, ink) = (p.elevated, p.text_muted, p.text);
-    button(text(label).size(size::SMALL).font(theme::UI_MEDIUM).center())
-        .on_press(on_press)
-        .padding([11, 16])
-        .style(move |_, status| {
-            let (background, color) = match status {
-                button::Status::Hovered => (Some(Background::Color(hover)), ink),
-                button::Status::Pressed => (Some(Background::Color(lighten(hover, -0.03))), ink),
-                _ => (None, rest),
-            };
-            button::Style {
-                background,
-                text_color: fade(color, alpha),
-                border: Border { radius: radius::CONTROL.into(), ..Border::default() },
-                ..button::Style::default()
-            }
-        })
-        .into()
-}
-
-fn pill_fill(fill: Color) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(fill)),
-        border: Border { radius: 999.0.into(), ..Border::default() },
-        ..container::Style::default()
-    }
-}
-
-fn fade(color: Color, alpha: f32) -> Color {
-    Color { a: color.a * alpha, ..color }
-}
-
-fn mix(a: Color, b: Color, t: f32) -> Color {
-    Color { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t, a: a.a + (b.a - a.a) * t }
-}
-
-fn lighten(color: Color, amount: f32) -> Color {
-    Color {
-        r: (color.r + amount).clamp(0.0, 1.0),
-        g: (color.g + amount).clamp(0.0, 1.0),
-        b: (color.b + amount).clamp(0.0, 1.0),
-        a: color.a,
+/// ChatGPT's plan codes as the plans are called ("prolite" is Pro Lite).
+fn plan_name(code: &str) -> String {
+    match code.to_ascii_lowercase().as_str() {
+        "prolite" | "pro_lite" => "Pro Lite".into(),
+        _ => capitalize(code),
     }
 }
 
 fn capitalize(word: &str) -> String {
     let mut chars = word.chars();
     chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
-}
-
-fn open_url(url: &str) {
-    #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("explorer.exe").arg(url).spawn();
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(url).spawn();
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let result = std::process::Command::new("xdg-open").arg(url).spawn();
-    if let Err(error) = result {
-        eprintln!("could not open {url}: {error}");
-    }
 }

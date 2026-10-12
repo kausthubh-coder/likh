@@ -1,18 +1,26 @@
+mod autostart;
 mod codex_auth;
+mod commands;
 mod ctl;
 mod dictation;
+mod history;
 mod hotkey;
 mod microphone;
 mod onboarding;
+mod panel;
 mod paste;
 mod pill;
+mod settings;
 mod shared;
+mod sounds;
 mod transcriber;
 mod tray;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::mpsc;
+use std::sync::{Arc, RwLock};
 
 /// Native dictation that types with your Codex plan.
 #[derive(Parser)]
@@ -85,24 +93,24 @@ fn run(skip_onboarding: bool) -> ExitCode {
         eprintln!("murmur is already running. `murmur ctl quit` stops it.");
         return ExitCode::SUCCESS;
     }
-    let transcriber = transcriber::Transcriber::from_env();
-    let (dictation, status) = dictation::spawn(pill::Pill::spawn(), transcriber);
+    let settings = Arc::new(RwLock::new(settings::Settings::load()));
+    let shortcut = settings.read().map(|s| s.shortcut).unwrap_or_default();
+    // One inbox for the dictation: the shortcut, the pill's stop button and `murmur ctl` all send to it.
+    let (dictation, inputs) = mpsc::channel();
+    let pill = pill::Pill::spawn(dictation.clone());
+    let status =
+        dictation::spawn(dictation.clone(), inputs, pill, transcriber::Transcriber::from_env(), settings.clone());
     if let Err(error) = ctl::serve(dictation.clone(), status.clone()) {
         eprintln!("murmur: `murmur ctl` won't work this time: {error}");
     }
-    match hotkey::spawn(dictation) {
-        Ok(()) => eprintln!("murmur is running. Hold {} to talk; `murmur ctl quit` stops it.", hotkey::SHORTCUT),
-        Err(reason) => {
-            eprintln!(
-                "murmur: the {} shortcut isn't available ({reason}). `murmur ctl start` still works.",
-                hotkey::SHORTCUT
-            )
-        }
+    match hotkey::spawn(dictation, shortcut) {
+        Ok(()) => eprintln!("murmur is running. Hold {shortcut} to talk; `murmur ctl quit` stops it."),
+        Err(reason) => eprintln!("murmur: {reason} `murmur ctl start` still works."),
     }
 
     let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
     // The tray owns the main thread until "Quit murmur".
-    match tray::run(status, first_run) {
+    match tray::run(status, settings, first_run) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("murmur: {error}");
