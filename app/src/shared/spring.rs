@@ -15,8 +15,26 @@ pub const FAST: SpringSpec = SpringSpec { duration: 0.25, bounce: 0.0 };
 /// Windows and onboarding steps.
 pub const DEFAULT: SpringSpec = SpringSpec { duration: 0.4, bounce: 0.0 };
 /// Onboarding finish and the first successful dictation. Nothing else.
-#[allow(dead_code, reason = "used by the onboarding finish in phase 3")]
 pub const PLAYFUL: SpringSpec = SpringSpec { duration: 0.5, bounce: 0.3 };
+
+impl SpringSpec {
+    /// Where a spring released at 0 towards 1 is after `t` seconds, from the
+    /// closed-form solution. For choreography that is a pure function of time
+    /// (the onboarding flock); anything that can be retargeted uses [`Spring`].
+    pub fn progress(self, t: f32) -> f32 {
+        if t <= 0.0 {
+            return 0.0;
+        }
+        let omega = std::f32::consts::TAU / self.duration;
+        let zeta = 1.0 - self.bounce;
+        if zeta >= 1.0 {
+            1.0 - (-omega * t).exp() * (1.0 + omega * t)
+        } else {
+            let damped = omega * (1.0 - zeta * zeta).sqrt();
+            1.0 - (-zeta * omega * t).exp() * ((damped * t).cos() + zeta * omega / damped * (damped * t).sin())
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Spring {
@@ -94,6 +112,34 @@ mod tests {
         s.target = 100.0;
         let (peak, _) = run(&mut s, 2.0);
         assert!(peak > 102.0 && peak < 110.0, "peak {peak}");
+    }
+
+    #[test]
+    fn progress_matches_the_simulated_spring() {
+        for spec in [DEFAULT, PLAYFUL] {
+            let mut s = Spring::new(spec, 0.0);
+            s.target = 1.0;
+            for frame in 1..=60 {
+                s.step(1.0 / 120.0);
+                let t = frame as f32 / 120.0;
+                // The stepped spring (semi-implicit Euler, 4ms substeps) runs about 0.011
+                // ahead of the exact curve in the first frames; invisible, so 0.02.
+                assert!(
+                    (spec.progress(t) - s.value).abs() < 0.02,
+                    "{spec:?} at {t}s: {} vs {}",
+                    spec.progress(t),
+                    s.value
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn progress_starts_at_zero_and_settles_at_one() {
+        assert_eq!(DEFAULT.progress(0.0), 0.0);
+        assert!((DEFAULT.progress(1.0) - 1.0).abs() < 0.001);
+        let peak = (0..200).map(|i| PLAYFUL.progress(i as f32 / 200.0)).fold(0.0, f32::max);
+        assert!(peak > 1.02 && peak < 1.10, "peak {peak}");
     }
 
     #[test]

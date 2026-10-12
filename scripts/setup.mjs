@@ -5,11 +5,13 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
+import { cargoEnv } from "./cargo.mjs";
 
 const root = join(import.meta.dir, "..");
 const run = (cmd, cwd = root) => {
   console.log(`> ${cmd}`);
-  execSync(cmd, { cwd, stdio: "inherit" });
+  // cargoEnv finds cargo even in a shell opened before rustup was installed.
+  execSync(cmd, { cwd, stdio: "inherit", env: cargoEnv });
 };
 
 const freePort = (port) =>

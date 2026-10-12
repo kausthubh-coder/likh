@@ -9,3 +9,6 @@ node_modules/
 /.claude/skills
 # Local QA runs: screenshots, recordings, scratch profiles
 /.agents/qa/
+
+# Vercel CLI link (project and team ids), made by `vercel link`
+/.vercel

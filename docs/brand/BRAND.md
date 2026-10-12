@@ -1,12 +1,12 @@
-# murmur brand
+# likh brand
 
 The rules every screen follows. `brand.html` next to this file shows them moving. When code and this file disagree, fix one of them in the same change.
 
 ## Story
 
-A murmuration is thousands of starlings moving as one shape at dusk. murmur turns a stream of speech into text that lands where you are typing. The palette is dusk, the motion is the flock: one surface that changes shape, never a pile of popups.
+likh (लिख्) is the Sanskrit root for *write*. You talk; it writes, right where you are typing. The palette is dusk, the motion is a flock of dots finding its place like ink on a page: one surface that changes shape, never a pile of popups.
 
-Name: always lowercase, `murmur`. Tagline: **Talk. It types.**
+Name: always lowercase, `likh`. Tagline: **Talk. It types.**
 
 ## Feel
 
@@ -20,7 +20,13 @@ The pill is the product. It must never steal focus, never block the cursor and n
 
 ## Logo
 
-A dark glass capsule holding five rounded bars whose heights (0.45, 0.85, 0.55, 0.85, 0.45) trace a lowercase "m". It is the listening pill, frozen. Wordmark: `murmur` in Geist 600, tracking -0.02em. Minimum mark size 16px; at 16px drop the capsule and keep the bars.
+Five rounded peach bars whose heights (0.45, 0.85, 0.55, 0.85, 0.45) are a voice level, mid-word. Files in `logo/`:
+
+- `icon.svg`: the app icon. The bars on a dusk tile (radius 116 of 512, gradient `oklch(0.25 0.016 275)` to `bg`). Window and taskbar icon, site favicon, T3 project icon.
+- `mark.svg`: the bars inside a dark capsule: the listening pill, frozen. Onboarding's welcome lands on it.
+- `bars.svg`: the bars alone, for 16px and below.
+
+Wordmark: `likh` in Geist 600, tracking -0.02em, always lowercase.
 
 ## Color (OKLCH, dark-first)
 
@@ -42,20 +48,19 @@ Neutrals do almost all the work. Peach is for "you are being heard" and the one 
 
 Elevation on dark comes from lightness (+0.035 per level), plus a faint top highlight. Light theme comes later, designed separately, not inverted.
 
-## Glass
+## Surface
 
-Glass is only for surfaces that float above other apps: the pill and its error/notice expansions. Windows (onboarding, settings) are solid `bg` with Mica allowed behind the title area. Never glass on glass.
+The pill is solid `surface`, fully opaque. No blur, no refraction. Decided 2026-10-12:
 
-Rungs, picked at runtime:
-1. **Solid**: `surface` at 96% opacity. Used when the OS asks for less transparency, or the user picks "Solid surfaces".
-2. **Frosted (default)**: OS blur behind the window (Acrylic on Windows, system blur on macOS), tinted with a top-to-bottom gradient from `oklch(0.24 0.014 275 / 0.72)` to `oklch(0.13 0.012 275 / 0.78)`, so it reads over a white page or a black video. Lighter tints looked like a grey smudge over white pages.
-3. **Refraction**: real lensing at the rim. Only ships if the Windows benchmark says it is cheap enough to leave on (see `docs/plan.md`). macOS uses the native Liquid Glass view.
+- Real refraction on Windows means capturing the screen behind the pill every frame and running a shader on the GPU. The GPU renderer alone idles at 229 to 313 MB, against 7 MB for the software renderer (`docs/plan.md`, Measured so far). A pill you see for a few seconds at a time can't justify that.
+- The OS blur (Acrylic) only rounds window corners to about 8px, so a capsule would get a blurred rectangle behind it.
+- A near-black capsule reads over white pages and dark apps alike, so it never needs a tint that changes with the background.
 
-Every glass edge has two lines: an inner top highlight (`white / 0.18`, 1px) and an outer hairline (`black / 0.45`, 0.5px), plus one soft shadow (`0 8 24 black / 0.35`). Never animate blur radius; animate the shape's size and opacity.
+Every pill edge has the same recipe: an inner top highlight (`white / 0.10`, 1px), an outer hairline (`black / 0.5`, 0.5px), and two shadows, a tight one (`0 1 2 black / 0.2`) and a soft one (`0 8 24 black / 0.24`). Windows (onboarding, settings) are solid `bg`.
 
 ## Type
 
-Geist for UI, Geist Mono for shortcuts, timers and numbers (tabular). Both SIL OFL, bundled with the app. Five sizes and nothing else:
+Geist for UI, with tabular figures for anything that counts (timers, latency). Geist Mono only for key names and paths. Both SIL OFL, bundled with the app. Five sizes and nothing else:
 
 | Token | Size / line | Weight | Job |
 |---|---|---|---|
@@ -84,21 +89,23 @@ Geist for UI, Geist Mono for shortcuts, timers and numbers (tabular). Both SIL O
 Spring conversion (mass 1): `stiffness = (2π / duration)²`, `damping = 4π(1 − bounce) / duration`. Springs keep their velocity when retargeted, so a state change mid-motion turns around instead of restarting.
 
 - **One liquid surface.** The pill grows out of its resting sliver, morphs into thinking, and expands into an error message. Errors are never a separate toast while the pill is visible.
-- **Level bars:** 7 bars, attack 40ms, release 140ms, driven by mic RMS. Frames are requested only while listening; idle draws zero frames.
+- **Level bars:** 7 bars, attack 40ms, release 140ms, driven by mic RMS on a -55 to -10 dBFS scale. The middle bar shows the newest level and outer bars older ones, each a little shorter, so loud speech still reads as a shape. Frames are requested only while listening; idle draws zero frames.
 - **Thinking:** bars settle into a slow travelling wave (1.2s loop). No spinner.
 - **Reduced motion:** morphs become 150ms crossfades, the travelling wave becomes a gentle opacity pulse, level bars stay (they carry meaning).
 
 ## Pill states
 
+The pill hugs what it shows. Seven bars (4px wide, 3px apart, 46px in all) sit 15px from the left edge, which centres them in the 76px listening pill. Hands-free and the countdown add one 24px circle on the right, inset 6px so it shares the capsule's centre (radius 18 − 6 = 12).
+
 | State | Size | Look |
 |---|---|---|
-| `resting` | 40 x 8 | dim glass sliver, 24px above the taskbar, bottom centre. Can be hidden. |
-| `listening` | 148 x 40 | 7 peach level bars |
-| `hands-free` | 172 x 40 | bars + a small lock, Esc hint on hover |
-| `thinking` | 148 x 40 | travelling wave, bars turn `text-muted` |
+| `resting` | 40 x 8 | dim sliver, 24px above the taskbar, bottom centre. Can be hidden. |
+| `listening` | 76 x 36 | 7 peach level bars, 4 to 20px tall |
+| `hands-free` | 100 x 36 | bars + a stop button (8px square in the 24px circle). Clicking it pastes, Esc cancels |
+| `thinking` | 76 x 36 | travelling wave, bars turn `text-muted` |
 | `done` | back to resting | 250ms; the pasted text is the feedback, no checkmark toast |
-| `warning` | 196 x 40 | bars + mono countdown `0:55 left`, amber |
-| `error` | up to 360 x 56 | icon, one sentence, one action. Stays 6s or until hovered |
+| `time running out` | 100 x 36 | from 9:00: bars + an amber ring that empties over the last minute, seconds left inside it (`55`) |
+| `error` | 360 x 52 | icon, one sentence, one pill-shaped action (36 tall, inset 8). Stays 6s or until hovered |
 | `cancelled` | back to resting | bars fall flat, `exit` timing |
 
 ## Sound
@@ -119,7 +126,7 @@ Codex sign-in copy (used by onboarding and errors):
 | State | Message | Action |
 |---|---|---|
 | checking | Looking for Codex… | none |
-| not installed | murmur transcribes with your ChatGPT plan through Codex. Install Codex, sign in once, then come back. | Get Codex · Check again |
+| not installed | likh transcribes with your ChatGPT plan through Codex. Install Codex, sign in once, then come back. | Get Codex · Check again |
 | signed out | Codex is installed but not signed in. Open Codex (or run `codex login`) and sign in. | Check again |
 | connected | Connected through Codex as k•••@gmail.com | Continue |
 | expired | Your Codex sign-in expired. Open Codex once to refresh it, then try again. | Open Codex |
@@ -128,13 +135,12 @@ Codex sign-in copy (used by onboarding and errors):
 
 ## Onboarding
 
-Six steps, one window (560 x 640), each step slides on `spring.default`. Progress is a row of six dots.
+Five steps in one borderless window, 560 x 640, no title bar: drag it anywhere, Alt+F4 closes it. Each step slides 24px on `spring.default`; the back button and the progress dots stay still, and the wide dot slides to the new step. Every step has the same skeleton (art, display title, one line of body, a note line, the actions), so nothing jumps. No cards: the state is the headline.
 
-1. **Welcome**: murmuration of dots that flocks into the logo. "Talk. It types." · Get started
-2. **Connect Codex**: the sign-in states above, checked live every 2s while visible.
-3. **Microphone**: permission, live peach level bars, device picker. "Say something. The bars should move."
-4. **Shortcut**: big key caps `Ctrl` `Win`. "Hold to talk. Let go to paste." Press it to test; change it.
-5. **Try it**: a practice box. "Hold Ctrl + Win and say: *Remind me to send the deck tomorrow at nine.*" Shows the result appear.
-6. **Done**: the flock spells murmur (`spring.playful`), then "murmur lives in your tray." · Finish
+1. **Welcome**: the flock flies in from the left and lands on the mark, then title, body and button arrive 50ms apart. "Talk. It types." · Get started
+2. **Connect Codex**: likh's bars, a dotted link, a terminal prompt for Codex. The link carries the state's icon and colour; the title is the state from the copy table above. Re-checks every 2s while visible.
+3. **Microphone**: nine live bars from the default mic, newest in the middle. The device name underneath. If no mic opens: "Can't hear a microphone" with Open settings.
+4. **Shortcut**: big key caps `Ctrl` `Space`. Inside the app this is a real first dictation: hold the keys, talk, let go, and the words land in a practice box.
+5. **Done**: the flock spells likh in dots (`spring.playful`, the one bounce). "Hold Ctrl + Space in any app to talk." · Finish
 
-The finish animation plays once, never on a restart.
+The opening flock plays each time the window opens; the window only opens the first time. The finish plays once. Screens on the board are rendered from the app's own views (`cargo test -p likh brand_board -- --ignored`).
