@@ -27,9 +27,6 @@ const WINDOW: Duration = Duration::from_millis(30);
 /// -10 dBFS (talking close to the mic) is full.
 const FLOOR_DB: f32 = -55.0;
 const CEILING_DB: f32 = -10.0;
-/// A level at or above this counts as speech for silence stop: about -37 dBFS,
-/// well above a quiet room (-55 to -45) and below talking at a laptop (-30 to -20).
-pub const SPEECH_LEVEL: f32 = 0.4;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
@@ -81,7 +78,7 @@ fn meter(mut output: Sender<Event>) {
 pub struct Recording {
     stop: Arc<AtomicBool>,
     heard: Arc<Mutex<Heard>>,
-    /// The last moment the level reached speech; None until someone speaks.
+    /// The last moment a voice was heard (`silence::Listener`); None until someone speaks.
     last_voice: Arc<Mutex<Option<Instant>>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -106,16 +103,9 @@ impl Recording {
         let last_voice = Arc::new(Mutex::new(None));
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let (thread_stop, thread_heard, voice) = (stop.clone(), heard.clone(), last_voice.clone());
-        let mut on_level = on_level;
-        let on_level = move |level: f32| {
-            if level >= SPEECH_LEVEL {
-                *voice.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Instant::now());
-            }
-            on_level(level);
-        };
         let thread = std::thread::Builder::new()
             .name("likh-recorder".into())
-            .spawn(move || record(source, on_level, thread_stop, thread_heard, ready_tx))
+            .spawn(move || record(source, on_level, voice, thread_stop, thread_heard, ready_tx))
             .map_err(|error| error.to_string())?;
         match ready_rx.recv() {
             Ok(Ok(())) => Ok(Self { stop, heard, last_voice, thread: Some(thread) }),
@@ -153,13 +143,19 @@ impl Drop for Recording {
 fn record(
     source: Option<PathBuf>,
     mut on_level: impl FnMut(f32) + Send + 'static,
+    last_voice: Arc<Mutex<Option<Instant>>>,
     stop: Arc<AtomicBool>,
     heard: Arc<Mutex<Heard>>,
     ready: mpsc::Sender<Result<(), String>>,
 ) {
     let mut meter: Option<Meter> = None;
+    let mut listener: Option<crate::silence::Listener> = None;
     let mut keep = move |rate: u32, mono: &[f32]| {
         meter.get_or_insert_with(|| Meter::new(window_for(rate))).push(mono.iter().copied(), &mut on_level);
+        let listener = listener.get_or_insert_with(|| crate::silence::Listener::new(rate));
+        if let Some(ago) = listener.push(mono) {
+            *last_voice.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Instant::now().checked_sub(ago);
+        }
         let mut heard = heard.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         heard.rate = rate;
         heard.samples.extend_from_slice(mono);

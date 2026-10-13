@@ -15,6 +15,7 @@ mod paste;
 mod pill;
 mod settings;
 mod shared;
+mod silence;
 mod sounds;
 mod transcriber;
 mod tray;
