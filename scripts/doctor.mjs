@@ -63,12 +63,12 @@ check("this checkout's LIKH_HOME", () => {
   return `${home.slice(root.length + 1)} (pipe likh-${process.env.USERNAME ?? process.env.USER ?? ""}-${basename(home)})`;
 });
 check("site port", () => {
-  const portIn = (path) => read(join(path, ".env.local")).match(/^SITE_PORT=(\d+)/m)?.[1];
+  const portIn = (path) => read(join(path, ".env.local")).match(/^PORT=(\d+)/m)?.[1];
   const port = portIn(root);
   if (!port) throw new Error("fix: bun run setup");
   const twin = others.find((path) => portIn(path) === port);
   if (twin) throw new Error(`${port} is also ${twin}'s port. fix: bun run setup`);
-  return `${port} (SITE_PORT in .env.local)`;
+  return `${port} (PORT in .env.local)`;
 });
 check(
   "installed likh (leave it alone)",

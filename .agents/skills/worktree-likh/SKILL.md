@@ -23,7 +23,7 @@ What setup gives this checkout:
 - **Site deps** in `site/node_modules`, reinstalled only when `site/bun.lock` is newer.
 - **Rust deps** downloaded (`cargo fetch`), not built. The first `cargo build -p likh` or `bun run dev` in a checkout takes about 3 minutes; doctor warns until then. Each checkout builds into its own `target/`. Leave `CARGO_TARGET_DIR` and `build-dir` unshared: on Windows every checkout's binary lands at the same unhashed `deps/likh.exe`, and one worktree's build hands another its `likh.exe`.
 - **Its own `LIKH_HOME`** at `.agents/qa/home-<hash of the path>`, written to `.env.local`, which bun loads for every `bun run`. The app keeps its settings, history, onboarding marker and `update-checked` there, and names its `likh ctl` pipe after the folder. Setup seeds it with `auto_update: false`, so nothing downloads by itself.
-- **Its own site port**, `SITE_PORT` in `.env.local`, one no other worktree claims. `next dev` ignores `PORT` in `site/.env.local`, so `dev:site` passes `--port $SITE_PORT`.
+- **Its own site port**, `PORT` in the root `.env.local`, one no other worktree claims. `next dev` reads it from the environment bun passes down; a `PORT` in `site/.env.local` is ignored.
 
 There is no backend to isolate. Dictation reads the real `~/.codex/auth.json`, read-only; use a fake `CODEX_HOME` for UI proofs (`verify-likh`).
 
@@ -32,7 +32,7 @@ There is no backend to isolate. Dictation reads the real `~/.codex/auth.json`, r
 - `bun run dev`: the app with this checkout's `LIKH_HOME`. Start it in a background Bash job; it holds the shell until quit.
 - `bun run likh <args>`: any `likh` command with the same home, e.g. `bun run likh ctl status`, `bun run likh run --skip-onboarding`.
 - Calling `./target/debug/likh.exe` directly: set `LIKH_HOME` from `.env.local` first, for the app and for every `ctl` call.
-- `bun run dev:site`: the landing page on `http://localhost:<SITE_PORT>`.
+- `bun run dev:site`: the landing page on `http://localhost:<PORT>`.
 - Two checkouts can run at once. Their pipes and homes differ, and the first likh to start takes Ctrl+Space; the others say so and still answer `likh ctl start`.
 
 ## My installed likh

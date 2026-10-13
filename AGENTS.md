@@ -57,7 +57,7 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
 - What a build costs idle, recording and after: `scripts/benchmark.ps1 [-Label <text>]` on a release build. It runs its own likh and keeps every run in `.agents/qa/bench/results.jsonl`
 - Silence stop scored on recordings (quiet mic, fans, music, typing): `scripts/silence-eval.ps1`, report in `.agents/qa/silence/report.md`. Run it when you touch `silence/` or the recorder
-- Site: `bun run dev:site` (this checkout's `SITE_PORT` from `.env.local`)
+- Site: `bun run dev:site` (this checkout's `PORT` from the root `.env.local`)
 - Test one module: `cargo test -p likh codex_auth`
 - Lint the Rust you changed: `cargo clippy -p likh --all-targets -- -D warnings`
 - Full check (CI runs this; run it only when asked): `bun run check`
