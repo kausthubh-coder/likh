@@ -57,31 +57,34 @@ if (!existsSync(stamp) || statSync(join(site, "bun.lock")).mtimeMs > statSync(st
 // another worktree its likh.exe (seen 2026-10-13).
 run("cargo fetch");
 
+// Both live in .env.local at the root, which bun loads for every `bun run`:
+// `bun run dev` and `bun run likh` get LIKH_HOME, `bun run dev:site` SITE_PORT.
+const envFile = join(root, ".env.local");
+
 // This checkout's likh home. `likh ctl` names its pipe after the folder, so the
-// folder name carries a hash of the checkout path. Bun loads .env.local for
-// every `bun run`, so `bun run dev` and `bun run likh` use it.
+// folder name carries a hash of the checkout path.
 const home = join(root, ".agents", "qa", `home-${id}`).replaceAll("\\", "/");
 mkdirSync(home, { recursive: true });
 // No silent update downloads from an agent's build. `likh ctl update` still checks.
 if (!existsSync(join(home, "settings.json"))) writeFileSync(join(home, "settings.json"), '{ "auto_update": false }\n');
-setEnv(join(root, ".env.local"), "LIKH_HOME", home);
+setEnv(envFile, "LIKH_HOME", home);
 
 // The site's port: kept if no other worktree claims it, otherwise derived from
 // the checkout path and moved up past ports that are claimed or in use.
-const portOf = (file) => Number(read(file).match(/^PORT=(\d+)/m)?.[1]) || null;
-const claimed = new Set(others.map((path) => portOf(join(path, "site", ".env.local"))).filter(Boolean));
+// (next dev ignores PORT in site/.env.local: it picks the port before loading env files.)
+const portOf = (file) => Number(read(file).match(/^SITE_PORT=(\d+)/m)?.[1]) || null;
+const claimed = new Set(others.map((path) => portOf(join(path, ".env.local"))).filter(Boolean));
 const free = (port) =>
   new Promise((done) => {
     const server = createServer();
     server.once("error", () => done(false));
     server.listen(port, "127.0.0.1", () => server.close(() => done(true)));
   });
-const siteEnv = join(site, ".env.local");
-let port = portOf(siteEnv);
+let port = portOf(envFile);
 if (!port || claimed.has(port)) {
   port = 3100 + (Number.parseInt(id, 16) % 900);
   while (claimed.has(port) || !(await free(port))) port += 1;
-  setEnv(siteEnv, "PORT", port);
+  setEnv(envFile, "SITE_PORT", port);
 }
 
 console.log("");
