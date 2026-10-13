@@ -12,7 +12,7 @@ bun run setup    # safe to rerun; seconds when nothing is missing
 bun run doctor   # read-only; every FAIL line ends with its fix
 ```
 
-Healthy ends with every doctor line `ok` (a `warn` on Codex sign-in is fine for UI work) and one summary line:
+Healthy ends with no `FAIL` lines and one summary line. A `warn` on the debug build means nothing is built yet; on Codex sign-in it's fine for UI work.
 
 ```
 ready: <checkout> · site port 3796 · LIKH_HOME .agents/qa/home-3d510e78 (pipe likh-kaust-home-3d510e78)
@@ -21,7 +21,7 @@ ready: <checkout> · site port 3796 · LIKH_HOME .agents/qa/home-3d510e78 (pipe 
 What setup gives this checkout:
 
 - **Site deps** in `site/node_modules`, reinstalled only when `site/bun.lock` is newer.
-- **Its own `target/debug/likh.exe`.** Rust intermediates go to `~/.cargo/likh-build`, shared by every checkout (an untracked `.cargo/config.toml`), so a new worktree compiles only likh itself. The binary stays per checkout, so a running likh never blocks another worktree's build. Builds in two checkouts take turns on the shared dir's lock; "Blocking waiting for file lock on build directory" means wait.
+- **Rust deps** downloaded (`cargo fetch`), not built. The first `cargo build -p likh` or `bun run dev` in a checkout takes about 3 minutes; doctor warns until then. Each checkout builds into its own `target/`. Leave `CARGO_TARGET_DIR` and `build-dir` unshared: on Windows every checkout's binary lands at the same unhashed `deps/likh.exe`, and one worktree's build hands another its `likh.exe`.
 - **Its own `LIKH_HOME`** at `.agents/qa/home-<hash of the path>`, written to `.env.local`, which bun loads for every `bun run`. The app keeps its settings, history, onboarding marker and `update-checked` there, and names its `likh ctl` pipe after the folder. Setup seeds it with `auto_update: false`, so nothing downloads by itself.
 - **Its own site port** in `site/.env.local`, one no other worktree claims.
 
@@ -63,4 +63,4 @@ cd C:/Users/kaust/.t3/worktrees/murmur/<name> && bun run setup
 ## Cleanup
 
 - `bun run likh ctl quit`, then check your PID is gone; `Stop-Process -Id <pid>` if not. Never stop likh by name.
-- Remove a worktree only when its work is merged or I say so, and never one a live thread is using (`t3_thread_list`, its `worktreePath`): `git -C <main> worktree remove <path>`, then `git -C <main> branch -d <branch>`. Its `LIKH_HOME` goes with it.
+- Remove a worktree only when its work is merged or I say so, and never one a live thread is using (`t3_thread_list`, its `worktreePath`): `git -C <main> worktree remove <path>`, then `git -C <main> branch -d <branch>`. Its `LIKH_HOME` goes with it. Git leaves the `.claude\skills` junction behind: `cmd /c rmdir <path>\.claude\skills` removes the link only, then delete the empty folder.

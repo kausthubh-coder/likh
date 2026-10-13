@@ -69,7 +69,7 @@ git fetch origin && git rev-parse origin/main    # <merge sha>
 ## 7. Clean up
 
 - `git push origin --delete <branch>`.
-- If this thread runs in the worktree, leave it and say so. Otherwise, once no live thread uses it (`t3_thread_list`): `git -C <main> worktree remove <path>` and `git -C <main> branch -D <branch>` (the merge is a merge commit, so check `gh pr view <number> --json state` says `MERGED` first).
+- If this thread runs in the worktree, leave it and say so. Otherwise, once no live thread uses it (`t3_thread_list`): remove it as `worktree-likh` says (Cleanup), with `git -C <main> branch -D <branch>` once `gh pr view <number> --json state` says `MERGED`.
 
 ## 8. Report
 

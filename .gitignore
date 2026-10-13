@@ -9,8 +9,5 @@ node_modules/
 /.claude/skills
 # Local QA runs: screenshots, recordings, scratch profiles, this checkout's LIKH_HOME
 /.agents/qa/
-# The shared Rust build dir, set per machine by scripts/setup.mjs
-/.cargo/
-
 # Vercel CLI link (project and team ids), made by `vercel link`
 /.vercel

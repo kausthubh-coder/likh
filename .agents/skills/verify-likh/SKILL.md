@@ -11,7 +11,7 @@ Read `features/README.md`, then the feature file you're proving.
 
 ## Launch
 
-1. Build: `bun run setup` builds `target/debug/likh.exe` and gives this checkout its own `LIKH_HOME` (in `.env.local`; `bun run doctor` prints it). After a change, `cargo build -p likh`.
+1. Build: `cargo build -p likh`. The binary is `target/debug/likh.exe`. `bun run setup` has given this checkout its own `LIKH_HOME` (in `.env.local`; `bun run doctor` prints it).
 2. Pick the sign-in state to test. Never use the real `~/.codex` for UI proofs:
    ```sh
    bun scripts/fake-codex-home.mjs expired    # or not-installed | signed-out | connected

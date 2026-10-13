@@ -45,17 +45,12 @@ check("Cargo.lock committed", () => {
   if (!existsSync(join(root, "Cargo.lock"))) throw new Error("run cargo build once and commit Cargo.lock");
   return "present";
 });
-check("debug build", () => {
-  const exe = join(root, "target", "debug", process.platform === "win32" ? "likh.exe" : "likh");
-  if (!existsSync(exe)) throw new Error("fix: bun run setup");
-  return "target/debug";
-});
 check(
-  "shared Rust build dir",
+  "debug build",
   () => {
-    const config = read(join(root, ".cargo", "config.toml"));
-    if (!config.includes("likh-build")) throw new Error("fix: bun run setup (this checkout compiles everything into its own target/)");
-    return "~/.cargo/likh-build";
+    const exe = join(root, "target", "debug", process.platform === "win32" ? "likh.exe" : "likh");
+    if (!existsSync(exe)) throw new Error("not built yet. fix: cargo build -p likh (about 3 minutes the first time)");
+    return "target/debug/likh";
   },
   { required: false },
 );
