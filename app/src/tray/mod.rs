@@ -263,7 +263,7 @@ fn build(hold_to_talk: &str) -> Option<Tray> {
         &shortcut as &dyn tray_icon::menu::IsMenuItem,
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(OPEN, "Open likh", true, None),
-        &MenuItem::with_id(SETUP, "Set up again…", true, None),
+        &MenuItem::with_id(SETUP, "Run setup again…", true, None),
         &update,
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(QUIT, "Quit likh", true, None),

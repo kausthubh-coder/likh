@@ -48,6 +48,9 @@ The running app, idle (no window open, pill hidden, shortcut armed), release bui
 | phase 6 (engines, silence stop, pause media; default settings, mouse button off), 2026-10-12 | 2.3 MB | 11.9 MB | **0 ms** | 8 |
 | 0.1.0-alpha.5, side by side with alpha.6 (same `LIKH_HOME`, settled 10 s), 2026-10-12 | 2.4 MB | 13.8 MB | **0 ms** | 8 |
 | 0.1.0-alpha.6 (no Windows speech, quiet countdown, update line), 2026-10-12 | 2.4 MB | 13.8 MB | **0 ms** | 8 |
+| settings in panels, the shortcut's keyboard, the sidebar update button, 2026-10-13 | 2.3 MB | 12.4 MB | **0 ms** | 8 |
+
+The same build with the settings window open on Dictation and left alone (settled 10 s, over 30 s): 8.3 MB private, 30.5 MB working set, **0 ms**. The keyboard and the update spinner ask for frames only while a cap flies or a check runs.
 
 A picked mouse button installs a low-level mouse hook: no cost while the mouse is still, one wake per mouse event while it moves.
 

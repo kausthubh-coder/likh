@@ -170,11 +170,12 @@ pub struct Colors {
     pub bird: Color,
     pub landed: Color,
     pub shell: Color,
+    pub rim: Color,
 }
 
 impl Colors {
     pub fn from(p: &Palette) -> Self {
-        Self { backdrop: p.bg, bird: p.text_muted, landed: p.accent, shell: p.surface }
+        Self { backdrop: p.bg, bird: p.text_muted, landed: p.accent, shell: p.surface, rim: p.edge_strong }
     }
 }
 
@@ -208,10 +209,7 @@ impl<Message> canvas::Program<Message> for Flock {
             let corner = Point::new(centre.x - shell.width / 2.0, centre.y - shell.height / 2.0);
             let capsule = Path::rounded_rectangle(corner, shell, (shell.height / 2.0).into());
             frame.fill(&capsule, fade(self.colors.shell, shown));
-            frame.stroke(
-                &capsule,
-                Stroke::default().with_width(1.0).with_color(fade(Color::from_rgba(1.0, 1.0, 1.0, 0.16), shown)),
-            );
+            frame.stroke(&capsule, Stroke::default().with_width(1.0).with_color(fade(self.colors.rim, shown)));
         }
 
         if settled && self.shape == Shape::Mark {

@@ -1,10 +1,17 @@
-//! The likh window, opened from the tray: the shortcut, mouse button and how
-//! dictation starts and stops (General), which engine transcribes
+//! The likh window, opened from the tray. Five tabs, each with one job: how
+//! you start and stop a dictation (Dictation), which engine transcribes
 //! (Transcription), the spoken commands (Commands), what you dictated
-//! (History), and the version and links (About).
+//! (History), and startup, updates and links (App).
+//!
+//! Every setting is one row in a panel: its name on the left, its control on
+//! the right. Every tab fits without scrolling except a long History.
 //!
 //! Borderless like onboarding: drag it from anywhere empty, close it with the
-//! × or Esc. Nothing in it animates, so it draws only when something changes.
+//! × or Esc. It draws only when something changes, plus the frames a moving
+//! key cap or the update spinner asks for.
+
+mod icons;
+mod shortcut;
 
 use crate::codex_auth::CodexStatus;
 use crate::commands::Group;
@@ -15,16 +22,22 @@ use crate::onboarding::{self, GroqSetup, Tone};
 use crate::settings::{Mode, Settings, SilenceStop};
 use crate::shared::icon;
 use crate::shared::theme::{self, Palette, palette, radius, size, space};
-use crate::shared::ui::{field_style, ghost, keycap, keycaps, lighten, pill_fill, primary, said, segmented, switch};
+use crate::shared::ui::{field_style, pill_fill, said, segmented, switch};
 use crate::transcriber::{Engine, Failure, glyph, groq};
 use crate::update::{self, Updates};
 use iced::widget::{
-    Space, button, canvas as canvas_widget, column, container, mouse_area, operation, row, scrollable, text, text_input,
+    Space, button, canvas as canvas_widget, column, container, mouse_area, operation, row, scrollable, stack, text,
+    text_input,
 };
-use iced::{Alignment, Background, Border, Color, Element, Length, Size, Subscription, Task, keyboard, window};
+use iced::{
+    Alignment, Background, Border, Color, Element, Length, Padding, Size, Subscription, Task, border, gradient,
+    keyboard, window,
+};
+use icons::{Icon, Shape};
+use shortcut::Keys;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(test)]
 mod tests;
@@ -35,27 +48,55 @@ const REPO: &str = "https://github.com/kausthubh-coder/likh";
 const HISTORY_SHOWN: usize = 200;
 /// Long dictations are cut in the list; copying still copies all of it.
 const PREVIEW_CHARS: usize = 240;
+/// A second "Clear" only counts this soon after the first.
+const CLEAR_ARMED: Duration = Duration::from_secs(3);
 const GROQ_KEY: &str = "panel-groq-key";
+const BODY: &str = "panel-body";
+/// The update button at the foot of the sidebar; tests press it by this.
+const UPDATE: &str = "panel-update";
+/// The scrolling edges fade over this much. The content is padded by the same
+/// amount, so at either end the fade lies over empty space and shows nothing.
+const FADE_TOP: f32 = space::S5;
+const FADE_BOTTOM: f32 = space::S6;
+/// The header holds the title, the close button and up to two lines of notice, always this tall.
+const HEADER: f32 = 40.0;
+const DOT: f32 = 8.0;
+const SIDEBAR: f32 = 184.0;
+/// A nav row: its padding around 18px of text, and how far it reaches past its 16px icon.
+const NAV_ROW: f32 = space::S2 + 18.0 + space::S2;
+/// The engine glyph's box, and where an engine's own setup starts so it lines up with its name.
+const GLYPH: Size = Size::new(36.0, 28.0);
+const SETUP_INDENT: f32 = space::S4 + 16.0 + space::S3 + 36.0 + space::S3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
-    General,
+    Dictation,
     Transcription,
     Commands,
     History,
-    About,
+    App,
 }
 
 impl Tab {
-    const ALL: [Tab; 5] = [Tab::General, Tab::Transcription, Tab::Commands, Tab::History, Tab::About];
+    const ALL: [Tab; 5] = [Tab::Dictation, Tab::Transcription, Tab::Commands, Tab::History, Tab::App];
 
     fn name(self) -> &'static str {
         match self {
-            Tab::General => "General",
+            Tab::Dictation => "Dictation",
             Tab::Transcription => "Transcription",
             Tab::Commands => "Commands",
             Tab::History => "History",
-            Tab::About => "About",
+            Tab::App => "App",
+        }
+    }
+
+    fn icon(self) -> Shape {
+        match self {
+            Tab::Dictation => Shape::Mic,
+            Tab::Transcription => Shape::Wave,
+            Tab::Commands => Shape::Code,
+            Tab::History => Shape::Clock,
+            Tab::App => Shape::Gear,
         }
     }
 }
@@ -66,6 +107,8 @@ pub enum Message {
     ChangeShortcut,
     KeepShortcut,
     Key(keyboard::Event),
+    /// A frame while a key cap flies or the update button spins.
+    Frame(Instant),
     Mouse(MouseTrigger),
     Mode(Mode),
     SilenceStop(SilenceStop),
@@ -90,6 +133,8 @@ pub enum Message {
     AutoUpdate(bool),
     Copy(usize),
     Clear,
+    /// The first "Clear" timed out.
+    Disarm,
     /// Handled by the tray, which owns onboarding.
     RunSetup,
     Open(&'static str),
@@ -107,11 +152,18 @@ pub struct Panel {
     groq: GroqSetup,
     /// Picking a new shortcut: the modifiers held so far.
     capturing: Option<keyboard::Modifiers>,
+    /// The shortcut's caps and keyboard, and their motion.
+    keys: Keys,
+    /// A new shortcut was just saved; the line under it says so.
+    saved: bool,
     notice: Option<(String, Tone)>,
     history: Vec<Entry>,
     /// "Clear" was pressed once; the next press clears.
     confirm_clear: bool,
     copied: Option<usize>,
+    /// Seconds the update button has been spinning, and the last frame, while anything moves.
+    spin: f32,
+    last_frame: Option<Instant>,
     files: Files,
 }
 
@@ -152,19 +204,24 @@ impl Panel {
         updates: Updates,
         files: Files,
     ) -> Self {
+        let shortcut = settings.read().map(|s| s.shortcut).unwrap_or_default();
         Self {
             window,
-            tab: Tab::General,
+            tab: Tab::Dictation,
             settings,
             dictation,
             updates,
             codex: onboarding::check_codex_now(),
             groq: GroqSetup::look(),
             capturing: None,
+            keys: Keys::at_rest(&shortcut.parts()),
+            saved: false,
             notice: None,
             history: Vec::new(),
             confirm_clear: false,
             copied: None,
+            spin: 0.0,
+            last_frame: None,
             files,
         }
     }
@@ -208,32 +265,45 @@ impl Panel {
                 self.stop_capturing();
                 self.tab = tab;
                 self.notice = None;
+                self.saved = false;
+                self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
                 match tab {
                     Tab::History => self.load_history(),
-                    // Every card says where its engine stands, so look at all of them.
+                    // Both engines show where they stand, so look at both.
                     Tab::Transcription => self.codex = onboarding::check_codex_now(),
-                    Tab::About => self.recheck(),
-                    Tab::General | Tab::Commands => {}
+                    Tab::Dictation | Tab::Commands | Tab::App => {}
                 }
+                // Each tab starts at its top.
+                return operation::snap_to(BODY, scrollable::RelativeOffset::START);
             }
             Message::ChangeShortcut => {
                 hotkey::pause(true);
                 self.capturing = Some(keyboard::Modifiers::empty());
                 self.notice = None;
+                self.saved = false;
+                self.keys.listen();
             }
-            Message::KeepShortcut => self.stop_capturing(),
+            Message::KeepShortcut => {
+                self.stop_capturing();
+                self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
+            }
             Message::Key(event) => match self.capturing {
                 Some(held) => match capture::on_event(&event, held) {
-                    capture::Outcome::Waiting(held) => self.capturing = Some(held),
-                    capture::Outcome::Cancelled => self.stop_capturing(),
+                    capture::Outcome::Waiting(held) => {
+                        self.capturing = Some(held);
+                        self.keys.hold(&capture::held_parts(held));
+                    }
+                    capture::Outcome::Cancelled => {
+                        self.stop_capturing();
+                        self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
+                    }
                     capture::Outcome::Refused(why) => self.notice = Some((why.into(), Tone::Danger)),
                     capture::Outcome::Chosen(binding) => match hotkey::rebind(binding) {
                         Ok(()) => {
                             self.change(|s| s.shortcut = binding);
                             self.stop_capturing();
-                            if self.notice.is_none() {
-                                self.notice = Some((format!("Saved. Hold {binding} to talk."), Tone::Success));
-                            }
+                            self.keys.chosen(&binding.parts());
+                            self.saved = true;
                         }
                         Err(reason) => self.notice = Some((reason, Tone::Danger)),
                     },
@@ -242,6 +312,12 @@ impl Panel {
                 None if is_escape(&event) => return window::close(self.window),
                 None => {}
             },
+            Message::Frame(now) => {
+                let dt = self.last_frame.map_or(1.0 / 60.0, |last| (now - last).as_secs_f32().min(0.05));
+                self.keys.step(dt);
+                self.spin += dt;
+                self.last_frame = self.wants_frames().then_some(now);
+            }
             Message::Mouse(trigger) => {
                 self.change(|s| s.mouse = trigger);
                 if let Err(reason) = hotkey::set_mouse(trigger) {
@@ -259,7 +335,10 @@ impl Panel {
             Message::PauseMedia(on) => self.change(|s| s.pause_media = on),
             Message::Commands(on) => self.change(|s| s.commands = on),
             Message::CommandGroup(group, on) => self.change(|s| group.set(&mut s.command_groups, on)),
-            Message::KeepHistory(on) => self.change(|s| s.history = on),
+            Message::KeepHistory(on) => {
+                self.change(|s| s.history = on);
+                self.load_history();
+            }
             Message::StartWithWindows(on) => match crate::autostart::set(on) {
                 Ok(()) => self.change(|s| s.start_with_windows = on),
                 Err(reason) => self.notice = Some((format!("Windows didn't allow that: {reason}"), Tone::Danger)),
@@ -267,9 +346,6 @@ impl Panel {
             Message::Engine(engine) => {
                 self.change(|s| s.engine = engine);
                 self.recheck();
-                if engine == Engine::Groq && !self.groq.saved {
-                    return operation::focus(GROQ_KEY);
-                }
             }
             Message::Recheck => self.recheck(),
             Message::GroqKey(key) => {
@@ -285,7 +361,10 @@ impl Panel {
                 return operation::focus(GROQ_KEY);
             }
             Message::ForgetGroqKey => self.groq.forget(),
-            Message::CheckForUpdates => self.updates.check_now(),
+            Message::CheckForUpdates => {
+                self.updates.check_now();
+                self.last_frame = None;
+            }
             Message::OpenRelease(page) => crate::shared::open_url(&page),
             Message::Restart => {}
             Message::AutoUpdate(on) => self.change(|s| s.auto_update = on),
@@ -297,7 +376,12 @@ impl Panel {
                     }
                 }
             }
-            Message::Clear if !self.confirm_clear => self.confirm_clear = true,
+            Message::Clear if !self.confirm_clear => {
+                self.confirm_clear = true;
+                return Task::perform(crate::shared::off_thread(|| std::thread::sleep(CLEAR_ARMED)), |_| {
+                    Message::Disarm
+                });
+            }
             Message::Clear => {
                 if let Some(file) = &self.files.history
                     && let Err(reason) = history::clear(file)
@@ -306,6 +390,7 @@ impl Panel {
                 }
                 self.load_history();
             }
+            Message::Disarm => self.confirm_clear = false,
             Message::RunSetup => {}
             Message::Open(url) => crate::shared::open_url(url),
             Message::Close => return window::close(self.window),
@@ -325,48 +410,80 @@ impl Panel {
         self.stop_capturing();
     }
 
+    /// A key cap in flight, or the update button spinning. Otherwise the window draws nothing.
+    fn wants_frames(&self) -> bool {
+        self.keys.moving()
+            || matches!(self.updates.state(), update::State::Checking | update::State::Downloading { .. })
+    }
+
     pub fn subscription(&self) -> Subscription<Message> {
         // Keys reach the window only while it has focus: Esc to close, or a new shortcut.
-        keyboard::listen().map(Message::Key)
+        let keys = keyboard::listen().map(Message::Key);
+        let frames = if self.wants_frames() { window::frames().map(Message::Frame) } else { Subscription::none() };
+        Subscription::batch([keys, frames])
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         let p = palette();
         let content = match self.tab {
-            Tab::General => self.general(&p),
+            Tab::Dictation => self.dictation_tab(&p),
             Tab::Transcription => self.transcription(&p),
             Tab::Commands => self.commands(&p),
             Tab::History => self.history_list(&p),
-            Tab::About => self.about(&p),
+            Tab::App => self.app(&p),
         };
-        let notice: Element<'_, Message> = match &self.notice {
-            Some((words, tone)) => text(words.clone()).size(size::SMALL).color(tone_color(&p, *tone)).into(),
-            None => Space::new().into(),
+        // The notice lives in the header, which is always the same height, so nothing below moves when it shows.
+        let words = self.notice.as_ref().or(self.groq.notice.as_ref().filter(|_| self.tab == Tab::Transcription));
+        let notice: Element<'_, Message> = match words {
+            Some((words, tone)) => text(words.clone())
+                .size(size::SMALL)
+                .line_height(theme::line_height(size::SMALL))
+                .color(tone_color(&p, *tone))
+                .width(Length::Fill)
+                .into(),
+            None => Space::new().width(Length::Fill).into(),
         };
+        let close = button(
+            canvas_widget(Icon {
+                shape: Shape::Cross,
+                ink: p.text_muted,
+                lit: p.text,
+                backdrop: p.bg,
+                plate: None,
+                reach: Padding::new(space::S3),
+            })
+            .width(16)
+            .height(16),
+        )
+        .on_press(Message::Close)
+        .padding(space::S3)
+        .style(|_, _| button::Style::default());
         let header = row![
             text(self.tab.name())
                 .size(size::TITLE)
                 .line_height(theme::line_height(size::TITLE))
                 .font(theme::UI_SEMIBOLD),
-            Space::new().width(Length::Fill),
-            ghost("×", Message::Close, 1.0),
+            notice,
+            close,
         ]
+        .spacing(space::S4)
+        .height(HEADER)
         .align_y(Alignment::Center);
-        let (rail, rail_hover) = (p.elevated, p.text_subtle);
-        // A thin, quiet scrollbar that only firms up under the pointer.
-        let body = scrollable(content)
-            .height(Length::Fill)
-            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(4).scroller_width(4)))
-            .style(move |theme, status| {
-                let mut style = scrollable::default(theme, status);
-                let hovered = matches!(status, scrollable::Status::Hovered { .. } | scrollable::Status::Dragged { .. });
-                style.vertical_rail.background = None;
-                style.vertical_rail.border = Border::default();
-                style.vertical_rail.scroller.background = Background::Color(if hovered { rail_hover } else { rail });
-                style.vertical_rail.scroller.border = Border { radius: 2.0.into(), ..Border::default() };
-                style
-            });
-        let main = column![header, notice, body].spacing(space::S3).padding([space::S5, space::S6]);
+
+        // No scrollbar: a line cut off by the bottom fade says there's more.
+        let scroll =
+            scrollable(container(content).padding(Padding { top: FADE_TOP, bottom: FADE_BOTTOM, ..Padding::ZERO }))
+                .id(BODY)
+                .height(Length::Fill)
+                .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(0).scroller_width(0)));
+        let fades = column![
+            fade_edge(p.bg, FADE_TOP, true),
+            Space::new().height(Length::Fill),
+            fade_edge(p.bg, FADE_BOTTOM, false)
+        ];
+        let body = stack![scroll, fades].height(Length::Fill);
+        let main =
+            column![header, body].padding(Padding { top: space::S4, left: space::S6, right: space::S5, bottom: 0.0 });
 
         let surface =
             container(row![self.sidebar(&p), main]).width(Length::Fill).height(Length::Fill).style(move |_| {
@@ -389,10 +506,10 @@ impl Panel {
         let brand = row![mark, text("likh").size(size::BODY).font(theme::UI_SEMIBOLD)]
             .spacing(space::S2)
             .align_y(Alignment::Center);
-        let nav = column(Tab::ALL.map(|tab| self.nav_item(p, tab))).spacing(space::S1);
+        let nav = column(Tab::ALL.map(|tab| self.nav_item(p, tab)));
         container(
             column![
-                brand,
+                container(brand).padding([0.0, space::S3]),
                 Space::new().height(space::S5),
                 nav,
                 Space::new().height(Length::Fill),
@@ -400,7 +517,7 @@ impl Panel {
             ]
             .padding([space::S5, space::S4]),
         )
-        .width(184)
+        .width(SIDEBAR)
         .height(Length::Fill)
         .style(move |_| container::Style {
             background: Some(Background::Color(surface)),
@@ -409,165 +526,264 @@ impl Panel {
         .into()
     }
 
-    /// The foot of the sidebar: this version, and the one update button that
-    /// fits where updating stands, on every tab.
+    /// The foot of the sidebar: the version, and next to it the one update
+    /// button. It checks, spins while checking, and turns peach once there's
+    /// a newer likh to restart into.
     fn sidebar_update(&self, p: &Palette) -> Element<'_, Message> {
         let this = env!("CARGO_PKG_VERSION");
-        let caption = |words: String| text(words).size(size::CAPTION).font(theme::MONO).color(p.text_subtle);
-        let (button, words): (Option<Element<'_, Message>>, String) = match self.updates.state() {
+        let turned = self.spin * 360.0;
+        let (words, shape, press, peach): (String, Shape, Option<Message>, bool) = match self.updates.state() {
             update::State::Ready { version, .. } => {
-                (Some(primary("Restart to update", Message::Restart, 1.0)), format!("v{this} \u{2192} v{version}"))
+                (format!("v{version} ready"), Shape::Up, Some(Message::Restart), true)
             }
-            update::State::Downloading { version } => (None, format!("Downloading v{version}\u{2026}")),
-            update::State::Checking => (None, "Checking\u{2026}".into()),
             update::State::Available { version, page } => {
-                (Some(ghost("Download update", Message::OpenRelease(page), 1.0)), format!("v{version} is out"))
+                (format!("v{version} is out"), Shape::Up, Some(Message::OpenRelease(page)), true)
             }
-            update::State::UpToDate { .. } => {
-                (Some(ghost("Check for updates", Message::CheckForUpdates, 1.0)), format!("v{this} \u{b7} newest"))
-            }
-            update::State::Idle | update::State::Failed { .. } => {
-                (Some(ghost("Check for updates", Message::CheckForUpdates, 1.0)), format!("v{this}"))
+            update::State::Downloading { version } => (format!("v{version}\u{2026}"), Shape::Spin(turned), None, false),
+            update::State::Checking => (format!("v{this}"), Shape::Spin(turned), None, false),
+            update::State::UpToDate { .. } | update::State::Idle | update::State::Failed { .. } => {
+                (format!("v{this}"), Shape::Refresh, Some(Message::CheckForUpdates), false)
             }
         };
-        let mut foot = column![].spacing(space::S2);
-        if let Some(button) = button {
-            foot = foot.push(button);
+        let glyph = canvas_widget(Icon {
+            shape,
+            ink: if peach { p.on_accent } else { p.text_muted },
+            lit: if peach { p.on_accent } else { p.text },
+            backdrop: p.surface,
+            plate: peach.then_some(p.accent),
+            reach: Padding::ZERO,
+        })
+        .width(28)
+        .height(28);
+        let mut press_it = button(glyph).padding(0).style(|_, _| button::Style::default());
+        if let Some(message) = press {
+            press_it = press_it.on_press(message);
         }
-        foot.push(caption(words)).into()
+        row![
+            text(words).size(size::CAPTION).font(theme::MONO).color(if peach { p.text_muted } else { p.text_subtle }),
+            Space::new().width(Length::Fill),
+            container(press_it).id(UPDATE),
+        ]
+        .padding(Padding { left: space::S3, ..Padding::ZERO })
+        .align_y(Alignment::Center)
+        .into()
     }
 
     fn nav_item(&self, p: &Palette, tab: Tab) -> Element<'_, Message> {
         let selected = self.tab == tab;
-        let (on, hover, rest, ink) = (p.elevated, lighten(p.surface, 0.02), p.text_muted, p.text);
-        button(text(tab.name()).size(size::SMALL).font(theme::UI_MEDIUM))
-            .on_press(Message::Tab(tab))
+        let (on, rest, ink) = (p.elevated, p.text_muted, p.text);
+        // The icon lights with the whole row; the row reaches 12px left of it and the rest of the sidebar right.
+        let inner = SIDEBAR - 2.0 * space::S4;
+        let mark = canvas_widget(Icon {
+            shape: tab.icon(),
+            ink: if selected { p.accent } else { p.text_muted },
+            lit: if selected { p.accent } else { p.text },
+            backdrop: if selected { on } else { p.surface },
+            plate: None,
+            reach: Padding {
+                left: space::S3,
+                right: inner - space::S3 - 16.0,
+                top: (NAV_ROW - 16.0) / 2.0,
+                bottom: (NAV_ROW - 16.0) / 2.0,
+            },
+        })
+        .width(16)
+        .height(16);
+        button(
+            row![mark, text(tab.name()).size(size::SMALL).font(theme::UI_MEDIUM)]
+                .spacing(space::S3)
+                .align_y(Alignment::Center),
+        )
+        .on_press(Message::Tab(tab))
+        .width(Length::Fill)
+        .padding([space::S2, space::S3])
+        .style(move |_, status| button::Style {
+            // No hover fill: the icon paints its own backdrop. Words and icon brighten instead.
+            background: selected.then_some(Background::Color(on)),
+            text_color: if selected || matches!(status, button::Status::Hovered | button::Status::Pressed) {
+                ink
+            } else {
+                rest
+            },
+            border: Border { radius: radius::CONTROL.into(), ..Border::default() },
+            ..button::Style::default()
+        })
+        .into()
+    }
+
+    fn dictation_tab(&self, p: &Palette) -> Element<'_, Message> {
+        let chosen = self.chosen();
+        // The shortcut: its caps and the little keyboard, with a line under the caps and Change at its end.
+        let (line, tone, change): (String, Tone, Element<'_, Message>) = match self.capturing {
+            Some(_) => ("Press your new shortcut.".into(), Tone::Neutral, link(p, "Cancel", Message::KeepShortcut)),
+            None if self.saved => (
+                format!("Saved. Hold {} to talk.", chosen.shortcut),
+                Tone::Success,
+                link(p, "Change", Message::ChangeShortcut),
+            ),
+            None => ("Hold to talk, in any app.".into(), Tone::Neutral, link(p, "Change", Message::ChangeShortcut)),
+        };
+        let art = canvas_widget(self.keys.art(p)).width(Length::Fill).height(shortcut::KEYBOARD.height);
+        let under = column![
+            Space::new().height(shortcut::CAP_HEIGHT + space::S2),
+            row![text(line).size(size::SMALL).color(tone_color(p, tone)), change]
+                .spacing(space::S2)
+                .align_y(Alignment::Center),
+        ];
+        let hero = container(stack![art, under]).padding([space::S1, 0.0]).width(Length::Fill);
+
+        let mouse_options = MouseTrigger::ALL.map(|trigger| (trigger, trigger.name()));
+        let mode_options = Mode::ALL.map(|mode| (mode, mode.name()));
+        let quiet_options = SilenceStop::ALL.map(|after| (after, after.name()));
+        let mut talk =
+            vec![Line::plain(named(p, "Sounds", None), switch(chosen.sounds)).press(Message::Sounds(!chosen.sounds))];
+        if crate::media::SUPPORTED {
+            talk.push(
+                Line::plain(named(p, "Pause music and videos", None), switch(chosen.pause_media))
+                    .press(Message::PauseMedia(!chosen.pause_media)),
+            );
+        }
+        column![
+            group(
+                p,
+                vec![
+                    Line::custom(hero.into()),
+                    Line::plain(
+                        named(p, "Mouse button", None),
+                        segmented(&mouse_options, chosen.mouse, Message::Mouse)
+                    ),
+                ]
+            ),
+            group(
+                p,
+                vec![
+                    Line::plain(
+                        named(p, "Mode", Some(chosen.mode.explain())),
+                        segmented(&mode_options, chosen.mode, Message::Mode)
+                    ),
+                    Line::plain(
+                        named(p, "Stop after quiet", Some("Hands-free only")),
+                        segmented(&quiet_options, chosen.silence_stop, Message::SilenceStop)
+                    ),
+                ]
+            ),
+            group(p, talk),
+        ]
+        .spacing(space::S4)
+        .into()
+    }
+
+    /// Both engines, each with its own setup always showing, so picking one
+    /// only moves the peach: the edge, the radio and the glyph.
+    fn transcription(&self, p: &Palette) -> Element<'_, Message> {
+        let picked = self.chosen().engine;
+        column![
+            label(p, "Transcribe with"),
+            column(Engine::ALL.iter().map(|engine| self.engine_panel(p, *engine, *engine == picked)))
+                .spacing(space::S3),
+            Space::new().height(space::S2),
+            container(
+                text("Your audio goes to the one you pick, and nowhere else.").size(size::SMALL).color(p.text_subtle)
+            )
+            .padding([0.0, space::S4]),
+        ]
+        .spacing(space::S2)
+        .into()
+    }
+
+    fn engine_panel<'a>(&'a self, p: &Palette, engine: Engine, picked: bool) -> Element<'a, Message> {
+        let (accent, ink, muted, subtle, surface, edge, edge_strong) =
+            (p.accent, p.text, p.text_muted, p.text_subtle, p.surface, p.edge, p.edge_strong);
+        let radio = container(if picked {
+            Element::from(container(Space::new()).width(DOT).height(DOT).style(move |_| pill_fill(accent)))
+        } else {
+            Space::new().into()
+        })
+        .center(16)
+        .style(move |_| container::Style {
+            border: Border { radius: 999.0.into(), width: 1.5, color: if picked { accent } else { subtle } },
+            ..container::Style::default()
+        });
+        let mark =
+            canvas_widget(glyph::Glyph { engine, color: if picked { accent } else { muted }, backdrop: surface })
+                .width(GLYPH.width)
+                .height(GLYPH.height);
+        let mut head = row![
+            radio,
+            mark,
+            column![
+                text(engine.name()).size(size::BODY).font(theme::UI_MEDIUM),
+                text(engine.explain()).size(size::SMALL).color(p.text_muted),
+            ]
+            .width(Length::Fill),
+        ]
+        .spacing(space::S3)
+        .align_y(Alignment::Center);
+        if engine == Engine::Groq && !self.groq.saved {
+            head = head.push(link(p, "Get a free key \u{2197}", Message::Open(groq::KEYS_URL)));
+        }
+        let setup = container(self.engine_setup(p, engine, picked))
+            .padding(Padding { left: SETUP_INDENT - space::S4, ..Padding::ZERO });
+        let body = column![
+            container(head).padding([space::S3, space::S4]),
+            hairline(p),
+            container(setup).padding([space::S3, space::S4]),
+        ];
+        button(body)
+            .on_press(Message::Engine(engine))
+            .padding(1)
             .width(Length::Fill)
-            .padding([space::S2, space::S3])
             .style(move |_, status| button::Style {
-                background: match (selected, status) {
-                    (true, _) => Some(Background::Color(on)),
-                    (false, button::Status::Hovered) => Some(Background::Color(hover)),
-                    _ => None,
+                background: Some(Background::Color(surface)),
+                text_color: ink,
+                border: Border {
+                    radius: radius::CARD.into(),
+                    width: if picked { 1.5 } else { 1.0 },
+                    color: match (picked, status) {
+                        (true, _) => accent,
+                        (false, button::Status::Hovered | button::Status::Pressed) => edge_strong,
+                        _ => edge,
+                    },
                 },
-                text_color: if selected { ink } else { rest },
-                border: Border { radius: radius::CONTROL.into(), ..Border::default() },
                 ..button::Style::default()
             })
             .into()
     }
 
-    fn general(&self, p: &Palette) -> Element<'_, Message> {
-        let chosen = self.chosen();
-        let shortcut: Element<'_, Message> = match self.capturing {
-            Some(held) => {
-                let mut caps = row![].spacing(space::S3).align_y(Alignment::Center);
-                for part in capture::held_parts(held) {
-                    caps = caps.push(keycap(part, true, false)).push(text("+").size(size::BODY).color(p.text_subtle));
-                }
-                let caps = caps.push(keycap("…", false, true));
+    /// What an engine needs, under its name: the Codex sign-in, or the Groq key.
+    fn engine_setup<'a>(&'a self, p: &Palette, engine: Engine, picked: bool) -> Element<'a, Message> {
+        let state = |tone: Tone, title: String, detail: String| -> Element<'a, Message> {
+            let tint = tone_color(p, tone);
+            row![
+                container(Space::new()).width(DOT).height(DOT).style(move |_| pill_fill(tint)),
                 column![
-                    row![caps, Space::new().width(Length::Fill), ghost("Keep current", Message::KeepShortcut, 1.0)]
-                        .align_y(Alignment::Center),
-                    hint(p, "Hold the modifiers, then press the key. Esc keeps the one you have."),
+                    text(title).size(size::SMALL).font(theme::UI_MEDIUM),
+                    text(detail).size(size::CAPTION).color(p.text_muted),
                 ]
-                .spacing(space::S2)
-                .into()
-            }
-            None => row![
-                keycaps(&chosen.shortcut.parts(), false),
-                Space::new().width(Length::Fill),
-                ghost("Change", Message::ChangeShortcut, 1.0)
+                .width(Length::Fill),
             ]
+            .spacing(space::S3)
             .align_y(Alignment::Center)
-            .into(),
+            .into()
         };
-        let mouse_options = MouseTrigger::ALL.map(|trigger| (trigger, trigger.name()));
-        let mouse = labelled(
-            p,
-            "Mouse button",
-            "Hold it to talk, like the shortcut. Its usual click stops while it's picked.",
-            segmented(&mouse_options, chosen.mouse, Message::Mouse),
-        );
-        let modes = column(Mode::ALL.map(|mode| choice(p, mode, chosen.mode == mode))).spacing(space::S1);
-        let quiet_options = SilenceStop::ALL.map(|after| (after, after.name()));
-        let quiet = labelled(
-            p,
-            "Stop after quiet",
-            "In hands-free, once you've said something, likh pastes after this much quiet.",
-            segmented(&quiet_options, chosen.silence_stop, Message::SilenceStop),
-        );
-        let mut switches = column![setting(
-            p,
-            "Sounds",
-            "Quiet cues when recording starts and stops.",
-            chosen.sounds,
-            Message::Sounds(!chosen.sounds)
-        )]
-        .spacing(space::S4);
-        if crate::media::SUPPORTED {
-            switches = switches.push(setting(
-                p,
-                "Pause music and videos",
-                "While you talk, then they play again.",
-                chosen.pause_media,
-                Message::PauseMedia(!chosen.pause_media),
-            ));
-        }
-        let switches = switches
-            .push(setting(
-                p,
-                "Keep history",
-                "Your dictations stay on this computer, nowhere else.",
-                chosen.history,
-                Message::KeepHistory(!chosen.history),
-            ))
-            .push(setting(
-                p,
-                "Start with Windows",
-                "likh is ready as soon as you sign in.",
-                chosen.start_with_windows,
-                Message::StartWithWindows(!chosen.start_with_windows),
-            ));
-        column![
-            section(p, "Shortcut", column![shortcut, mouse].spacing(space::S5).into()),
-            section(p, "How it starts", column![modes, quiet].spacing(space::S5).into()),
-            section(p, "While you talk", switches.into()),
-        ]
-        .spacing(space::S6)
-        .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
-        .into()
-    }
-
-    fn transcription(&self, p: &Palette) -> Element<'_, Message> {
-        let picked = self.chosen().engine;
-        let cards =
-            row(Engine::ALL.iter().map(|engine| self.engine_card(p, *engine, *engine == picked))).spacing(space::S2);
-        let copy = onboarding::engine_copy(picked, &self.codex, &self.groq);
-        let tint = tone_color(p, copy.tone);
-        let state = row![
-            container(Space::new()).width(8).height(8).style(move |_| pill_fill(tint)),
-            column![
-                text(copy.title).size(size::BODY).font(theme::UI_MEDIUM),
-                text(copy.detail).size(size::SMALL).color(p.text_muted),
-            ]
-            .spacing(2),
-        ]
-        .spacing(space::S3)
-        .align_y(Alignment::Center);
-        let actions: Element<'_, Message> = match picked {
+        match engine {
             Engine::Codex => {
-                let mut actions = row![ghost("Check again", Message::Recheck, 1.0)].spacing(space::S1);
+                let copy = onboarding::codex_copy(&self.codex);
+                let mut line = row![state(copy.tone, copy.title.to_string(), copy.detail)]
+                    .spacing(space::S4)
+                    .align_y(Alignment::Center);
                 if self.codex == CodexStatus::NotInstalled {
-                    actions = actions.push(ghost("Get Codex", Message::Open(crate::shared::CODEX_SETUP), 1.0));
+                    line = line.push(link(p, "Get Codex \u{2197}", Message::Open(crate::shared::CODEX_SETUP)));
                 }
-                actions.into()
+                line.push(link(p, "Check again", Message::Recheck)).into()
             }
             Engine::Groq if self.groq.saved => row![
-                ghost("Use another key", Message::ReplaceGroqKey, 1.0),
-                ghost("Remove key", Message::ForgetGroqKey, 1.0),
+                state(Tone::Success, "Key saved".into(), "On this computer, in its credential store.".into()),
+                link(p, "Use another key", Message::ReplaceGroqKey),
+                link(p, "Remove", Message::ForgetGroqKey),
             ]
-            .spacing(space::S1)
+            .spacing(space::S4)
+            .align_y(Alignment::Center)
             .into(),
             Engine::Groq => {
                 let field = text_input("Paste your key, gsk_\u{2026}", &self.groq.key)
@@ -576,149 +792,87 @@ impl Panel {
                     .on_input(Message::GroqKey)
                     .on_paste(Message::GroqKey)
                     .on_submit(Message::SaveGroqKey)
-                    .size(size::BODY)
-                    .padding(space::S3)
+                    .size(size::SMALL)
+                    .padding([space::S2, space::S3])
                     .style(|_, status| field_style(status));
-                let save = if self.groq.checking { "Checking\u{2026}" } else { "Save key" };
-                column![
-                    field,
-                    row![
-                        primary(save, Message::SaveGroqKey, 1.0),
-                        ghost("Get a free key", Message::Open(groq::KEYS_URL), 1.0)
-                    ]
-                    .spacing(space::S2)
-                    .align_y(Alignment::Center),
-                ]
-                .spacing(space::S3)
-                .into()
+                let words = if self.groq.checking { "Checking\u{2026}" } else { "Save key" };
+                // Peach only when Groq is the pick: then saving the key is the thing to do.
+                row![field, small_button(p, words, Message::SaveGroqKey, picked)]
+                    .spacing(space::S3)
+                    .align_y(Alignment::Center)
+                    .into()
             }
-        };
-        let groq_notice: Element<'_, Message> = match (&self.groq.notice, picked) {
-            (Some((words, tone)), Engine::Groq) => {
-                text(words.clone()).size(size::SMALL).color(tone_color(p, *tone)).into()
-            }
-            _ => Space::new().into(),
-        };
-        column![
-            section(p, "Transcribe with", cards.into()),
-            section(p, picked.explain(), column![state, groq_notice, actions].spacing(space::S3).into()),
-        ]
-        .spacing(space::S6)
-        .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
-        .into()
-    }
-
-    /// One engine as a card: its glyph, its name, and a word on its state.
-    /// The picked card lifts and takes the peach edge; its glyph turns peach.
-    fn engine_card<'a>(&self, p: &Palette, engine: Engine, picked: bool) -> Element<'a, Message> {
-        let (status, ok) = self.short_status(engine);
-        let (lifted, rest, accent, ink, muted) = (p.elevated, p.surface, p.accent, p.text, p.text_muted);
-        let backdrop = if picked { lifted } else { rest };
-        let mark = canvas_widget(glyph::Glyph { engine, color: if picked { accent } else { muted }, backdrop })
-            .width(40)
-            .height(32);
-        let dot = if ok { p.success } else { p.text_subtle };
-        let card = column![
-            mark,
-            text(engine.name()).size(size::BODY).font(theme::UI_MEDIUM).color(ink),
-            row![
-                container(Space::new()).width(6).height(6).style(move |_| pill_fill(dot)),
-                text(status).size(size::CAPTION).color(muted),
-            ]
-            .spacing(space::S2)
-            .align_y(Alignment::Center),
-        ]
-        .spacing(space::S2);
-        let hover = lighten(rest, 0.02);
-        button(card)
-            .on_press(Message::Engine(engine))
-            .width(Length::Fill)
-            .padding(space::S4)
-            .style(move |_, status| button::Style {
-                background: Some(Background::Color(match (picked, status) {
-                    (true, _) => lifted,
-                    (false, button::Status::Hovered | button::Status::Pressed) => hover,
-                    _ => rest,
-                })),
-                text_color: ink,
-                border: Border {
-                    radius: radius::CARD.into(),
-                    width: if picked { 1.5 } else { 1.0 },
-                    color: if picked { accent } else { Color::from_rgba(1.0, 1.0, 1.0, 0.04) },
-                },
-                ..button::Style::default()
-            })
-            .into()
-    }
-
-    /// A few words for a card: what state the engine is in, and whether it's ready.
-    fn short_status(&self, engine: Engine) -> (&'static str, bool) {
-        match engine {
-            Engine::Codex => match self.codex {
-                CodexStatus::Connected(_) => ("Connected", true),
-                CodexStatus::NotInstalled => ("Needs Codex", false),
-                CodexStatus::SignedOut => ("Signed out", false),
-                CodexStatus::Expired(_) => ("Sign-in expired", false),
-            },
-            Engine::Groq if self.groq.saved => ("Key saved", true),
-            Engine::Groq => ("Needs a key", false),
         }
     }
 
     fn commands(&self, p: &Palette) -> Element<'_, Message> {
         let chosen = self.chosen();
-        let master = setting(
-            p,
-            "Spoken commands",
-            "Phrases that do something instead of being typed.",
-            chosen.commands,
-            Message::Commands(!chosen.commands),
-        );
+        let master = Line::plain(
+            named(p, "Spoken commands", Some("Phrases that do something instead of being typed.")),
+            switch(chosen.commands),
+        )
+        .press(Message::Commands(!chosen.commands));
         if !chosen.commands {
-            return column![master, hint(p, "Off. Everything you say is typed as you said it.")]
-                .spacing(space::S4)
-                .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
+            return column![group(p, vec![master]), hint(p, "Off. Everything you say is typed as you said it.")]
+                .spacing(space::S3)
                 .into();
         }
-        let groups = column(Group::ALL.map(|group| {
+        let groups = Group::ALL.map(|group| {
             let on = group.is_on(&chosen.command_groups);
-            let phrases = row(group.phrases().iter().map(|(phrase, result)| {
-                row![said(phrase), text(*result).size(size::CAPTION).font(theme::MONO).color(p.text_subtle)]
-                    .spacing(space::S1 + 2.0)
-                    .align_y(Alignment::Center)
-                    .into()
-            }))
-            .spacing(space::S4)
-            .wrap()
-            .vertical_spacing(space::S2);
-            let mut block = column![setting(p, group.name(), group.explain(), on, Message::CommandGroup(group, !on))]
-                .spacing(space::S3);
-            if on {
-                block = block.push(phrases);
-            }
-            block.into()
-        }))
-        .spacing(space::S5);
-        column![master, section(p, "Say", groups.into())]
-            .spacing(space::S6)
-            .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
-            .into()
+            let phrases = group.phrases();
+            // A result every phrase shares ("undo", three times) says nothing, so it's left off.
+            let shared = phrases.windows(2).all(|pair| pair[0].1 == pair[1].1) && phrases.len() > 1;
+            let under: Element<'_, Message> = if on {
+                row(phrases.iter().map(|(phrase, result)| {
+                    let mut chip = row![said(phrase)].spacing(space::S1).align_y(Alignment::Center);
+                    if !shared {
+                        chip = chip.push(text(*result).size(size::CAPTION).font(theme::MONO).color(p.text_subtle));
+                    }
+                    chip.into()
+                }))
+                .spacing(space::S3)
+                .wrap()
+                .vertical_spacing(space::S2)
+                .into()
+            } else {
+                text(group.explain()).size(size::SMALL).color(p.text_muted).into()
+            };
+            let left = column![text(group.name()).size(size::BODY).font(theme::UI_MEDIUM), under]
+                .spacing(space::S2)
+                .width(Length::Fill);
+            Line::plain(left.into(), switch(on)).press(Message::CommandGroup(group, !on))
+        });
+        // The master switch heads the same panel as the groups it turns on.
+        group(p, std::iter::once(master).chain(groups).collect())
     }
 
     fn history_list(&self, p: &Palette) -> Element<'_, Message> {
+        let chosen = self.chosen();
+        let keep = group(
+            p,
+            vec![
+                Line::plain(
+                    named(p, "Keep history", Some("On this computer only. Click a dictation to copy it.")),
+                    switch(chosen.history),
+                )
+                .press(Message::KeepHistory(!chosen.history)),
+            ],
+        );
         if self.history.is_empty() {
-            let shortcut = self.chosen().shortcut;
-            let why = if self.chosen().history {
-                format!("Hold {shortcut} and talk. What you say shows up here, and only here.")
+            let why = if chosen.history {
+                format!("Hold {} and talk. What you say shows up here, and only here.", chosen.shortcut)
             } else {
-                "History is off. Turn on \u{201c}Keep history\u{201d} in General to keep your dictations.".into()
+                "History is off, so nothing you dictate is kept.".into()
             };
             return column![
-                text("Nothing yet").size(size::BODY).font(theme::UI_MEDIUM),
-                text(why).size(size::SMALL).color(p.text_muted),
+                keep,
+                column![
+                    container(text("Nothing yet").size(size::BODY).font(theme::UI_MEDIUM)).padding([0.0, space::S4]),
+                    hint(p, &why)
+                ]
+                .spacing(space::S1)
             ]
-            .spacing(space::S1)
-            .padding([space::S6, 0.0])
+            .spacing(space::S5)
             .into();
         }
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
@@ -728,14 +882,14 @@ impl Panel {
             n => format!("{n} dictations, newest first. Click one to copy it."),
         };
         let clear = if self.confirm_clear { "Click again to clear" } else { "Clear" };
-        let top = row![hint(p, &count), Space::new().width(Length::Fill), ghost(clear, Message::Clear, 1.0)]
+        let top = row![label(p, &count), Space::new().width(Length::Fill), link(p, clear, Message::Clear)]
+            .padding(Padding { right: space::S4, ..Padding::ZERO })
             .align_y(Alignment::Center);
-        let rows =
-            column(self.history.iter().enumerate().map(|(i, entry)| self.entry(p, i, entry, now))).spacing(space::S1);
-        column![top, rows].spacing(space::S3).padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO }).into()
+        let rows = self.history.iter().enumerate().map(|(i, entry)| self.entry(p, i, entry, now)).collect();
+        column![keep, column![top, group(p, rows)].spacing(space::S2)].spacing(space::S4).into()
     }
 
-    fn entry<'a>(&self, p: &Palette, index: usize, entry: &'a Entry, now: u64) -> Element<'a, Message> {
+    fn entry<'a>(&self, p: &Palette, index: usize, entry: &'a Entry, now: u64) -> Line<'a> {
         let preview: String = if entry.text.chars().count() > PREVIEW_CHARS {
             format!("{}…", entry.text.chars().take(PREVIEW_CHARS).collect::<String>().trim_end())
         } else {
@@ -745,133 +899,243 @@ impl Panel {
         if self.copied == Some(index) {
             meta.push_str(" · Copied");
         }
-        let (hover, ink, muted, success) = (p.surface, p.text, p.text_subtle, p.success);
         let copied = self.copied == Some(index);
-        button(
+        Line::custom(
             column![
-                text(preview).size(size::BODY).line_height(theme::line_height(size::BODY)).color(ink),
-                text(meta).size(size::CAPTION).color(if copied { success } else { muted }),
+                text(preview).size(size::BODY).line_height(theme::line_height(size::BODY)),
+                text(meta).size(size::CAPTION).color(if copied { p.success } else { p.text_subtle }),
             ]
-            .spacing(space::S1),
+            .spacing(space::S1)
+            .width(Length::Fill)
+            .into(),
         )
-        .on_press(Message::Copy(index))
-        .width(Length::Fill)
-        .padding([space::S3, space::S3])
-        .style(move |_, status| button::Style {
-            background: matches!(status, button::Status::Hovered | button::Status::Pressed)
-                .then_some(Background::Color(hover)),
-            text_color: ink,
-            border: Border { radius: radius::CONTROL.into(), ..Border::default() },
-            ..button::Style::default()
-        })
-        .into()
+        .press(Message::Copy(index))
     }
 
-    fn about(&self, p: &Palette) -> Element<'_, Message> {
-        let engine = self.chosen().engine;
-        let copy = onboarding::engine_copy(engine, &self.codex, &self.groq);
-        let status = self.dictation.lock().map(|s| s.clone()).unwrap_or_else(|poisoned| poisoned.into_inner().clone());
-        let tint = tone_color(p, copy.tone);
-        let account = row![
-            container(Space::new()).width(8).height(8).style(move |_| pill_fill(tint)),
-            column![
-                text(copy.title).size(size::BODY).font(theme::UI_MEDIUM),
-                text(copy.detail).size(size::SMALL).color(p.text_muted),
-            ]
-            .spacing(2),
-        ]
-        .spacing(space::S3)
-        .align_y(Alignment::Center);
-        let session = match (status.dictations, &status.last) {
+    fn app(&self, p: &Palette) -> Element<'_, Message> {
+        let chosen = self.chosen();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let this = format!("This is likh {}.", env!("CARGO_PKG_VERSION"));
+        let (status, action): (String, Option<(&'static str, Message)>) = match self.updates.state() {
+            update::State::Idle => (this, None),
+            update::State::Checking => ("Checking for a newer likh\u{2026}".into(), None),
+            update::State::UpToDate { checked_at } => {
+                (format!("{this} It's the newest, checked {}.", history::ago(checked_at, now)), None)
+            }
+            update::State::Downloading { version } => (format!("Downloading likh {version}\u{2026}"), None),
+            update::State::Ready { version, .. } => {
+                (format!("likh {version} is downloaded and checked."), Some(("Restart to update", Message::Restart)))
+            }
+            update::State::Available { version, page } => {
+                (format!("likh {version} is out."), Some(("Download it", Message::OpenRelease(page))))
+            }
+            update::State::Failed { reason } => (reason, None),
+        };
+        let updates: Element<'_, Message> = match action {
+            Some((words, message)) => link(p, words, message),
+            None => Space::new().into(),
+        };
+        let what = if update::INSTALLS {
+            "Once a day. You choose when it restarts."
+        } else {
+            "Once a day. On macOS you download it yourself."
+        };
+        let dictation =
+            self.dictation.lock().map(|s| s.clone()).unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+        let session = match (dictation.dictations, &dictation.last) {
             (0, _) => "No dictations since likh started.".to_string(),
             (n, Some(last)) if last.error.is_none() => {
                 format!("{n} since likh started. The last one pasted {} ms after you let go.", last.latency_ms)
             }
             (n, _) => format!("{n} since likh started."),
         };
-        let audio = match engine {
-            Engine::Codex => "Free and open source, MIT. Your audio goes to ChatGPT through Codex and nowhere else.",
-            Engine::Groq => "Free and open source, MIT. Your audio goes to Groq with your key and nowhere else.",
-        };
-        column![
-            section(p, "Transcribing with", account.into()),
-            section(p, "This session", hint(p, &session)),
-            section(p, "Updates", self.updates_view(p)),
-            section(
-                p,
-                "likh",
-                column![
-                    hint(p, audio),
-                    row![
-                        ghost("Website", Message::Open(crate::shared::SITE), 1.0),
-                        ghost("Source on GitHub", Message::Open(REPO), 1.0),
-                        ghost("Run setup again", Message::RunSetup, 1.0),
-                    ]
-                    .spacing(space::S1),
-                ]
-                .spacing(space::S2)
-                .into()
-            ),
+        // The links are words in one line under the panel: three rows of their own made the tab scroll.
+        let links = column![
+            row![
+                link(p, "Website \u{2197}", Message::Open(crate::shared::SITE)),
+                link(p, "Source on GitHub \u{2197}", Message::Open(REPO)),
+                link(p, "Run setup again", Message::RunSetup),
+            ]
+            .spacing(space::S5),
+            text("Free and open source, MIT.").size(size::SMALL).color(p.text_subtle),
         ]
-        .spacing(space::S6)
-        .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
+        .spacing(space::S2)
+        .padding([0.0, space::S4]);
+        column![
+            group(
+                p,
+                vec![
+                    Line::plain(named(p, "Start with Windows", None), switch(chosen.start_with_windows))
+                        .press(Message::StartWithWindows(!chosen.start_with_windows)),
+                    Line::plain(named(p, "Check for updates automatically", Some(what)), switch(chosen.auto_update))
+                        .press(Message::AutoUpdate(!chosen.auto_update)),
+                    Line::plain(named_owned(p, "Updates", status), updates),
+                    Line::plain(named_owned(p, "This session", session), Space::new().into()),
+                ]
+            ),
+            links,
+        ]
+        .spacing(space::S4)
         .into()
+    }
+}
+
+/// One row of a panel: what it shows, and what pressing it does, if anything.
+struct Line<'a> {
+    body: Element<'a, Message>,
+    press: Option<Message>,
+}
+
+impl<'a> Line<'a> {
+    /// A name on the left, a control on the right.
+    fn plain(left: Element<'a, Message>, control: Element<'a, Message>) -> Self {
+        let body = row![container(left).width(Length::Fill), control].spacing(space::S4).align_y(Alignment::Center);
+        Self { body: body.into(), press: None }
     }
 
-    /// The running version, where updating stands, and what you can do about it.
-    fn updates_view(&self, p: &Palette) -> Element<'_, Message> {
-        let chosen = self.chosen();
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-        let this = format!("This is likh {}.", env!("CARGO_PKG_VERSION"));
-        let (line, tone, action): (String, Tone, Option<Element<'_, Message>>) = match self.updates.state() {
-            update::State::Idle => (this, Tone::Neutral, Some(ghost("Check now", Message::CheckForUpdates, 1.0))),
-            update::State::Checking => ("Checking for a newer likh\u{2026}".into(), Tone::Neutral, None),
-            update::State::UpToDate { checked_at } => (
-                format!("{this} It's the newest, checked {}.", history::ago(checked_at, now)),
-                Tone::Neutral,
-                Some(ghost("Check now", Message::CheckForUpdates, 1.0)),
-            ),
-            update::State::Downloading { version } => {
-                (format!("Downloading likh {version}\u{2026}"), Tone::Neutral, None)
-            }
-            update::State::Ready { version, .. } => (
-                format!("likh {version} is downloaded and checked."),
-                Tone::Success,
-                Some(primary("Restart to update", Message::Restart, 1.0)),
-            ),
-            update::State::Available { version, page } => (
-                format!("likh {version} is out."),
-                Tone::Success,
-                Some(ghost("Download it", Message::OpenRelease(page), 1.0)),
-            ),
-            update::State::Failed { reason } => {
-                (reason, Tone::Warning, Some(ghost("Try again", Message::CheckForUpdates, 1.0)))
-            }
-        };
-        let status = row![
-            text(line).size(size::SMALL).color(tone_color(p, tone)).width(Length::Fill),
-            action.unwrap_or_else(|| Space::new().into()),
-        ]
-        .spacing(space::S4)
-        .align_y(Alignment::Center);
-        let what = if update::INSTALLS {
-            "Once a day, when you open likh or dictate. You choose when it restarts."
-        } else {
-            "Once a day, when you open likh or dictate. On macOS you download it yourself."
-        };
-        column![
-            status,
-            setting(
-                p,
-                "Check for updates automatically",
-                what,
-                chosen.auto_update,
-                Message::AutoUpdate(!chosen.auto_update)
-            ),
-        ]
-        .spacing(space::S4)
-        .into()
+    fn custom(body: Element<'a, Message>) -> Self {
+        Self { body, press: None }
     }
+
+    /// The whole row is the button, so the name and the words under it press it too.
+    fn press(mut self, message: Message) -> Self {
+        self.press = Some(message);
+        self
+    }
+}
+
+/// A panel of rows with hairlines between them. Rows that press light up
+/// under the pointer, rounded only where they meet the panel's corners.
+fn group<'a>(p: &Palette, lines: Vec<Line<'a>>) -> Element<'a, Message> {
+    let (hover, pressed, surface, edge, ink) = (p.hover, p.pressed, p.surface, p.edge, p.text);
+    let count = lines.len();
+    let mut rows = column![];
+    for (i, line) in lines.into_iter().enumerate() {
+        if i > 0 {
+            rows = rows.push(hairline(p));
+        }
+        let inner = radius::CARD - 1.0;
+        let corners = border::Radius {
+            top_left: if i == 0 { inner } else { 0.0 },
+            top_right: if i == 0 { inner } else { 0.0 },
+            bottom_right: if i + 1 == count { inner } else { 0.0 },
+            bottom_left: if i + 1 == count { inner } else { 0.0 },
+        };
+        let padded = container(line.body).padding([space::S3, space::S4]).width(Length::Fill);
+        rows = rows.push(match line.press {
+            Some(message) => Element::from(button(padded).on_press(message).padding(0).width(Length::Fill).style(
+                move |_, status| button::Style {
+                    background: match status {
+                        button::Status::Hovered => Some(Background::Color(hover)),
+                        button::Status::Pressed => Some(Background::Color(pressed)),
+                        _ => None,
+                    },
+                    text_color: ink,
+                    border: Border { radius: corners, ..Border::default() },
+                    ..button::Style::default()
+                },
+            )),
+            None => padded.into(),
+        });
+    }
+    // One pixel in from the edge, so a lit row never covers the panel's hairline.
+    container(rows)
+        .padding(1)
+        .width(Length::Fill)
+        .style(move |_| container::Style {
+            background: Some(Background::Color(surface)),
+            border: Border { radius: radius::CARD.into(), width: 1.0, color: edge },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+fn hairline<'a>(p: &Palette) -> Element<'a, Message> {
+    let edge = p.edge;
+    container(Space::new())
+        .width(Length::Fill)
+        .height(1)
+        .style(move |_| container::Style { background: Some(Background::Color(edge)), ..container::Style::default() })
+        .into()
+}
+
+/// A setting's name, and a line on what it does when the name can't say it alone.
+fn named<'a>(p: &Palette, name: &'a str, what: Option<&'a str>) -> Element<'a, Message> {
+    let mut words = column![text(name).size(size::BODY).font(theme::UI_MEDIUM)];
+    if let Some(what) = what {
+        words =
+            words.push(text(what).size(size::SMALL).line_height(theme::line_height(size::SMALL)).color(p.text_muted));
+    }
+    words.into()
+}
+
+fn named_owned<'a>(p: &Palette, name: &'a str, what: String) -> Element<'a, Message> {
+    column![
+        text(name).size(size::BODY).font(theme::UI_MEDIUM),
+        text(what).size(size::SMALL).line_height(theme::line_height(size::SMALL)).color(p.text_muted),
+    ]
+    .into()
+}
+
+/// A small heading over a panel, on the panel's text edge.
+fn label<'a>(p: &Palette, words: &str) -> Element<'a, Message> {
+    container(text(words.to_string()).size(size::CAPTION).font(theme::UI_MEDIUM).color(p.text_muted))
+        .padding([0.0, space::S4])
+        .into()
+}
+
+/// A line of quieter words, on the panels' text edge.
+fn hint<'a>(p: &Palette, words: &str) -> Element<'a, Message> {
+    container(
+        text(words.to_string()).size(size::SMALL).line_height(theme::line_height(size::SMALL)).color(p.text_muted),
+    )
+    .padding([0.0, space::S4])
+    .into()
+}
+
+/// Words that do something: muted until pointed at.
+fn link<'a>(p: &Palette, words: &'a str, message: Message) -> Element<'a, Message> {
+    let (rest, lit) = (p.text_muted, p.text);
+    button(text(words).size(size::SMALL).font(theme::UI_MEDIUM))
+        .on_press(message)
+        .padding(0)
+        .style(move |_, status| button::Style {
+            text_color: if matches!(status, button::Status::Hovered | button::Status::Pressed) { lit } else { rest },
+            ..button::Style::default()
+        })
+        .into()
+}
+
+/// A button that sits beside a field: peach when it's the screen's main action, neutral otherwise.
+fn small_button<'a>(p: &Palette, words: &'a str, message: Message, peach: bool) -> Element<'a, Message> {
+    let (fill, hover, pressed, ink) = if peach {
+        (p.accent, p.accent_hover, p.accent_pressed, p.on_accent)
+    } else {
+        (p.elevated, p.elevated, p.elevated, p.text)
+    };
+    let edge = p.edge_strong;
+    button(text(words).size(size::SMALL).font(theme::UI_MEDIUM).center())
+        .on_press(message)
+        .padding([space::S2, space::S4])
+        .style(move |_, status| {
+            let pointed = matches!(status, button::Status::Hovered | button::Status::Pressed);
+            button::Style {
+                background: Some(Background::Color(match status {
+                    button::Status::Hovered => hover,
+                    button::Status::Pressed => pressed,
+                    _ => fill,
+                })),
+                text_color: ink,
+                border: Border {
+                    radius: radius::CONTROL.into(),
+                    // The neutral one has no lighter fill to hover to, so its edge lights instead.
+                    width: if pointed && !peach { 1.0 } else { 0.0 },
+                    color: edge,
+                },
+                ..button::Style::default()
+            }
+        })
+        .into()
 }
 
 fn is_escape(event: &keyboard::Event) -> bool {
@@ -890,80 +1154,25 @@ fn tone_color(p: &Palette, tone: Tone) -> Color {
     }
 }
 
-fn hint<'a>(p: &Palette, words: &str) -> Element<'a, Message> {
-    text(words.to_string()).size(size::SMALL).line_height(theme::line_height(size::SMALL)).color(p.text_muted).into()
-}
-
-/// A labelled group: small heading, then its controls.
-fn section<'a>(p: &Palette, label: &'a str, body: Element<'a, Message>) -> Element<'a, Message> {
-    column![text(label).size(size::CAPTION).font(theme::UI_MEDIUM).color(p.text_subtle), body].spacing(space::S3).into()
-}
-
-/// A name and what it does, with a wider control (a segmented pick) underneath.
-fn labelled<'a>(p: &Palette, label: &'a str, explain: &'a str, control: Element<'a, Message>) -> Element<'a, Message> {
-    column![
-        column![
-            text(label).size(size::BODY).font(theme::UI_MEDIUM),
-            text(explain).size(size::SMALL).color(p.text_muted)
-        ]
-        .spacing(2),
-        control,
-    ]
-    .spacing(space::S3)
-    .into()
-}
-
-/// One row of a pick-one list: a round marker, the name, and what it does.
-fn choice<'a>(p: &Palette, mode: Mode, selected: bool) -> Element<'a, Message> {
-    let (accent, edge, hover, ink, muted) = (p.accent, p.text_subtle, p.surface, p.text, p.text_muted);
-    let marker = container(if selected {
-        Element::from(container(Space::new()).width(8).height(8).style(move |_| pill_fill(accent)))
-    } else {
-        Space::new().into()
-    })
-    .center(16)
-    .style(move |_| container::Style {
-        border: Border { radius: 999.0.into(), width: 1.5, color: if selected { accent } else { edge } },
-        ..container::Style::default()
-    });
-    button(
-        row![
-            marker,
-            column![
-                text(mode.name()).size(size::BODY).font(theme::UI_MEDIUM).color(ink),
-                text(mode.explain()).size(size::SMALL).color(muted),
-            ]
-            .spacing(2),
-        ]
-        .spacing(space::S3)
-        .align_y(Alignment::Center),
-    )
-    .on_press(Message::Mode(mode))
-    .width(Length::Fill)
-    .padding([space::S2, space::S3])
-    .style(move |_, status| button::Style {
-        background: matches!(status, button::Status::Hovered).then_some(Background::Color(hover)),
-        text_color: ink,
-        border: Border { radius: radius::CONTROL.into(), ..Border::default() },
-        ..button::Style::default()
-    })
-    .into()
-}
-
-/// A setting with a switch on the right.
-fn setting<'a>(p: &Palette, label: &'a str, explain: &'a str, on: bool, flip: Message) -> Element<'a, Message> {
-    row![
-        column![
-            text(label).size(size::BODY).font(theme::UI_MEDIUM),
-            text(explain).size(size::SMALL).color(p.text_muted)
-        ]
-        .spacing(2)
-        .width(Length::Fill),
-        switch(on, flip),
-    ]
-    .spacing(space::S4)
-    .align_y(Alignment::Center)
-    .into()
+/// A band that fades the scrolling content into the window's background.
+fn fade_edge<'a>(bg: Color, height: f32, top: bool) -> Element<'a, Message> {
+    // The software renderer rounds gradient colours brighter than flat fills,
+    // which left the band one level lighter than the window around it: a faint
+    // box. A step down lands it back on `bg`.
+    let step = 1.0 / 255.0;
+    let bg = Color { r: bg.r - step, g: bg.g - step, b: bg.b - step, ..bg };
+    let clear = Color { a: 0.0, ..bg };
+    let (from, to) = if top { (bg, clear) } else { (clear, bg) };
+    // 180° runs top to bottom.
+    let band = gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, from).add_stop(1.0, to);
+    container(Space::new())
+        .width(Length::Fill)
+        .height(height)
+        .style(move |_| container::Style {
+            background: Some(Background::Gradient(band.into())),
+            ..container::Style::default()
+        })
+        .into()
 }
 
 /// The shortcut as people say it, for the tray menu and tooltip.

@@ -8,20 +8,21 @@ use iced::{Alignment, Background, Border, Color, Element, Length};
 /// The one peach action on a screen.
 pub fn primary<'a, M: Clone + 'a>(label: &'a str, on_press: M, alpha: f32) -> Element<'a, M> {
     let p = palette();
-    let (fill, ink) = (fade(p.accent, alpha), fade(p.on_accent, alpha));
+    let ink = fade(p.on_accent, alpha);
+    let (rest, hover, pressed) = (p.accent, p.accent_hover, p.accent_pressed);
     button(text(label).size(size::SMALL).font(theme::UI_MEDIUM).center().width(Length::Fill))
         .on_press(on_press)
-        .padding([11, 16])
+        .padding([space::S3, space::S4])
         .width(200)
         .style(move |_, status| {
             // Hover is instant and subtle (it happens constantly); press darkens a touch more.
             let fill = match status {
-                button::Status::Hovered => lighten(fill, 0.04),
-                button::Status::Pressed => lighten(fill, -0.04),
-                _ => fill,
+                button::Status::Hovered => hover,
+                button::Status::Pressed => pressed,
+                _ => rest,
             };
             button::Style {
-                background: Some(Background::Color(fill)),
+                background: Some(Background::Color(fade(fill, alpha))),
                 text_color: ink,
                 border: Border { radius: radius::CONTROL.into(), ..Border::default() },
                 ..button::Style::default()
@@ -33,14 +34,14 @@ pub fn primary<'a, M: Clone + 'a>(label: &'a str, on_press: M, alpha: f32) -> El
 /// Secondary actions are just words until you point at them.
 pub fn ghost<'a, M: Clone + 'a>(label: &'a str, on_press: M, alpha: f32) -> Element<'a, M> {
     let p = palette();
-    let (hover, rest, ink) = (p.elevated, p.text_muted, p.text);
+    let (hover, pressed, rest, ink) = (p.hover, p.pressed, p.text_muted, p.text);
     button(text(label).size(size::SMALL).font(theme::UI_MEDIUM).center())
         .on_press(on_press)
-        .padding([11, 16])
+        .padding(space::S3)
         .style(move |_, status| {
             let (background, color) = match status {
                 button::Status::Hovered => (Some(Background::Color(hover)), ink),
-                button::Status::Pressed => (Some(Background::Color(lighten(hover, -0.03))), ink),
+                button::Status::Pressed => (Some(Background::Color(pressed)), ink),
                 _ => (None, rest),
             };
             button::Style {
@@ -61,8 +62,11 @@ pub fn keycap<'a, M: 'a>(label: &'a str, down: bool, waiting: bool) -> Element<'
         (false, true) => (p.bg, p.text_subtle),
         (false, false) => (p.surface, p.text),
     };
-    let edge =
-        if down { Color::TRANSPARENT } else { Color::from_rgba(1.0, 1.0, 1.0, if waiting { 0.14 } else { 0.06 }) };
+    let edge = match (down, waiting) {
+        (true, _) => Color::TRANSPARENT,
+        (false, true) => p.edge_strong,
+        (false, false) => p.edge,
+    };
     container(text(label).size(size::BODY).font(theme::MONO).color(ink))
         .center_y(56)
         .padding([0.0, space::S5])
@@ -87,18 +91,16 @@ pub fn keycaps<'a, M: 'a>(parts: &[&'static str], down: bool) -> Element<'a, M> 
     caps.into()
 }
 
-/// An on/off switch: a peach track when on.
-pub fn switch<'a, M: Clone + 'a>(on: bool, flip: M) -> Element<'a, M> {
+/// An on/off switch: a peach track when on. Only a picture: the row it sits
+/// in is the button, so the name and the words under it flip it too.
+pub fn switch<'a, M: 'a>(on: bool) -> Element<'a, M> {
     let p = palette();
     let (track, knob) = (if on { p.accent } else { p.elevated }, if on { p.on_accent } else { p.text_muted });
     let dot = container(Space::new()).width(14).height(14).style(move |_| pill_fill(knob));
     let inside =
         if on { row![Space::new().width(Length::Fill), dot] } else { row![dot, Space::new().width(Length::Fill)] };
-    button(container(inside).padding(3).width(34).height(20).style(move |_| pill_fill(track)))
-        .on_press(flip)
-        .padding(0)
-        .style(|_, _| button::Style::default())
-        .into()
+    // 3 = (20 - 14) / 2: the knob sits centred in the track.
+    container(inside).padding(3).width(34).height(20).style(move |_| pill_fill(track)).into()
 }
 
 /// Pick one of a few short options, side by side. The picked one sits on a
@@ -109,32 +111,31 @@ pub fn segmented<'a, M: Clone + 'a, T: Copy + PartialEq + 'a>(
     on_pick: impl Fn(T) -> M,
 ) -> Element<'a, M> {
     let p = palette();
-    let (track, lifted, ink, rest) = (p.surface, p.elevated, p.text, p.text_muted);
+    let (track, lifted, ink, rest, hover) = (p.surface, p.elevated, p.text, p.text_muted, p.hover);
+    // BRAND.md, Settings window: inset 3, so the segments' radius is 10 - 3.
     let inset = 3.0;
     let segments = row(options.iter().map(|&(value, label)| {
         let on = value == picked;
         button(text(label).size(size::SMALL).font(theme::UI_MEDIUM).center())
             .on_press(on_pick(value))
-            .padding([5.0, space::S3])
-            .style(move |_, status| button::Style {
-                background: on.then_some(Background::Color(lifted)),
-                text_color: if on || matches!(status, button::Status::Hovered) { ink } else { rest },
-                // Nested inside the track: its radius minus the inset.
-                border: Border { radius: (radius::CONTROL - inset).into(), ..Border::default() },
-                shadow: if on {
-                    iced::Shadow {
-                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
-                        offset: iced::Vector::new(0.0, 1.0),
-                        blur_radius: 2.0,
-                    }
-                } else {
-                    iced::Shadow::default()
-                },
-                ..button::Style::default()
+            // The first label lands on the text edge: the inset plus this makes `space::S3`.
+            .padding([space::S1, space::S3 - inset])
+            .style(move |_, status| {
+                let pointed = matches!(status, button::Status::Hovered | button::Status::Pressed);
+                button::Style {
+                    background: match (on, pointed) {
+                        (true, _) => Some(Background::Color(lifted)),
+                        (false, true) => Some(Background::Color(hover)),
+                        (false, false) => None,
+                    },
+                    text_color: if on || pointed { ink } else { rest },
+                    border: Border { radius: (radius::CONTROL - inset).into(), ..Border::default() },
+                    shadow: if on { theme::shadow_raised() } else { iced::Shadow::default() },
+                    ..button::Style::default()
+                }
             })
             .into()
-    }))
-    .spacing(2);
+    }));
     container(segments)
         .padding(inset)
         .style(move |_| container::Style {
@@ -156,7 +157,7 @@ pub fn field_style(status: iced::widget::text_input::Status) -> iced::widget::te
             color: if matches!(status, iced::widget::text_input::Status::Focused { .. }) {
                 fade(p.accent, 0.5)
             } else {
-                Color::from_rgba(1.0, 1.0, 1.0, 0.06)
+                p.edge
             },
         },
         icon: p.text_subtle,
@@ -169,12 +170,12 @@ pub fn field_style(status: iced::widget::text_input::Status) -> iced::widget::te
 /// A phrase you say, as a small capsule in quotes: the pill's shape, at rest.
 pub fn said<'a, M: 'a>(phrase: &'a str) -> Element<'a, M> {
     let p = palette();
-    let fill = p.surface;
+    let (fill, edge) = (p.surface, p.edge);
     container(text(format!("\u{201c}{phrase}\u{201d}")).size(size::CAPTION).font(theme::UI_MEDIUM).color(p.text))
-        .padding([3.0, space::S2 + 2.0])
+        .padding([space::S1, space::S3])
         .style(move |_| container::Style {
             background: Some(Background::Color(fill)),
-            border: Border { radius: 999.0.into(), width: 1.0, color: Color::from_rgba(1.0, 1.0, 1.0, 0.06) },
+            border: Border { radius: 999.0.into(), width: 1.0, color: edge },
             ..container::Style::default()
         })
         .into()
@@ -194,13 +195,4 @@ pub fn fade(color: Color, alpha: f32) -> Color {
 
 pub fn mix(a: Color, b: Color, t: f32) -> Color {
     Color { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t, a: a.a + (b.a - a.a) * t }
-}
-
-pub fn lighten(color: Color, amount: f32) -> Color {
-    Color {
-        r: (color.r + amount).clamp(0.0, 1.0),
-        g: (color.g + amount).clamp(0.0, 1.0),
-        b: (color.b + amount).clamp(0.0, 1.0),
-        a: color.a,
-    }
 }

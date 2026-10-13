@@ -16,6 +16,15 @@ pub struct Palette {
     pub success: Color,
     pub warning: Color,
     pub danger: Color,
+    /// The hairline around a surface that sits on another (inputs, key caps, cards).
+    pub edge: Color,
+    /// A hairline that has to read on its own: an empty key cap waiting for a key.
+    pub edge_strong: Color,
+    /// Under the pointer, and while pressed. White veils, so they work on `bg` and `surface` alike.
+    pub hover: Color,
+    pub pressed: Color,
+    pub accent_hover: Color,
+    pub accent_pressed: Color,
 }
 
 pub fn palette() -> Palette {
@@ -31,7 +40,18 @@ pub fn palette() -> Palette {
         success: oklch(0.78, 0.13, 155.0),
         warning: oklch(0.84, 0.14, 85.0),
         danger: oklch(0.68, 0.17, 25.0),
+        edge: Color::from_rgba(1.0, 1.0, 1.0, 0.06),
+        edge_strong: Color::from_rgba(1.0, 1.0, 1.0, 0.14),
+        hover: Color::from_rgba(1.0, 1.0, 1.0, 0.06),
+        pressed: Color::from_rgba(1.0, 1.0, 1.0, 0.035),
+        accent_hover: oklch(0.81, 0.11, 45.0),
+        accent_pressed: oklch(0.75, 0.11, 45.0),
     }
+}
+
+/// The tight shadow under a lifted control (BRAND.md, Surface: `0 1 2 black / 0.2`).
+pub fn shadow_raised() -> iced::Shadow {
+    iced::Shadow { color: Color::from_rgba(0.0, 0.0, 0.0, 0.2), offset: iced::Vector::new(0.0, 1.0), blur_radius: 2.0 }
 }
 
 /// Type scale: five sizes and nothing else.
@@ -65,11 +85,14 @@ pub mod radius {
 /// The pill draws its own text with this one weight.
 pub const GEIST_MEDIUM: &[u8] = include_bytes!("../../assets/fonts/Geist-Medium.ttf");
 
+/// Key caps drawn on a canvas measure their labels in this one.
+pub const GEIST_MONO: &[u8] = include_bytes!("../../assets/fonts/GeistMono-Medium.ttf");
+
 pub const FONT_FILES: [&[u8]; 4] = [
     include_bytes!("../../assets/fonts/Geist-Regular.ttf"),
     GEIST_MEDIUM,
     include_bytes!("../../assets/fonts/Geist-SemiBold.ttf"),
-    include_bytes!("../../assets/fonts/GeistMono-Medium.ttf"),
+    GEIST_MONO,
 ];
 
 pub const UI: Font = Font::with_name("Geist");

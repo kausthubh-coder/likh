@@ -82,7 +82,7 @@ Geist for UI, with tabular figures for anything that counts (timers, latency). G
 |---|---|---|
 | `spring.fast` | 0.25s, 0 | pill state changes, toggles |
 | `spring.default` | 0.4s, 0 | window and onboarding step transitions |
-| `spring.playful` | 0.5s, 0.3 | onboarding finish and the first successful dictation only |
+| `spring.playful` | 0.5s, 0.3 | onboarding finish, the first successful dictation, and a key cap landing when you pick a new shortcut. Rare moments only |
 | `fade` | 150ms, `cubic-bezier(0.23, 1, 0.32, 1)` | opacity and color (never springs) |
 | `exit` | 120ms ease-in | anything leaving |
 
@@ -144,11 +144,13 @@ The other engines' copy (onboarding and settings, `onboarding::engine_copy`):
 
 ## Settings window
 
-Calm and compact (Feel, above). Five tabs: General, Transcription, Commands, History, About.
+Calm and compact (Feel, above). Five tabs, each with one job: Dictation, Transcription, Commands, History, App. Each has a drawn 16px icon in the sidebar, peach when it's the open tab. At the sidebar's foot: the version, and next to it one update button (check, spinning while checking, peach once an update is ready to restart into).
 
-- **Segmented pick** (mouse button, silence stop, the onboarding engine pick): a `surface` track, radius 10, inset 3; the picked segment lifts to `elevated` with a 1px shadow, radius 10 − 3 = 7. The rest are words in `text-muted` until pointed at.
-- **Engine cards** (Transcription): one per engine, radius 12, on `surface`. The picked one lifts to `elevated` with a 1.5px peach edge and a peach glyph, the one use of the accent on that tab besides Save key. A dot says ready (`success`) or not (`text-subtle`).
-- **Command phrases**: each phrase in a small capsule in quotes (the pill's shape, at rest), then what it does in Geist Mono `text-subtle`. A group's phrases show only while it's on.
+- **Panels**: settings sit in rounded `surface` panels (radius 12, a 1px `edge`), one setting per row with a hairline between rows: the name on the left, the control on the right, a line under the name only when the name can't say it alone. A row that does something lights with the `hover` veil, rounded only where it meets the panel's corners. Every tab fits in the window without scrolling, except a long History; there is no scrollbar, and the edges fade.
+- **The shortcut** (Dictation): its key caps beside a small keyboard (15 units wide, keys on `elevated`) with the shortcut's keys lit peach. `Change` empties the caps into a dashed slot; each key you press lights on the keyboard and flies off it into the next slot (`spring.playful`), and the saved shortcut pulses once, left to right (1.08, 360ms, 45ms apart). It moves only then.
+- **Segmented pick** (mouse button, mode, silence stop, the onboarding engine pick): a `surface` track, radius 10, inset 3; the picked segment lifts to `elevated` with a 1px shadow, radius 10 − 3 = 7. The rest are words in `text-muted` until pointed at. The mode explains only the picked one, under its name.
+- **Engines** (Transcription): one panel per engine, each always showing its own setup under its name (the Codex sign-in, or the Groq key field), so picking one moves nothing. The picked panel takes a 1.5px peach edge, a peach radio and a peach glyph; Groq's `Save key` turns peach only while Groq is picked. A dot says ready (`success`) or not.
+- **Command phrases**: each phrase in a small capsule in quotes (the pill's shape, at rest), then what it does in Geist Mono `text-subtle`, left off when every phrase in the group does the same thing. A group's phrases show only while it's on.
 
 ## Onboarding
 

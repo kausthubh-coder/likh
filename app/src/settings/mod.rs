@@ -28,19 +28,21 @@ pub enum Mode {
 impl Mode {
     pub const ALL: [Mode; 3] = [Mode::HoldOrTap, Mode::Hold, Mode::Tap];
 
+    /// Short enough for the three to sit side by side.
     pub fn name(self) -> &'static str {
         match self {
             Mode::HoldOrTap => "Hold or tap",
-            Mode::Hold => "Hold only",
-            Mode::Tap => "Tap to toggle",
+            Mode::Hold => "Hold",
+            Mode::Tap => "Toggle",
         }
     }
 
+    /// What it does, in one line, under the pick.
     pub fn explain(self) -> &'static str {
         match self {
-            Mode::HoldOrTap => "Hold to talk. Tap once for hands-free, tap again to stop.",
+            Mode::HoldOrTap => "Hold to talk. Tap once for hands-free.",
             Mode::Hold => "Hold to talk, let go to paste.",
-            Mode::Tap => "Tap to start, tap again to stop and paste.",
+            Mode::Tap => "Tap to start, tap again to paste.",
         }
     }
 }

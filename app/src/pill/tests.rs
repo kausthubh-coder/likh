@@ -140,6 +140,25 @@ fn quiet_stop_keeps_the_stop_button_and_empties_a_peach_ring_on_its_own() {
     assert!(digits > 0 && digits < 60, "{digits}");
 }
 
+#[test]
+fn with_animations_off_the_pill_takes_its_shape_at_once_and_thinking_stands_still() {
+    let mut look = Look::default();
+    look.hold_still(true);
+    look.set(Show::Listening);
+    // No growing out of the sliver: the very first frame is already 76 x 36.
+    assert_eq!((look.width.value, look.height.value), (76.0, 36.0));
+    look.set(Show::Error("Can't reach ChatGPT.".into()));
+    assert_eq!(look.height.value, 52.0);
+
+    look.set(Show::Thinking);
+    play(&mut look, 0.6);
+    let first = look.bars;
+    play(&mut look, 0.3);
+    // The bars stand level and stay put; only their colour pulses.
+    assert!(first.iter().all(|bar| (bar - 0.3).abs() < 0.01), "{first:?}");
+    assert_eq!(first, look.bars);
+}
+
 /// Regenerates the pill pictures on the brand board from the real renderer.
 /// Run: cargo test -p likh brand_board_pill -- --ignored
 #[test]

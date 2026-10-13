@@ -183,6 +183,8 @@ const PRACTICE: &str = "practice";
 pub const GROQ_KEY: &str = "groq-key";
 /// A body-size field with `space::S3` padding: 22 + 2 x 12, plus its 1px edges.
 const KEY_FIELD_HEIGHT: f32 = 48.0;
+/// The widest a step's body runs.
+const BODY_WIDTH: f32 = 320.0;
 /// Saying this word in the practice box moves onboarding on.
 const MAGIC_WORD: &str = "continue";
 /// Long enough to read "Heard you" before the step slides away.
@@ -210,6 +212,8 @@ pub struct Onboarding {
     clock: f32,
     last_frame: Option<Instant>,
     mic: Mic,
+    /// Windows' "Show animations" is off: steps fade instead of sliding, and the flock is already home.
+    still: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -257,6 +261,7 @@ impl Onboarding {
             clock: 0.0,
             last_frame: None,
             mic: Mic::default(),
+            still: crate::pill::animations_off(),
         }
     }
 
@@ -423,6 +428,10 @@ impl Onboarding {
         self.arrival = Spring::new(spring::DEFAULT, 0.0);
         self.arrival.target = 1.0;
         self.progress.target = step.index() as f32;
+        if self.still {
+            // The wide dot jumps instead of sliding.
+            self.progress.value = self.progress.target;
+        }
         self.clock = 0.0;
         self.last_frame = None;
         self.mic = Mic::default();
@@ -450,6 +459,9 @@ impl Onboarding {
 
     /// The flock on welcome and done, and the welcome text arriving.
     fn art_is_moving(&self) -> bool {
+        if self.still {
+            return false;
+        }
         match self.step {
             Step::Welcome => self.clock < Shape::Mark.duration().max(TEXT_FROM + 2.0 * STAGGER + 0.6),
             Step::Done => self.clock < Shape::Word.duration(),
@@ -492,11 +504,11 @@ impl Onboarding {
         };
 
         // Only the page slides; the back button and the dots are the same
-        // things on every step, so they stay put.
-        let offset = (1.0 - t) * space::S5 * self.direction;
+        // things on every step, so they stay put. Without animations it only fades.
+        let offset = if self.still { 0.0 } else { (1.0 - t) * space::S5 * self.direction };
         let sliding = row![
             Space::new().width(offset.max(0.0)),
-            page.view(&p, t, self.stagger_for_welcome()),
+            page.view(&p, t, self.stagger_for_welcome(), self.still),
             Space::new().width((-offset).max(0.0)),
         ]
         .height(Length::Fill);
@@ -527,12 +539,17 @@ impl Onboarding {
 
     /// The welcome text arrives after the flock; other steps arrive with the slide.
     fn stagger_for_welcome(&self) -> Option<f32> {
-        (self.step == Step::Welcome).then_some(self.clock - TEXT_FROM)
+        (self.step == Step::Welcome && !self.still).then_some(self.clock - TEXT_FROM)
+    }
+
+    /// Where the flock is in its flight; without animations, already landed.
+    fn flock_clock(&self, shape: Shape) -> f32 {
+        if self.still { shape.duration() } else { self.clock }
     }
 
     fn welcome(&self, p: &Palette) -> Page<'_> {
         Page {
-            art: flock_art(p, Shape::Mark, self.clock),
+            art: flock_art(p, Shape::Mark, self.flock_clock(Shape::Mark)),
             title: "Talk. It types.",
             body: "Hold a key, say it, let go. Your words land wherever you're typing.".into(),
             note: None,
@@ -542,7 +559,7 @@ impl Onboarding {
 
     fn done(&self, p: &Palette) -> Page<'_> {
         Page {
-            art: flock_art(p, Shape::Word, self.clock),
+            art: flock_art(p, Shape::Word, self.flock_clock(Shape::Word)),
             title: "You're all set",
             body: format!("Hold {} in any app to talk. likh waits in your tray.", self.shortcut()),
             note: None,
@@ -655,16 +672,23 @@ enum Action {
 
 impl<'a> Page<'a> {
     /// `t` fades the page in as it slides. `stagger` is seconds since the text
-    /// started arriving, when the text arrives line by line instead.
-    fn view(self, p: &Palette, t: f32, stagger: Option<f32>) -> Element<'a, Message> {
+    /// started arriving, when the text arrives line by line instead. `still`
+    /// keeps the fade and drops the rise.
+    fn view(self, p: &Palette, t: f32, stagger: Option<f32>, still: bool) -> Element<'a, Message> {
         let arrive = |line: usize| match stagger {
             Some(clock) => spring::DEFAULT.progress(clock - line as f32 * STAGGER).clamp(0.0, 1.0),
             None => t,
         };
         let rise = |line: usize, content: Element<'a, Message>| -> Element<'a, Message> {
-            let a = arrive(line);
+            let a = if still { 1.0 } else { arrive(line) };
             column![Space::new().height((1.0 - a) * RISE), content, Space::new().height(a * RISE)].into()
         };
+        // A body that needs two lines gets a measure just over half its length,
+        // so the lines come out even (CSS `text-wrap: balance`) instead of
+        // leaving one word on the second. Measured in Geist Medium, a touch
+        // wider than the body's Regular, so it never runs to a third line.
+        let one_line = crate::pill::ui_text_width(&self.body, size::BODY);
+        let measure = if one_line > BODY_WIDTH { (one_line / 2.0 + space::S7).min(BODY_WIDTH) } else { BODY_WIDTH };
 
         let title = text(self.title)
             .size(size::DISPLAY)
@@ -681,8 +705,7 @@ impl<'a> Page<'a> {
                 .align_x(Alignment::Center)
                 .width(Length::Fill),
         )
-        // Narrow enough that two-line bodies break evenly instead of leaving one word behind.
-        .max_width(320)
+        .max_width(measure)
         .height(44);
         // The note line keeps its height when empty, so the buttons never move.
         let note = match self.note {
@@ -755,7 +778,8 @@ impl Onboarding {
         if self.engine != Engine::Groq || self.groq.saved {
             art = art.push(slot);
         } else {
-            let field = text_input("gsk_\u{2026}", &self.groq.key)
+            // It sits above the title (the slot is part of the art), so it says what it's for itself.
+            let field = text_input("Paste your key, gsk_\u{2026}", &self.groq.key)
                 .id(GROQ_KEY)
                 .secure(true)
                 .on_input(Message::GroqKey)
