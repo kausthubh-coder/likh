@@ -57,9 +57,9 @@ if (!existsSync(stamp) || statSync(join(site, "bun.lock")).mtimeMs > statSync(st
 // another worktree its likh.exe (seen 2026-10-13).
 run("cargo fetch");
 
-// Both live in .env.local at the root. bun loads it into the environment of
-// every `bun run`: `bun run dev` and `bun run likh` get LIKH_HOME, and
-// `bun run dev:site` gets PORT, which next dev reads from the environment.
+// Both live in .env.local at the root. Bun loads it into every script it runs
+// from here: scripts/cargo.mjs passes LIKH_HOME to `bun run dev` and
+// `bun run likh`, and scripts/site.mjs passes PORT to next dev.
 const envFile = join(root, ".env.local");
 
 // This checkout's likh home. `likh ctl` names its pipe after the folder, so the
@@ -72,8 +72,7 @@ setEnv(envFile, "LIKH_HOME", home);
 
 // The site's port: kept if no other worktree claims it, otherwise derived from
 // the checkout path and moved up past ports that are claimed or in use.
-// (next dev ignores PORT in site/.env.local: it picks the port before loading
-// that file. bun leaves .env.local values out of `$VAR` in package.json scripts.)
+// (next dev ignores PORT in site/.env.local: it picks the port before loading that file.)
 const portOf = (file) => Number(read(file).match(/^PORT=(\d+)/m)?.[1]) || null;
 const claimed = new Set(others.map((path) => portOf(join(path, ".env.local"))).filter(Boolean));
 const free = (port) =>
