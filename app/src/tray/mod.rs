@@ -119,7 +119,9 @@ impl App {
             return window::gain_focus(*id);
         }
         let (id, opened) = window::open(onboarding::window_settings());
-        self.setup = Some((id, Onboarding::in_app(id, self.dictation.clone(), self.settings.clone())));
+        let setup = Onboarding::in_app(id, self.dictation.clone(), self.settings.clone())
+            .hold_still(crate::pill::animations_off());
+        self.setup = Some((id, setup));
         opened.discard()
     }
 

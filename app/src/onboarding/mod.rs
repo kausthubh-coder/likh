@@ -261,12 +261,19 @@ impl Onboarding {
             clock: 0.0,
             last_frame: None,
             mic: Mic::default(),
-            still: crate::pill::animations_off(),
+            // Moving, unless the window that shows it says otherwise: tests stay the same on any machine.
+            still: false,
         }
     }
 
+    /// Windows' "Show animations" is off: steps fade and the flock is already home.
+    pub fn hold_still(self, still: bool) -> Self {
+        Self { still, ..self }
+    }
+
     fn boot() -> (Self, Task<Message>) {
-        let app = Self { engine: Settings::load().engine, groq: GroqSetup::look(), ..Self::new(check_codex_now()) };
+        let app = Self { engine: Settings::load().engine, groq: GroqSetup::look(), ..Self::new(check_codex_now()) }
+            .hold_still(crate::pill::animations_off());
         (app, window::oldest().map(Message::WindowFound))
     }
 
