@@ -25,7 +25,7 @@ Preconditions:
 - `scripts/build-installer.ps1` (Inno Setup 6, per user: `winget install JRSoftware.InnoSetup --scope user`), then sign it with the person's backup key: `LIKH_UPDATE_SIGNING_KEY_FILE=~/.likh-release/update-signing-key.pem bun scripts/sign-release.mjs target/installer/likh-setup-windows-x64.exe`. Ask before using that key.
 - A fake release list: a tiny `Bun.serve` on 127.0.0.1 that answers `/releases` with one release `v0.1.0-alpha.99` whose two assets point back at the local installer and `.sig`. It must look like GitHub's list (`tag_name`, `draft`, `html_url`, `assets[].name`, `assets[].browser_download_url`).
 
-Recipe (2026-10-12, worked end to end):
+Recipe (2026-10-12, worked end to end, before likh was installed on this machine). The person now runs an installed likh from `%LOCALAPPDATA%\Programs\likh`. This recipe installs over it and its cleanup uninstalls it, so run it only when they ask, and stop at the unit tests in `update/tests.rs` otherwise.
 
 1. Install silently: `likh-setup-windows-x64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
 2. Start the installed `likh.exe run --skip-onboarding` with `LIKH_HOME` (with an `onboarded` file in it, since the relaunch passes no flags), `LIKH_UPDATE_FEED=http://127.0.0.1:<port>/releases` and a fake `CODEX_HOME`.

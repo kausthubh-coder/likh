@@ -7,7 +7,7 @@ This folder is the maintained list of what a user can do with likh and how to pr
 - `cargo build -p likh` succeeded on this checkout.
 - A fake `CODEX_HOME` from `bun scripts/fake-codex-home.mjs <state>`. Never the real `~/.codex`.
 - The app was launched by this run, and its PID was captured by path.
-- If the person's own likh is running, yours has its own `LIKH_HOME` (see `../SKILL.md`, Launch).
+- Yours runs with this checkout's `LIKH_HOME` from `bun run setup`, whether or not the person's own likh is running (see `../SKILL.md`, Launch).
 
 ## Driving conventions
 

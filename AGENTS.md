@@ -48,9 +48,10 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 
 ## Commands
 
-- Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, picks a free site port)
+- Every task in a new worktree starts with the `worktree-likh` skill. Ship only with `ship-likh`, when I say so.
+- Install / fresh worktree: `bun run setup` (site deps, a debug build, this checkout's own `LIKH_HOME` and site port). Safe to rerun
 - Doctor: `bun run doctor`. Run it first when anything looks off.
-- Run the app: `bun run dev` (onboarding opens the first time). Agents: `likh run --skip-onboarding`, then `likh ctl status|start|stop|cancel|quit`. If my own likh is running, give yours `LIKH_HOME=<a folder under .agents/qa>`: its own settings, history and `likh ctl` pipe
+- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|cancel|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
 - One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
 - Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`

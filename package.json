@@ -5,6 +5,7 @@
     "setup": "bun scripts/setup.mjs",
     "doctor": "bun scripts/doctor.mjs",
     "dev": "bun scripts/cargo.mjs run -p likh",
+    "likh": "bun scripts/cargo.mjs run -q -p likh --",
     "dev:site": "bun run --cwd site dev",
     "build": "bun scripts/cargo.mjs build -p likh --release",
     "build:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
