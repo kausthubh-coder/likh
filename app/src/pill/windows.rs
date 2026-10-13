@@ -29,12 +29,30 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GWL_EXSTYLE, GetCursorPos, GetMessageW, GetWindowLongPtrW,
     HTCLIENT, HTTRANSPARENT, IDC_HAND, KillTimer, LoadCursorW, MA_NOACTIVATE, MSG, PostThreadMessageW,
-    RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, TranslateMessage, ULW_ALPHA, UpdateLayeredWindow, WM_APP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    RegisterClassExW, SPI_GETCLIENTAREAANIMATION, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetCursor, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    SystemParametersInfoW, TranslateMessage, ULW_ALPHA, UpdateLayeredWindow, WM_APP, WM_LBUTTONDOWN, WM_LBUTTONUP,
     WM_MOUSEACTIVATE, WM_NCHITTEST, WM_SETCURSOR, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::w;
+
+/// Windows' own "Show animations in Windows" (Settings > Accessibility > Visual
+/// effects). On when it can't be read, as it is out of the box.
+pub fn animations_on() -> bool {
+    let mut on = windows::core::BOOL::from(true);
+    // SAFETY: SPI_GETCLIENTAREAANIMATION writes one BOOL through the pointer,
+    // which points at `on`, a BOOL we own for the whole call.
+    let read = unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            Some(std::ptr::from_mut(&mut on).cast()),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    read.is_err() || on.as_bool()
+}
 
 const FRAME_TIMER: usize = 1;
 const FRAME_MS: u32 = 16;
@@ -143,6 +161,8 @@ impl Overlay {
                             Command::Show(show) => {
                                 if look.is_hidden() && show != super::Show::Hidden {
                                     self.place();
+                                    // Read once per appearance, so changing it in Windows needs no restart.
+                                    look.hold_still(!animations_on());
                                 }
                                 look.set(show);
                             }

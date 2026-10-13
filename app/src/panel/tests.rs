@@ -32,20 +32,69 @@ fn shows(panel: &Panel, words: &str) -> bool {
 }
 
 #[test]
-fn general_shows_the_shortcut_and_every_mode() {
+fn dictation_shows_the_shortcut_and_every_mode() {
     let _ui = test_ui::lock();
     let f = panel();
-    assert!(shows(&f.panel, "Ctrl") && shows(&f.panel, "Space"));
+    // The caps themselves are drawn on a canvas; the line under them and Change are widgets.
+    assert!(shows(&f.panel, "Hold to talk, in any app.") && shows(&f.panel, "Change"));
+    assert!(!f.panel.keys.moving(), "at rest the shortcut asks for no frames");
     for mode in Mode::ALL {
         assert!(shows(&f.panel, mode.name()), "{mode:?}");
     }
+    assert!(shows(&f.panel, Mode::HoldOrTap.explain()), "the picked mode says what it does");
+}
+
+#[test]
+fn changing_the_shortcut_flies_the_keys_in_then_stops_drawing() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Change");
+    assert!(shows(&f.panel, "Press your new shortcut.") && shows(&f.panel, "Cancel"));
+
+    // Ctrl and Alt go down: their caps lift off the keyboard, and frames run only while they fly.
+    let held = keyboard::Modifiers::CTRL | keyboard::Modifiers::ALT;
+    let _ = f.panel.update(Message::Key(keyboard::Event::ModifiersChanged(held)));
+    assert!(f.panel.keys.moving());
+    f.panel.keys.step(1.0);
+    assert!(!f.panel.keys.moving(), "landed caps stop asking for frames");
+
+    // A bare letter is refused, with the reason, and capturing goes on.
+    let bare = keyboard::Event::KeyPressed {
+        key: keyboard::Key::Unidentified,
+        modified_key: keyboard::Key::Unidentified,
+        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyD),
+        location: keyboard::Location::Standard,
+        modifiers: keyboard::Modifiers::empty(),
+        text: None,
+        repeat: false,
+    };
+    let _ = f.panel.update(Message::Key(bare));
+    assert!(shows(&f.panel, "Add Ctrl, Alt or Win, so typing never sets it off."));
+    assert!(shows(&f.panel, "Press your new shortcut."));
+
+    // Cancel puts the old shortcut back.
+    press(&mut f.panel, "Cancel");
+    assert!(shows(&f.panel, "Hold to talk, in any app."));
+    assert_eq!(f.settings.read().expect("settings").shortcut, Binding::default());
+}
+
+#[test]
+fn a_saved_shortcut_pulses_once_and_then_stays_still() {
+    let mut keys = Keys::at_rest(&Binding::default().parts());
+    keys.listen();
+    keys.chosen(&["Ctrl", "Alt", "D"]);
+    assert!(keys.moving());
+    keys.step(0.5);
+    assert!(keys.moving(), "the pulse runs after the last key lands");
+    keys.step(1.0);
+    assert!(!keys.moving());
 }
 
 #[test]
 fn picking_a_mode_saves_it() {
     let _ui = test_ui::lock();
     let mut f = panel();
-    press(&mut f.panel, "Tap to toggle");
+    press(&mut f.panel, "Toggle");
     assert_eq!(f.settings.read().expect("settings").mode, Mode::Tap);
     assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).mode, Mode::Tap);
 }
@@ -95,13 +144,13 @@ fn an_empty_history_says_why_and_what_to_do() {
     let mut f = panel();
     press(&mut f.panel, "History");
     assert!(shows(&f.panel, "Hold Ctrl + Space and talk. What you say shows up here, and only here."));
-    let _ = f.panel.update(Message::Tab(Tab::General));
+    let _ = f.panel.update(Message::Tab(Tab::Dictation));
     let _ = f.panel.update(Message::KeepHistory(false));
     press(&mut f.panel, "History");
-    assert!(shows(
-        &f.panel,
-        "History is off. Turn on \u{201c}Keep history\u{201d} in General to keep your dictations."
-    ));
+    // History off: it says so, and its switch sits right above.
+    assert!(shows(&f.panel, "History is off, so nothing you dictate is kept."));
+    press(&mut f.panel, "Keep history");
+    assert!(Settings::load_from(&f.dir.path().join("settings.json")).history);
 }
 
 /// Regenerates the likh window's screenshots on the brand board from the real views.
@@ -129,51 +178,72 @@ fn brand_board_panel() {
         expires_at: None,
     });
     let shots = [
-        ("general", Tab::General, Engine::Codex),
+        ("dictation", Tab::Dictation, Engine::Codex),
         ("transcription", Tab::Transcription, Engine::Codex),
         ("transcription-groq", Tab::Transcription, Engine::Groq),
         ("commands", Tab::Commands, Engine::Codex),
         ("history", Tab::History, Engine::Codex),
-        ("about", Tab::About, Engine::Codex),
+        ("app", Tab::App, Engine::Codex),
     ];
     for (name, tab, engine) in shots {
         f.settings.write().expect("settings").engine = engine;
         let _ = f.panel.update(Message::Tab(tab));
         // Never this machine's own key on a public board.
         f.panel.groq = GroqSetup::default();
-        if matches!(tab, Tab::About | Tab::Transcription) {
+        // Opening Transcription reads this machine's Codex sign-in; the board shows the made-up one.
+        if tab == Tab::Transcription {
             f.panel.codex = CodexStatus::Connected(crate::codex_auth::Account {
                 email_hint: Some("t\u{2022}\u{2022}\u{2022}@example.com".into()),
                 plan: Some("plus".into()),
                 expires_at: None,
             });
         }
-        let settings = iced_test::core::Settings {
-            fonts: crate::shared::theme::FONT_FILES.iter().map(|f| std::borrow::Cow::Borrowed(*f)).collect(),
-            default_font: crate::shared::theme::UI,
-            ..Default::default()
-        };
-        let mut ui = iced_test::Simulator::with_size(settings, WINDOW, f.panel.view());
-        let path = out.join(name);
-        // iced writes `<name>-tiny-skia.png`, and only when it's missing.
-        let _ = std::fs::remove_file(out.join(format!("{name}-tiny-skia.png")));
-        if let Ok(snapshot) = ui.snapshot(&iced::Theme::Dark) {
-            let _ = snapshot.matches_image(&path);
-        }
+        snap(&out, name, &f.panel);
+    }
+    // Picking a shortcut, mid-flight and once it's saved, for the board.
+    let _ = f.panel.update(Message::Tab(Tab::Dictation));
+    let _ = f.panel.update(Message::ChangeShortcut);
+    let _ = f.panel.update(Message::Key(keyboard::Event::ModifiersChanged(keyboard::Modifiers::CTRL)));
+    f.panel.keys.step(1.0);
+    snap(&out, "dictation-picking", &f.panel);
+    f.panel.stop_capturing();
+    f.panel.capturing = None;
+    f.panel.keys.chosen(&["Ctrl", "Alt", "D"]);
+    f.panel.keys.step(2.0);
+    f.panel.saved = true;
+    f.settings.write().expect("settings").shortcut =
+        Binding::new(true, true, false, false, crate::hotkey::KeyName("D")).expect("a valid shortcut");
+    snap(&out, "dictation-saved", &f.panel);
+}
+
+/// Renders the window as it looks now to `<out>/<name>-tiny-skia.png`.
+fn snap(out: &std::path::Path, name: &str, panel: &Panel) {
+    let settings = iced_test::core::Settings {
+        fonts: crate::shared::theme::FONT_FILES.iter().map(|f| std::borrow::Cow::Borrowed(*f)).collect(),
+        default_font: crate::shared::theme::UI,
+        ..Default::default()
+    };
+    let mut ui = iced_test::Simulator::with_size(settings, WINDOW, panel.view());
+    // iced writes `<name>-tiny-skia.png`, and only when it's missing.
+    let _ = std::fs::remove_file(out.join(format!("{name}-tiny-skia.png")));
+    if let Ok(snapshot) = ui.snapshot(&iced::Theme::Dark) {
+        let _ = snapshot.matches_image(out.join(name));
     }
 }
 
 #[test]
-fn picking_an_engine_card_saves_it_and_shows_what_it_needs() {
+fn picking_an_engine_saves_it_and_both_keep_their_setup() {
     let _ui = test_ui::lock();
     let mut f = panel();
     f.panel.groq = GroqSetup::default();
     press(&mut f.panel, "Transcription");
+    // Before and after the pick, each engine shows what it needs, so nothing moves.
+    let before = (shows(&f.panel, "Paste your key, gsk_\u{2026}"), shows(&f.panel, "Check again"));
     press(&mut f.panel, "Groq");
     assert_eq!(f.settings.read().expect("settings").engine, Engine::Groq);
     assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).engine, Engine::Groq);
-    assert!(shows(&f.panel, "Add a free Groq key"));
-    assert!(shows(&f.panel, "Needs a key"));
+    assert_eq!(before, (true, true));
+    assert!(shows(&f.panel, "Paste your key, gsk_\u{2026}") && shows(&f.panel, "Check again"));
     assert!(shows(&f.panel, "Save key"));
 }
 
@@ -236,14 +306,14 @@ fn spoken_commands_off_hides_every_group() {
 }
 
 #[test]
-fn about_offers_a_restart_once_an_update_is_downloaded() {
+fn app_offers_a_restart_once_an_update_is_downloaded() {
     let _ui = test_ui::lock();
     let mut f = panel();
     f.panel.updates = Updates::with_state(update::State::Ready {
         version: "0.1.0-alpha.6".into(),
         installer: "C:/Users/someone/AppData/Local/likh/updates/likh-setup-0.1.0-alpha.6.exe".into(),
     });
-    press(&mut f.panel, "About");
+    press(&mut f.panel, "App");
     assert!(shows(&f.panel, "likh 0.1.0-alpha.6 is downloaded and checked."));
     let mut ui = simulator(f.panel.view());
     ui.click("Restart to update").expect("a restart button");
@@ -254,32 +324,45 @@ fn about_offers_a_restart_once_an_update_is_downloaded() {
 }
 
 #[test]
-fn every_tab_has_the_update_button_in_the_sidebar() {
+fn every_tab_has_the_update_button_next_to_the_version() {
     let _ui = test_ui::lock();
     let mut f = panel();
-    // Nothing checked yet: General already offers a check.
+    // Nothing checked yet: the button checks.
+    assert!(shows(&f.panel, &format!("v{}", env!("CARGO_PKG_VERSION"))));
     let mut ui = simulator(f.panel.view());
-    ui.click("Check for updates").expect("a check button on General");
+    ui.click(iced::widget::Id::new(UPDATE)).expect("the update button on Dictation");
     assert!(ui.into_messages().any(|message| matches!(message, Message::CheckForUpdates)));
 
+    // An update is ready: the version says so and the same button restarts into it, on any tab.
     f.panel.updates = Updates::with_state(update::State::Ready {
-        version: "0.1.0-alpha.6".into(),
-        installer: "C:/Users/someone/AppData/Local/likh/updates/likh-setup-0.1.0-alpha.6.exe".into(),
+        version: "0.1.0-alpha.7".into(),
+        installer: "C:/Users/someone/AppData/Local/likh/updates/likh-setup-0.1.0-alpha.7.exe".into(),
     });
     press(&mut f.panel, "Commands");
-    assert!(shows(&f.panel, &format!("v{} \u{2192} v0.1.0-alpha.6", env!("CARGO_PKG_VERSION"))));
+    assert!(shows(&f.panel, "v0.1.0-alpha.7 ready"));
     let mut ui = simulator(f.panel.view());
-    ui.click("Restart to update").expect("a restart button on Commands");
+    ui.click(iced::widget::Id::new(UPDATE)).expect("the update button on Commands");
     assert!(ui.into_messages().any(|message| matches!(message, Message::Restart)));
 }
 
 #[test]
-fn about_says_when_likh_is_newest_and_can_check_again() {
+fn the_update_button_spins_only_while_checking() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    assert!(!f.panel.wants_frames());
+    f.panel.updates = Updates::with_state(update::State::Checking);
+    assert!(f.panel.wants_frames());
+    f.panel.updates = Updates::with_state(update::State::Idle);
+    assert!(!f.panel.wants_frames(), "a still window draws nothing");
+}
+
+#[test]
+fn app_says_when_likh_is_newest_and_the_sidebar_checks_again() {
     let _ui = test_ui::lock();
     let mut f = panel();
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     f.panel.updates = Updates::with_state(update::State::UpToDate { checked_at: now - 3 * 3600 });
-    press(&mut f.panel, "About");
+    press(&mut f.panel, "App");
     assert!(shows(
         &f.panel,
         &format!(
@@ -288,14 +371,27 @@ fn about_says_when_likh_is_newest_and_can_check_again() {
             history::ago(now - 3 * 3600, now)
         )
     ));
-    assert!(shows(&f.panel, "Check now"));
+    // One check button, the sidebar's, on App as on every tab.
+    assert!(!shows(&f.panel, "Check now"));
+    let mut ui = simulator(f.panel.view());
+    ui.click(iced::widget::Id::new(UPDATE)).expect("the sidebar's update button on App");
+    assert!(ui.into_messages().any(|message| matches!(message, Message::CheckForUpdates)));
+}
+
+#[test]
+fn a_switch_flips_from_anywhere_on_its_row() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    // Its name, not the switch itself.
+    press(&mut f.panel, "Sounds");
+    assert!(!Settings::load_from(&f.dir.path().join("settings.json")).sounds);
 }
 
 #[test]
 fn automatic_update_checks_can_be_switched_off() {
     let _ui = test_ui::lock();
     let mut f = panel();
-    press(&mut f.panel, "About");
+    press(&mut f.panel, "App");
     let _ = f.panel.update(Message::AutoUpdate(false));
     assert!(!Settings::load_from(&f.dir.path().join("settings.json")).auto_update);
 }

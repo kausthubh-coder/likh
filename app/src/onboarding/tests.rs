@@ -224,6 +224,17 @@ fn mic_bars_rise_fast_and_fall_slowly() {
 }
 
 #[test]
+fn with_animations_off_the_intro_is_already_home_and_steps_only_fade() {
+    let mut app = Onboarding::new(connected()).hold_still(true);
+    // The flock has landed and the text is there: nothing to play.
+    play(&mut app, 0.5);
+    assert!(!app.wants_frames(), "a still welcome screen asks for no frames");
+    press(&mut app, "Get started");
+    // The step fades in, and the wide progress dot is already on the new step.
+    assert!((app.progress.value - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
 fn the_window_stops_drawing_once_the_intro_lands() {
     let mut app = Onboarding::new(connected());
     assert!(app.wants_frames(), "the intro should be playing");
