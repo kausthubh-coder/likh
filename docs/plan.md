@@ -49,6 +49,17 @@ The running app, idle (no window open, pill hidden, shortcut armed), release bui
 | 0.1.0-alpha.5, side by side with alpha.6 (same `LIKH_HOME`, settled 10 s), 2026-10-12 | 2.4 MB | 13.8 MB | **0 ms** | 8 |
 | 0.1.0-alpha.6 (no Windows speech, quiet countdown, update line), 2026-10-12 | 2.4 MB | 13.8 MB | **0 ms** | 8 |
 
+A whole dictation, `scripts/benchmark.ps1` (its own likh, real microphone, hands-free for 30 s, fake transcriber), release build, 2026-10-13. Idle is measured over 20 s before and after:
+
+| Build | Idle | Recording | Idle after |
+|---|---|---|---|
+| alpha.6 silence stop (a -37 dBFS line), two runs | 0 ms, 2.4 MB | 6.1 to 6.7 % of one core, 12.0 MB peak | 0 ms, 3.3 to 3.6 MB |
+| the voice detector (earshot) | 0 ms, 2.4 MB | 8.6 % of one core, 12.3 MB peak | 0 ms, 3.3 MB |
+
+The differences while recording are run-to-run noise: the mic and the pill's bars cost far more than the detector, which takes 49 ms of CPU per minute of audio (`scripts/silence-eval.ps1`). After the first dictation, private memory settles about 1 MB higher than before it and stays there.
+
+- **Silence stop hears a voice, not loudness** (2026-10-13). The alpha.6 line (about -37 dBFS) never noticed one word on a quiet mic, so hands-free never stopped, and a loud fan kept it going. A line that learned the room's noise heard typing as talking. earshot (pure Rust, +74 KB, 8 KB while recording) passed all 11 scenes in `silence/eval.rs`. Another person talking nearby still keeps hands-free going: that is a voice too.
+
 A picked mouse button installs a low-level mouse hook: no cost while the mouse is still, one wake per mouse event while it moves.
 
 The exe shrank from 11.4 MB to 5.1 MB when wgpu was compiled out (7.6 MB with everything in phase 2).

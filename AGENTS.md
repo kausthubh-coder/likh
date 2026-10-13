@@ -28,6 +28,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/panel/` | the likh window from the tray: General, Transcription, Commands, History, About |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings; `LIKH_AUDIO=file.wav` replays a file instead |
+| `app/src/silence/` | silence stop: is someone talking? A small voice detector (earshot) hears a voice, not loudness; `eval.rs` scores it in quiet and noisy rooms |
 | `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), each engine's glyph (`glyph.rs`); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back; `LIKH_PASTE=<file>` logs pastes and key presses there instead |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
@@ -53,6 +54,8 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
 - Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
+- What a build costs idle, recording and after: `scripts/benchmark.ps1 [-Label <text>]` on a release build. It runs its own likh and keeps every run in `.agents/qa/bench/results.jsonl`
+- Silence stop scored on recordings (quiet mic, fans, music, typing): `scripts/silence-eval.ps1`, report in `.agents/qa/silence/report.md`. Run it when you touch `silence/` or the recorder
 - Site: `bun run dev:site` (port from `site/.env.local`)
 - Test one module: `cargo test -p likh codex_auth`
 - Lint the Rust you changed: `cargo clippy -p likh --all-targets -- -D warnings`
