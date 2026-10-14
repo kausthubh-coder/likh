@@ -483,8 +483,10 @@ fn run(
                         continue;
                     }
                     let (words, fix_names) = (chosen.dictionary.clone(), chosen.fix_names);
+                    // Only a code likh knows reaches the engines; anything else is auto-detect.
+                    let language = chosen.language.as_deref().and_then(crate::transcriber::language::find);
                     std::thread::spawn(move || {
-                        let heard = transcriber.transcribe(&samples, &words);
+                        let heard = transcriber.transcribe(&samples, &words, language.map(|l| l.code));
                         let heard =
                             heard.map(|text| if fix_names { crate::dictionary::fix(&text, &words) } else { text });
                         let _ = tx.send(Input::Transcribed(heard));

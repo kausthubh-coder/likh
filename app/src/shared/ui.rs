@@ -153,12 +153,14 @@ pub fn dropdown<'a, M: Clone + 'a, T: Clone + PartialEq + std::fmt::Display + 'a
     options: Vec<T>,
     picked: Option<T>,
     on_pick: impl Fn(T) -> M + 'a,
-    on_open: M,
+    on_open: Option<M>,
 ) -> Element<'a, M> {
     let p = palette();
-    iced::widget::pick_list(options, picked, on_pick)
-        .on_open(on_open)
-        .text_size(size::SMALL)
+    let mut list = iced::widget::pick_list(options, picked, on_pick);
+    if let Some(message) = on_open {
+        list = list.on_open(message);
+    }
+    list.text_size(size::SMALL)
         .font(theme::UI_MEDIUM)
         .padding([space::S2, space::S3])
         .width(240)

@@ -19,7 +19,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
 | `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it |
 | `app/src/hotkey/` | the shortcut (Ctrl+Space by default), paste last (Alt+Shift+Z by default; it waits for its keys to come up before pasting), an optional mouse button (a low-level hook, installed only while one is picked) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
-| `app/src/settings/` | what the user chose (shortcut, mouse button, mode, silence stop, engine, sounds, pause media, commands, dictionary, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
+| `app/src/settings/` | what the user chose (shortcut, paste last, mouse button, mode, silence stop, microphone, engine, language, sounds, pause media, commands, dictionary, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
 | `app/src/history/` | past dictations, one JSON line each, on this computer only. The newest is what paste last pastes after a restart |
 | `app/src/commands/` | spoken commands in four groups: lines ("new line", "new bullet"), keys ("press enter", "press tab"), scratch ("scratch that"), punctuation by name (off by default) |
 | `app/src/dictionary/` | the user's own words (project names, people): Groq hears them as its prompt; after any engine, a quick ChatGPT pass through Codex's sign-in puts misheard ones right (`gpt-6-luna` on `/backend-api/codex/responses`, gives up after 4 s and pastes what it heard) |
@@ -30,7 +30,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings from the picked mic (saved by Windows' id; Windows' default when none is picked or it's unplugged), the list of inputs, and whether Windows' privacy settings block the mic; `LIKH_AUDIO=file.wav` replays a file instead. `cargo test -p likh mic_pick_live -- --ignored` opens this machine's real inputs |
 | `app/src/silence/` | silence stop: is someone talking? A small voice detector (earshot) hears a voice, not loudness; `eval.rs` scores it in quiet and noisy rooms |
-| `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), each engine's glyph (`glyph.rs`); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
+| `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), each engine's glyph (`glyph.rs`), the languages a user can pin (`language.rs`; auto-detect by default); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back; `LIKH_PASTE=<file>` logs pastes and key presses there instead |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
 | `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |

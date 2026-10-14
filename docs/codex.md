@@ -11,7 +11,7 @@ likh does what the Codex desktop app does when you dictate into it. It reads the
   - `ChatGPT-Account-Id: <account_id>`
   - `originator: Codex Desktop`
   - `User-Agent: Codex Desktop/<version> (<os>)`
-- **Body:** multipart with one `file` part (`audio/wav`, 16 kHz mono PCM16), plus an optional `language` part. There is no `model` field; the server picks the model.
+- **Body:** multipart with one `file` part (`audio/wav`, 16 kHz mono PCM16), plus an optional `language` part. There is no `model` field; the server picks the model. likh sends `language` as an ISO-639-1 code (`hi`, `es`) when the user pins one in Transcription; whether the server honours that format hasn't been checked against the live endpoint.
 - **Response:** `{ "text": "..." }`
 - **Speed:** about 0.9 s for 7 s of speech in the prototype.
 

@@ -106,7 +106,6 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - context from the text around the cursor
   - IDE file tagging
   - words-per-minute and streak stats
-  - language picker
   - whisper mode
 - **Skipped:**
   - accounts
