@@ -176,13 +176,121 @@ fn a_mic_that_wont_open_shows_the_reason() {
     let mut d = Dictation::default();
     d.handle(Input::Hold, t0, HOLD_OR_TAP);
     assert_eq!(
-        d.handle(Input::MicFailed("No microphone is connected.".into()), after(t0, 50), HOLD_OR_TAP),
+        d.handle(
+            Input::MicFailed { reason: "No microphone is connected.".into(), blocked: false },
+            after(t0, 50),
+            HOLD_OR_TAP
+        ),
         vec![
             Effect::Discard,
             Effect::Pill(Show::Error("likh can't hear a microphone. No microphone is connected.".into())),
             Effect::Sound(Cue::Error)
         ]
     );
+}
+
+#[test]
+fn a_mic_windows_blocks_offers_its_privacy_page() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    assert_eq!(
+        d.handle(Input::MicFailed { reason: "Access is denied.".into(), blocked: true }, after(t0, 50), HOLD_OR_TAP),
+        vec![
+            Effect::Discard,
+            Effect::Pill(Show::Problem { text: "Windows is blocking likh from the mic.".into(), fix: Fix::MicAccess }),
+            Effect::Sound(Cue::Error)
+        ]
+    );
+}
+
+fn sound(heard: bool) -> Input {
+    Input::Sound { heard, device: "Microphone Array".into() }
+}
+
+#[test]
+fn a_mic_silent_for_two_seconds_says_so_while_you_hold_and_sound_brings_the_bars_back() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    // People take a moment to start talking: nothing yet.
+    assert_eq!(d.handle(sound(false), after(t0, 1_750), HOLD_OR_TAP), vec![]);
+    assert_eq!(
+        d.handle(sound(false), after(t0, 2_000), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::MicSilent { device: "Microphone Array".into() })]
+    );
+    // Said once, not on every tick.
+    assert_eq!(d.handle(sound(false), after(t0, 2_250), HOLD_OR_TAP), vec![]);
+    // Unmuted mid-dictation: the bars return and the recording carries on.
+    assert_eq!(d.handle(sound(true), after(t0, 3_000), HOLD_OR_TAP), vec![Effect::Pill(Show::Listening)]);
+    assert_eq!(d.handle(sound(true), after(t0, 3_250), HOLD_OR_TAP), vec![]);
+    assert_eq!(d.phase(), Phase::Recording);
+}
+
+#[test]
+fn hands_free_gets_its_stop_button_back_when_sound_returns() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, TAP_ONLY);
+    d.handle(sound(false), after(t0, 2_500), TAP_ONLY);
+    assert_eq!(d.handle(sound(true), after(t0, 2_750), TAP_ONLY), vec![Effect::Pill(Show::HandsFree)]);
+}
+
+#[test]
+fn a_mic_that_sounds_from_the_start_is_never_called_silent() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    for ms in [250, 2_000, 5_000] {
+        assert_eq!(d.handle(sound(true), after(t0, ms), HOLD_OR_TAP), vec![]);
+    }
+}
+
+#[test]
+fn no_voice_heard_is_a_grey_note_without_the_error_sound() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    d.handle(Input::Release(after(t0, 2_000)), after(t0, 2_000), HOLD_OR_TAP);
+    assert_eq!(
+        d.handle(Input::Transcribed(Err(Failure::NoVoice)), after(t0, 2_010), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::Note("No voice heard".into()))]
+    );
+    assert_eq!(d.phase(), Phase::Idle);
+}
+
+#[test]
+fn a_silent_mic_is_a_problem_with_its_fix_and_the_error_sound() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    d.handle(Input::Release(after(t0, 2_000)), after(t0, 2_000), HOLD_OR_TAP);
+    let silent = Failure::MicSilent { device: "Microphone Array".into(), blocked: false };
+    assert_eq!(
+        d.handle(Input::Transcribed(Err(silent)), after(t0, 2_010), HOLD_OR_TAP),
+        vec![
+            Effect::Sound(Cue::Error),
+            Effect::Pill(Show::Problem {
+                text: "No sound from Microphone Array. Is it muted?".into(),
+                fix: Fix::PickMic
+            })
+        ]
+    );
+}
+
+#[test]
+fn only_a_recording_with_a_voice_in_it_is_sent() {
+    let ears = |sounded, spoke| Ears { sounded, spoke, device: "Headset".into() };
+    // Speech goes to the transcriber.
+    assert_eq!(ears(true, true).heard_nothing(2.0), None);
+    // A room, a fan or music with nobody talking.
+    assert_eq!(ears(true, false).heard_nothing(2.0), Some(Failure::NoVoice));
+    // Digital silence: muted, or blocked.
+    assert!(
+        matches!(ears(false, false).heard_nothing(2.0), Some(Failure::MicSilent { device, .. }) if device == "Headset")
+    );
+    // Too short to judge: the transcriber drops it quietly, as before.
+    assert_eq!(ears(false, false).heard_nothing(0.2), None);
 }
 
 #[test]

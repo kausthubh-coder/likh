@@ -106,7 +106,10 @@ The pill hugs what it shows. Seven bars (4px wide, 3px apart, 46px in all) sit 1
 | `thinking` | 76 x 36 | travelling wave, bars turn `text-muted` |
 | `done` | back to resting | 250ms; the pasted text is the feedback, no checkmark toast |
 | `time running out` | 100 x 36 | from 9:00: bars + an amber ring that empties over the last minute, seconds left inside it (`55`) |
-| `error` | 360 x 52 | icon, one sentence, one pill-shaped action (36 tall, inset 8). Stays 6s or until hovered |
+| `error` | 200 to 360 x 52 | red icon, one sentence (two lines at most). Stays 6 s, longer while the pointer is on it |
+| `problem` | 200 to 360 x 52 | an error with its fix: one pill-shaped button on the right (36 tall, inset 8) that opens it and dismisses the pill. "No sound from Microphone Array. Is it muted?" · Pick mic |
+| `note` | hugs its words x 36 (52 for two lines) | nothing broke, nothing happened: three grey bars lying flat, one sentence, no sound. "No voice heard". Stays 3 s |
+| `mic silent` | hugs its words x 36 | while recording, after 2 s of digital silence: the note's look, "Microphone Array is silent. Is it muted?". Stays until sound arrives (the bars come back) or the dictation ends |
 | `cancelled` | back to resting | bars fall flat, `exit` timing |
 
 ## Sound
@@ -132,7 +135,7 @@ Codex sign-in copy (used by onboarding and errors):
 | connected | Connected through Codex as k•••@gmail.com | Continue |
 | expired | Your Codex sign-in expired. Open Codex once to refresh it, then try again. | Open Codex |
 | rejected | ChatGPT turned down the sign-in. Sign in to Codex again. | Open Codex |
-| offline | Can't reach ChatGPT. Your recording is saved, retry it from History. | Retry |
+| offline | Can't reach ChatGPT. Check your connection and try again. | none |
 
 The other engines' copy (onboarding and settings, `onboarding::engine_copy`):
 
@@ -144,7 +147,7 @@ The other engines' copy (onboarding and settings, `onboarding::engine_copy`):
 
 ## Settings window
 
-Calm and compact (Feel, above). Five tabs, each with one job: Dictation, Transcription, Commands, History, App. Each has a drawn 16px icon in the sidebar, peach when it's the open tab. At the sidebar's foot: the version, and next to it one update button (check, spinning while checking, peach once an update is ready to restart into).
+Calm and compact (Feel, above). Six tabs, each with one job: Dictation, Transcription, Commands, Dictionary, History, App. Each has a drawn 16px icon in the sidebar, peach when it's the open tab. At the sidebar's foot: the version, and next to it one update button (check, spinning while checking, peach once an update is ready to restart into).
 
 - **Panels**: settings sit in rounded `surface` panels (radius 12, a 1px `edge`), one setting per row with a hairline between rows: the name on the left, the control on the right, a line under the name only when the name can't say it alone. A row that does something lights with the `hover` veil, rounded only where it meets the panel's corners. Every tab fits in the window without scrolling, except a long History; there is no scrollbar, and the edges fade.
 - **The shortcut** (Dictation): its key caps beside a small keyboard (15 units wide, keys on `elevated`) with the shortcut's keys lit peach. `Change` empties the caps into a dashed slot; each key you press lights on the keyboard and flies off it into the next slot (`spring.playful`), and the saved shortcut pulses once, left to right (1.08, 360ms, 45ms apart). It moves only then.

@@ -81,8 +81,52 @@ pub enum Show {
         seconds_left: u64,
     },
     Error(String),
+    /// A failure with one fix: the error look plus a button that opens it.
+    Problem {
+        text: String,
+        fix: Fix,
+    },
+    /// Nothing broke, nothing happened ("No voice heard"): grey flat bars, a short stay, no sound.
+    Note(String),
+    /// Still recording, but the mic has sent only digital silence. It stays
+    /// until the dictation ends or sound arrives.
+    MicSilent {
+        device: String,
+    },
     Done,
     Cancelled,
+}
+
+/// What a problem's button opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fix {
+    /// Windows' sound settings, where the input is picked and unmuted.
+    PickMic,
+    /// Windows' microphone privacy page.
+    MicAccess,
+}
+
+impl Fix {
+    pub fn label(self) -> &'static str {
+        match self {
+            Fix::PickMic => "Pick mic",
+            Fix::MicAccess => "Open settings",
+        }
+    }
+
+    pub fn url(self) -> &'static str {
+        match self {
+            Fix::PickMic => "ms-settings:sound",
+            Fix::MicAccess => "ms-settings:privacy-microphone",
+        }
+    }
+}
+
+/// What a click on the pill does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Click {
+    Stop,
+    Fix(Fix),
 }
 
 impl Show {
@@ -94,6 +138,36 @@ impl Show {
     fn hands_free(&self) -> bool {
         matches!(self, Show::HandsFree | Show::QuietStop { .. })
     }
+
+    /// The words of a message state, whether it is a failure (red icon) or
+    /// just news (grey flat bars), and its button if it has one.
+    fn message(&self) -> Option<(String, bool, Option<Fix>)> {
+        match self {
+            Show::Error(text) => Some((text.clone(), true, None)),
+            Show::Problem { text, fix } => Some((text.clone(), true, Some(*fix))),
+            Show::Note(text) => Some((text.clone(), false, None)),
+            Show::MicSilent { device } => Some((format!("{device} is silent. Is it muted?"), false, None)),
+            _ => None,
+        }
+    }
+}
+
+/// A message's text starts here, after its icon.
+const MESSAGE_TEXT_X: f32 = 44.0;
+/// A message's button: as tall as the pill less its 8px inset, its label padded 12 each side.
+const FIX_HEIGHT: f32 = 36.0;
+const FIX_INSET: f32 = 8.0;
+const FIX_GAP: f32 = 12.0;
+/// How long news stays; errors and problems stay `ERROR_SECONDS`.
+const NOTE_SECONDS: f32 = 3.0;
+
+fn fix_width(fix: Fix) -> f32 {
+    text_width(fix.label(), ERROR_TEXT) + 24.0
+}
+
+/// The space right of a message's text: the button and its gaps, or plain padding.
+fn message_right(fix: Option<Fix>) -> f32 {
+    fix.map_or(16.0, |fix| FIX_GAP + fix_width(fix) + FIX_INSET)
 }
 
 enum Command {
@@ -178,6 +252,8 @@ pub struct Look {
     /// Animations are off: the pill takes each shape at once (its fade stays),
     /// and thinking pulses in place instead of travelling.
     still: bool,
+    /// The pointer is over the pill: a message waits while it's being read.
+    hovered: bool,
 }
 
 impl Default for Look {
@@ -193,6 +269,7 @@ impl Default for Look {
             linger: None,
             lines: Vec::new(),
             still: false,
+            hovered: false,
         }
     }
 }
@@ -213,15 +290,21 @@ impl Look {
             self.height = Spring::new(spring::FAST, 8.0);
             self.history = [0.0; 4];
         }
-        let (width, height) = match &show {
-            Show::Listening | Show::Thinking => (76.0, 36.0),
-            Show::Warning { .. } | Show::HandsFree | Show::QuietStop { .. } => (100.0, 36.0),
-            Show::Error(message) => {
-                self.lines = wrap(message, ERROR_MAX_WIDTH - 60.0);
+        let (width, height) = match (&show, show.message()) {
+            (_, Some((text, alarm, fix))) => {
+                let around = MESSAGE_TEXT_X + message_right(fix);
+                self.lines = wrap(&text, ERROR_MAX_WIDTH - around);
                 let widest = self.lines.iter().map(|line| text_width(line, ERROR_TEXT)).fold(0.0, f32::max);
-                ((widest + 60.0).clamp(200.0, ERROR_MAX_WIDTH), 52.0)
+                // Failures keep the error pill's size; news hugs its words.
+                if alarm {
+                    ((widest + around).clamp(200.0, ERROR_MAX_WIDTH), 52.0)
+                } else {
+                    ((widest + around).min(ERROR_MAX_WIDTH), if self.lines.len() > 1 { 52.0 } else { 36.0 })
+                }
             }
-            Show::Done | Show::Cancelled | Show::Hidden => (40.0, 8.0),
+            (Show::Listening | Show::Thinking, _) => (76.0, 36.0),
+            (Show::Warning { .. } | Show::HandsFree | Show::QuietStop { .. }, _) => (100.0, 36.0),
+            _ => (40.0, 8.0),
         };
         self.width.target = width;
         self.height.target = height;
@@ -233,10 +316,52 @@ impl Look {
         }
         self.linger = match show {
             Show::Done | Show::Cancelled => Some(SLIVER_SECONDS),
-            Show::Error(_) => Some(ERROR_SECONDS),
+            Show::Error(_) | Show::Problem { .. } => Some(ERROR_SECONDS),
+            Show::Note(_) => Some(NOTE_SECONDS),
             _ => None,
         };
         self.show = show;
+    }
+
+    /// The pointer moved onto the pill (or off it). A message stays while it's hovered.
+    pub fn hover(&mut self, on: bool) {
+        self.hovered = on;
+    }
+
+    /// The pill's body covers this canvas point.
+    pub fn covers(&self, x: f32, y: f32) -> bool {
+        let (w, h) = (self.width.value, self.height.value);
+        let (left, top) = ((CANVAS.0 - w) / 2.0, CANVAS.1 - LIFT - h);
+        self.alpha > 0.0 && x >= left && x <= left + w && y >= top && y <= top + h
+    }
+
+    /// Where a problem's button is (x, y, width, height, in canvas pixels), once the pill has grown to hold it.
+    pub fn fix_button(&self) -> Option<(f32, f32, f32, f32, Fix)> {
+        let Show::Problem { fix, .. } = &self.show else { return None };
+        let (w, h) = (self.width.value, self.height.value);
+        let bw = fix_width(*fix);
+        let right = (CANVAS.0 + w) / 2.0 - FIX_INSET;
+        let cy = CANVAS.1 - LIFT - h / 2.0;
+        (h >= FIX_HEIGHT + 2.0 * FIX_INSET - 1.0 && w >= self.width.target - 1.0).then_some((
+            right - bw,
+            cy - FIX_HEIGHT / 2.0,
+            bw,
+            FIX_HEIGHT,
+            *fix,
+        ))
+    }
+
+    /// The one place on the pill that takes a click, as a box in canvas pixels.
+    pub fn target(&self) -> Option<((f32, f32, f32, f32), Click)> {
+        if let Some((cx, cy, r)) = self.stop_button() {
+            return Some(((cx - r, cy - r, 2.0 * r, 2.0 * r), Click::Stop));
+        }
+        self.fix_button().map(|(x, y, w, h, fix)| ((x, y, w, h), Click::Fix(fix)))
+    }
+
+    /// A message is up and waiting to be read; the window watches the pointer only then.
+    pub fn reading(&self) -> bool {
+        self.show.message().is_some() && self.linger.is_some()
     }
 
     /// Where the hands-free stop button is (centre x, centre y, radius, in
@@ -265,7 +390,9 @@ impl Look {
         }
         let sized = self.width.step(dt) & self.height.step(dt);
 
-        if let Some(left) = self.linger.as_mut() {
+        if !self.hovered
+            && let Some(left) = self.linger.as_mut()
+        {
             *left -= dt;
             if *left <= 0.0 {
                 self.linger = None;
@@ -350,9 +477,9 @@ impl Look {
         let mut clip = Mask::new(pixmap.width(), pixmap.height())?;
         clip.fill_path(&body, FillRule::Winding, true, at);
         let cy = y + h / 2.0;
-        match &self.show {
-            Show::Error(_) => self.draw_error(&mut pixmap, &clip, x, cy, scale),
-            _ => {
+        match self.show.message() {
+            Some((_, alarm, _)) => self.draw_message(&mut pixmap, &clip, x, cy, alarm, scale),
+            None => {
                 let color = if self.show == Show::Thinking { p.text_muted } else { p.accent };
                 // Still and thinking: a gentle opacity pulse on the same 1.2s loop, nothing travels.
                 let pulse = if self.still && self.show == Show::Thinking {
@@ -419,17 +546,32 @@ impl Look {
         Some(pixmap)
     }
 
-    fn draw_error(&self, pixmap: &mut Pixmap, clip: &Mask, x: f32, cy: f32, scale: f32) {
+    /// A failure gets the red alert icon; news gets three grey bars lying flat,
+    /// the pill's own bars with nothing to show.
+    fn draw_message(&self, pixmap: &mut Pixmap, clip: &Mask, x: f32, cy: f32, alarm: bool, scale: f32) {
         let p = palette();
         let at = Transform::from_scale(scale, scale);
         let icon_x = x + 16.0 + 8.0;
-        fill(pixmap, PathBuilder::from_circle(icon_x, cy, 8.0), to_skia(p.danger, 1.0), at, Some(clip));
-        fill(pixmap, rounded_rect(icon_x - 1.0, cy - 4.5, 2.0, 5.5, 1.0), to_skia(p.surface, 1.0), at, Some(clip));
-        fill(pixmap, PathBuilder::from_circle(icon_x, cy + 3.5, 1.1), to_skia(p.surface, 1.0), at, Some(clip));
+        if alarm {
+            fill(pixmap, PathBuilder::from_circle(icon_x, cy, 8.0), to_skia(p.danger, 1.0), at, Some(clip));
+            fill(pixmap, rounded_rect(icon_x - 1.0, cy - 4.5, 2.0, 5.5, 1.0), to_skia(p.surface, 1.0), at, Some(clip));
+            fill(pixmap, PathBuilder::from_circle(icon_x, cy + 3.5, 1.1), to_skia(p.surface, 1.0), at, Some(clip));
+        } else {
+            for i in -1..=1 {
+                let bar_x = icon_x - BAR_WIDTH / 2.0 + i as f32 * (BAR_WIDTH + BAR_GAP);
+                let bar = capsule(bar_x, cy - BAR_WIDTH / 2.0, BAR_WIDTH, BAR_WIDTH);
+                fill(pixmap, bar, to_skia(p.text_muted, 1.0), at, Some(clip));
+            }
+        }
         let top = cy - self.lines.len() as f32 * ERROR_LINE / 2.0;
         for (i, line) in self.lines.iter().enumerate() {
             let baseline = top + i as f32 * ERROR_LINE + 13.5;
-            draw_text(pixmap, line, ERROR_TEXT, x + 44.0, baseline, to_skia(p.text, 1.0), scale);
+            draw_text(pixmap, line, ERROR_TEXT, x + MESSAGE_TEXT_X, baseline, to_skia(p.text, 1.0), scale);
+        }
+        if let Some((bx, by, bw, bh, fix)) = self.fix_button() {
+            fill(pixmap, capsule(bx, by, bw, bh), to_skia(p.elevated, 1.0), at, Some(clip));
+            let label_x = bx + (bw - text_width(fix.label(), ERROR_TEXT)) / 2.0;
+            draw_text(pixmap, fix.label(), ERROR_TEXT, label_x, by + bh / 2.0 + 4.5, to_skia(p.text, 1.0), scale);
         }
     }
 }

@@ -20,7 +20,10 @@ $lines = [ordered]@{
 foreach ($name in $lines.Keys) {
   $out = "$clips/$name"
   if ($Fresh -or -not (Test-Path $out)) {
-    & powershell -NoProfile -File scripts/tts-wav.ps1 -Text $lines[$name][0] -Out $out -Voice $lines[$name][1]
+    New-Item -ItemType Directory -Force $clips | Out-Null
+    # An empty -Voice through `powershell -File` arrives as a missing argument, so pass it only when set.
+    $voice = if ($lines[$name][1]) { @("-Voice", $lines[$name][1]) } else { @() }
+    & powershell -NoProfile -File scripts/tts-wav.ps1 -Text $lines[$name][0] -Out $out @voice
   }
 }
 cargo test -p likh --release silence_eval -- --ignored --nocapture
