@@ -1,7 +1,7 @@
-//! The likh window, opened from the tray. Five tabs, each with one job: how
+//! The likh window, opened from the tray. Six tabs, each with one job: how
 //! you start and stop a dictation (Dictation), which engine transcribes
-//! (Transcription), the spoken commands (Commands), what you dictated
-//! (History), and startup, updates and links (App).
+//! (Transcription), the spoken commands (Commands), your own words
+//! (Dictionary), what you dictated (History), and startup, updates and links (App).
 //!
 //! Every setting is one row in a panel: its name on the left, its control on
 //! the right. Every tab fits without scrolling except a long History.
@@ -51,6 +51,7 @@ const PREVIEW_CHARS: usize = 240;
 /// A second "Clear" only counts this soon after the first.
 const CLEAR_ARMED: Duration = Duration::from_secs(3);
 const GROQ_KEY: &str = "panel-groq-key";
+const NEW_WORD: &str = "panel-new-word";
 const BODY: &str = "panel-body";
 /// The update button at the foot of the sidebar; tests press it by this.
 const UPDATE: &str = "panel-update";
@@ -73,18 +74,20 @@ pub enum Tab {
     Dictation,
     Transcription,
     Commands,
+    Dictionary,
     History,
     App,
 }
 
 impl Tab {
-    const ALL: [Tab; 5] = [Tab::Dictation, Tab::Transcription, Tab::Commands, Tab::History, Tab::App];
+    const ALL: [Tab; 6] = [Tab::Dictation, Tab::Transcription, Tab::Commands, Tab::Dictionary, Tab::History, Tab::App];
 
     fn name(self) -> &'static str {
         match self {
             Tab::Dictation => "Dictation",
             Tab::Transcription => "Transcription",
             Tab::Commands => "Commands",
+            Tab::Dictionary => "Dictionary",
             Tab::History => "History",
             Tab::App => "App",
         }
@@ -95,6 +98,7 @@ impl Tab {
             Tab::Dictation => Shape::Mic,
             Tab::Transcription => Shape::Wave,
             Tab::Commands => Shape::Code,
+            Tab::Dictionary => Shape::Book,
             Tab::History => Shape::Clock,
             Tab::App => Shape::Gear,
         }
@@ -116,6 +120,11 @@ pub enum Message {
     PauseMedia(bool),
     Commands(bool),
     CommandGroup(Group, bool),
+    /// Typing in the dictionary's field.
+    NewWord(String),
+    AddWord,
+    RemoveWord(usize),
+    FixNames(bool),
     KeepHistory(bool),
     StartWithWindows(bool),
     Engine(Engine),
@@ -157,6 +166,8 @@ pub struct Panel {
     /// A new shortcut was just saved; the line under it says so.
     saved: bool,
     notice: Option<(String, Tone)>,
+    /// What's typed in the dictionary's field, not yet added.
+    new_word: String,
     history: Vec<Entry>,
     /// "Clear" was pressed once; the next press clears.
     confirm_clear: bool,
@@ -217,6 +228,7 @@ impl Panel {
             keys: Keys::at_rest(&shortcut.parts()),
             saved: false,
             notice: None,
+            new_word: String::new(),
             history: Vec::new(),
             confirm_clear: false,
             copied: None,
@@ -269,8 +281,8 @@ impl Panel {
                 self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
                 match tab {
                     Tab::History => self.load_history(),
-                    // Both engines show where they stand, so look at both.
-                    Tab::Transcription => self.codex = onboarding::check_codex_now(),
+                    // Both engines show where they stand, so look at both. Fixing names needs Codex too.
+                    Tab::Transcription | Tab::Dictionary => self.codex = onboarding::check_codex_now(),
                     Tab::Dictation | Tab::Commands | Tab::App => {}
                 }
                 // Each tab starts at its top.
@@ -335,6 +347,28 @@ impl Panel {
             Message::PauseMedia(on) => self.change(|s| s.pause_media = on),
             Message::Commands(on) => self.change(|s| s.commands = on),
             Message::CommandGroup(group, on) => self.change(|s| group.set(&mut s.command_groups, on)),
+            Message::NewWord(word) => {
+                self.new_word = word;
+                self.notice = None;
+            }
+            Message::AddWord => {
+                let mut words = self.chosen().dictionary;
+                match crate::dictionary::add(&mut words, &self.new_word) {
+                    Ok(()) => {
+                        self.change(|s| s.dictionary = words);
+                        self.new_word.clear();
+                    }
+                    Err(why) => self.notice = Some((why, Tone::Danger)),
+                }
+                // Ready for the next word.
+                return operation::focus(NEW_WORD);
+            }
+            Message::RemoveWord(index) => self.change(|s| {
+                if index < s.dictionary.len() {
+                    s.dictionary.remove(index);
+                }
+            }),
+            Message::FixNames(on) => self.change(|s| s.fix_names = on),
             Message::KeepHistory(on) => {
                 self.change(|s| s.history = on);
                 self.load_history();
@@ -429,6 +463,7 @@ impl Panel {
             Tab::Dictation => self.dictation_tab(&p),
             Tab::Transcription => self.transcription(&p),
             Tab::Commands => self.commands(&p),
+            Tab::Dictionary => self.dictionary(&p),
             Tab::History => self.history_list(&p),
             Tab::App => self.app(&p),
         };
@@ -846,6 +881,51 @@ impl Panel {
         group(p, std::iter::once(master).chain(groups).collect())
     }
 
+    /// The words likh should spell your way, and whether ChatGPT puts them right after transcribing.
+    fn dictionary(&self, p: &Palette) -> Element<'_, Message> {
+        let chosen = self.chosen();
+        let field = text_input("A name likh gets wrong, like a project or a person", &self.new_word)
+            .id(NEW_WORD)
+            .on_input(Message::NewWord)
+            .on_paste(Message::NewWord)
+            .on_submit(Message::AddWord)
+            .size(size::SMALL)
+            .padding([space::S2, space::S3])
+            .style(|_, status| field_style(status));
+        let add = row![field, small_button(p, "Add", Message::AddWord, !self.new_word.trim().is_empty())]
+            .spacing(space::S3)
+            .align_y(Alignment::Center);
+        let words: Element<'_, Message> = if chosen.dictionary.is_empty() {
+            text("Nothing yet. Add the names it mishears: projects, people, places.")
+                .size(size::SMALL)
+                .color(p.text_muted)
+                .into()
+        } else {
+            row(chosen.dictionary.iter().enumerate().map(|(index, word)| word_chip(p, word.clone(), index)))
+                .spacing(space::S2)
+                .wrap()
+                .vertical_spacing(space::S2)
+                .into()
+        };
+        let fix_detail = match self.codex {
+            CodexStatus::Connected(_) => "ChatGPT reads each dictation and puts your words in. Adds about a second.",
+            _ => "Needs Codex signed in. Groq still hears your words as it listens.",
+        };
+        column![
+            group(
+                p,
+                vec![
+                    Line::custom(column![add, words].spacing(space::S3).into()),
+                    Line::plain(named(p, "Fix misheard names", Some(fix_detail)), switch(chosen.fix_names))
+                        .press(Message::FixNames(!chosen.fix_names)),
+                ]
+            ),
+            hint(p, "Click a word to remove it. Your words go out only with a dictation: to Groq as it listens, and to ChatGPT to fix names."),
+        ]
+        .spacing(space::S3)
+        .into()
+    }
+
     fn history_list(&self, p: &Palette) -> Element<'_, Message> {
         let chosen = self.chosen();
         let keep = group(
@@ -1104,6 +1184,29 @@ fn link<'a>(p: &Palette, words: &'a str, message: Message) -> Element<'a, Messag
             ..button::Style::default()
         })
         .into()
+}
+
+/// One dictionary word as a capsule with a ×. Pressing it removes the word.
+fn word_chip<'a>(p: &Palette, word: String, index: usize) -> Element<'a, Message> {
+    let (fill, edge, edge_strong, ink, cross) = (p.surface, p.edge, p.edge_strong, p.text, p.text_subtle);
+    button(
+        row![text(word).size(size::SMALL).font(theme::UI_MEDIUM), text("\u{00d7}").size(size::SMALL).color(cross)]
+            .spacing(space::S2)
+            .align_y(Alignment::Center),
+    )
+    .on_press(Message::RemoveWord(index))
+    .padding([space::S1, space::S3])
+    .style(move |_, status| button::Style {
+        background: Some(Background::Color(fill)),
+        text_color: ink,
+        border: Border {
+            radius: 999.0.into(),
+            width: 1.0,
+            color: if matches!(status, button::Status::Hovered | button::Status::Pressed) { edge_strong } else { edge },
+        },
+        ..button::Style::default()
+    })
+    .into()
 }
 
 /// A button that sits beside a field: peach when it's the screen's main action, neutral otherwise.

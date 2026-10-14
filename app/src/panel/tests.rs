@@ -153,6 +153,28 @@ fn an_empty_history_says_why_and_what_to_do() {
     assert!(Settings::load_from(&f.dir.path().join("settings.json")).history);
 }
 
+#[test]
+fn dictionary_adds_refuses_a_repeat_removes_and_saves() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Dictionary");
+    assert!(shows(&f.panel, "Nothing yet. Add the names it mishears: projects, people, places."));
+    for word in ["Critly", "  Kriyan ", "critly"] {
+        let _ = f.panel.update(Message::NewWord(word.into()));
+        press(&mut f.panel, "Add");
+    }
+    let saved = || Settings::load_from(&f.dir.path().join("settings.json"));
+    assert_eq!(saved().dictionary, vec!["Critly".to_string(), "Kriyan".to_string()]);
+    assert!(shows(&f.panel, "critly is already in your dictionary."));
+    // A word is a chip; clicking it takes it out.
+    assert!(shows(&f.panel, "Kriyan"));
+    press(&mut f.panel, "Critly");
+    assert_eq!(saved().dictionary, vec!["Kriyan".to_string()]);
+    assert!(!shows(&f.panel, "Critly"));
+    press(&mut f.panel, "Fix misheard names");
+    assert!(!saved().fix_names);
+}
+
 /// Regenerates the likh window's screenshots on the brand board from the real views.
 /// Run: cargo test -p likh brand_board_panel -- --ignored
 #[test]
@@ -162,6 +184,8 @@ fn brand_board_panel() {
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/brand/panel");
     let _ = std::fs::create_dir_all(&out);
     let mut f = panel();
+    f.settings.write().expect("settings").dictionary =
+        ["Critly", "Kriyan", "Studi", "Priya", "likh"].map(String::from).to_vec();
     let file = f.dir.path().join("history.jsonl");
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     for (ago, text) in [
@@ -182,6 +206,7 @@ fn brand_board_panel() {
         ("transcription", Tab::Transcription, Engine::Codex),
         ("transcription-groq", Tab::Transcription, Engine::Groq),
         ("commands", Tab::Commands, Engine::Codex),
+        ("dictionary", Tab::Dictionary, Engine::Codex),
         ("history", Tab::History, Engine::Codex),
         ("app", Tab::App, Engine::Codex),
     ];
@@ -190,8 +215,8 @@ fn brand_board_panel() {
         let _ = f.panel.update(Message::Tab(tab));
         // Never this machine's own key on a public board.
         f.panel.groq = GroqSetup::default();
-        // Opening Transcription reads this machine's Codex sign-in; the board shows the made-up one.
-        if tab == Tab::Transcription {
+        // Opening Transcription or Dictionary reads this machine's Codex sign-in; the board shows the made-up one.
+        if matches!(tab, Tab::Transcription | Tab::Dictionary) {
             f.panel.codex = CodexStatus::Connected(crate::codex_auth::Account {
                 email_hint: Some("t\u{2022}\u{2022}\u{2022}@example.com".into()),
                 plan: Some("plus".into()),

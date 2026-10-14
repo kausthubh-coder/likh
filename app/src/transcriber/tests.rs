@@ -46,13 +46,13 @@ fn every_error_maps_to_a_fix_the_user_can_act_on() {
 #[test]
 fn a_tap_is_too_short_and_never_reaches_chatgpt() {
     // Codex would fail without a sign-in; TooShort proves it never got that far.
-    assert_eq!(Transcriber::Codex.transcribe(&speech(0.2)), Err(Failure::TooShort));
+    assert_eq!(Transcriber::Codex.transcribe(&speech(0.2), &[]), Err(Failure::TooShort));
 }
 
 #[test]
 fn the_echo_transcriber_returns_its_text() {
     let echo = Transcriber::Echo("Hello from the fake.".into());
-    assert_eq!(echo.transcribe(&speech(1.0)), Ok("Hello from the fake.".into()));
+    assert_eq!(echo.transcribe(&speech(1.0), &["Critly".into()]), Ok("Hello from the fake.".into()));
 }
 
 #[test]
@@ -61,6 +61,16 @@ fn groq_gets_the_model_as_a_field_after_the_file() {
     let text = String::from_utf8_lossy(&body);
     assert!(text.contains(
         "RIFFdata\r\n--b0und\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-large-v3-turbo\r\n--b0und\r\nContent-Disposition: form-data; name=\"temperature\"\r\n\r\n0\r\n--b0und--\r\n"
+    ));
+}
+
+#[test]
+fn groq_hears_the_dictionary_as_its_prompt() {
+    let prompt = crate::dictionary::whisper_prompt(&["Critly".into(), "Kriyan".into()]);
+    assert_eq!(prompt.as_deref(), Some("Critly, Kriyan."));
+    let body = multipart("b0und", b"RIFFdata", &[("model", "whisper-large-v3-turbo"), ("prompt", "Critly, Kriyan.")]);
+    assert!(String::from_utf8_lossy(&body).contains(
+        "\r\n--b0und\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nCritly, Kriyan.\r\n--b0und--\r\n"
     ));
 }
 
@@ -121,7 +131,7 @@ fn groq_live_transcribes_a_real_recording_and_refuses_a_made_up_key() {
 
     let started = std::time::Instant::now();
     let heard =
-        groq::transcribe(&key, &wav(&samples), samples.len() as f32 / SAMPLE_RATE as f32).expect("a transcript");
+        groq::transcribe(&key, &wav(&samples), samples.len() as f32 / SAMPLE_RATE as f32, None).expect("a transcript");
     eprintln!("Groq heard {heard:?} in {:?}", started.elapsed());
     let words = |text: &str| -> Vec<String> {
         text.split_whitespace()

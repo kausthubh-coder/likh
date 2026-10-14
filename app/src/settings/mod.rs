@@ -1,5 +1,5 @@
 //! What the user chose: the shortcut, how it behaves, which engine
-//! transcribes, the spoken commands, and whether likh keeps a history. One JSON file in likh's local data folder; anything missing or
+//! transcribes, the spoken commands, the dictionary, and whether likh keeps a history. One JSON file in likh's local data folder; anything missing or
 //! unreadable falls back to the defaults, so a bad file never stops likh.
 
 use crate::commands::Groups;
@@ -103,6 +103,10 @@ pub struct Settings {
     pub commands: bool,
     /// Which kinds of spoken command are on, when `commands` is.
     pub command_groups: Groups,
+    /// The user's own words: project names, people, jargon (`dictionary/`).
+    pub dictionary: Vec<String>,
+    /// After transcribing, ChatGPT puts misheard dictionary words right.
+    pub fix_names: bool,
     /// Start likh when you sign in to Windows.
     pub start_with_windows: bool,
     /// Look for a newer likh at launch and after dictations, once a day (`update/`).
@@ -123,6 +127,9 @@ impl Default for Settings {
             sounds: true,
             commands: true,
             command_groups: Groups::default(),
+            dictionary: Vec::new(),
+            // Does nothing until there's a word in the dictionary.
+            fix_names: true,
             start_with_windows: false,
             auto_update: true,
         }

@@ -351,8 +351,12 @@ fn run(
                         .take()
                         .unwrap_or_else(|| Arc::new(Transcriber::new(chosen.engine, fake.as_deref())));
                     let tx = tx.clone();
+                    let (words, fix_names) = (chosen.dictionary.clone(), chosen.fix_names);
                     std::thread::spawn(move || {
-                        let _ = tx.send(Input::Transcribed(transcriber.transcribe(&samples)));
+                        let heard = transcriber.transcribe(&samples, &words);
+                        let heard =
+                            heard.map(|text| if fix_names { crate::dictionary::fix(&text, &words) } else { text });
+                        let _ = tx.send(Input::Transcribed(heard));
                     });
                 }
                 Effect::Discard => {
