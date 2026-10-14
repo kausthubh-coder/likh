@@ -10,7 +10,7 @@
 //! settles the timer stops, so a hidden or still pill costs nothing.
 #![allow(unsafe_code, reason = "Win32 layered overlay window; see the module docs")]
 
-use super::{CANVAS, Command, Look};
+use super::{CANVAS, Click, Command, Look};
 use crate::dictation::Input;
 use std::cell::{Cell, RefCell};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -57,12 +57,17 @@ pub fn animations_on() -> bool {
 const FRAME_TIMER: usize = 1;
 const FRAME_MS: u32 = 16;
 
+/// The pill's button on screen: left, top, right, bottom in pixels, and what a click does.
+type OnScreen = (i32, i32, i32, i32, Click);
+
 thread_local! {
     // The window procedure runs on the pill thread, so what it needs lives there:
-    // where the hands-free stop button is on screen (centre and radius, in
-    // pixels), and where its click goes.
-    static STOP_BUTTON: Cell<Option<(i32, i32, i32)>> = const { Cell::new(None) };
+    // the one button that takes clicks (left, top, right, bottom on screen, in
+    // pixels, and what it does), where a stop goes, and whether a click asked
+    // the pill to step aside.
+    static TARGET: Cell<Option<OnScreen>> = const { Cell::new(None) };
     static DICTATION: RefCell<Option<Sender<Input>>> = const { RefCell::new(None) };
+    static DISMISSED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Wakes the pill thread after a command is queued. Posting to a thread is
@@ -169,6 +174,10 @@ impl Overlay {
                             Command::Level(level) => look.level(level),
                         }
                     }
+                    // A problem's button was pressed: its fix is open, so the message has done its job.
+                    if DISMISSED.with(|dismissed| dismissed.replace(false)) {
+                        look.set(super::Show::Hidden);
+                    }
                     if !ticking {
                         last = Instant::now();
                         ticking = true;
@@ -180,12 +189,13 @@ impl Overlay {
                 }
                 WM_TIMER => {
                     let now = Instant::now();
+                    look.hover(look.reading() && self.pointer().is_some_and(|(x, y)| look.covers(x, y)));
                     let moving = look.step((now - last).as_secs_f32().min(0.05));
                     last = now;
                     if let Some(pixmap) = look.draw(self.scale) {
                         self.present(&pixmap);
                     }
-                    self.take_clicks_at(look.stop_button());
+                    self.take_clicks_at(look.target());
                     if !moving {
                         ticking = false;
                         // SAFETY: our own window and timer id.
@@ -208,17 +218,27 @@ impl Overlay {
         }
     }
 
-    /// The pill lets every click through, except on the hands-free stop button.
-    fn take_clicks_at(&self, button: Option<(f32, f32, f32)>) {
-        let on_screen = button.map(|(cx, cy, r)| {
+    /// Where the mouse is, in canvas pixels.
+    fn pointer(&self) -> Option<(f32, f32)> {
+        let mut cursor = POINT::default();
+        // SAFETY: writes one POINT we own.
+        unsafe { GetCursorPos(&mut cursor) }.ok()?;
+        let scale = self.scale.max(0.1);
+        Some(((cursor.x - self.origin.x) as f32 / scale, (cursor.y - self.origin.y) as f32 / scale))
+    }
+
+    /// The pill lets every click through, except on its one button: hands-free's stop, or a problem's fix.
+    fn take_clicks_at(&self, target: Option<((f32, f32, f32, f32), Click)>) {
+        let on_screen = target.map(|((x, y, w, h), click)| {
             let px = |v: f32| (v * self.scale).round() as i32;
-            (self.origin.x + px(cx), self.origin.y + px(cy), px(r))
+            let (left, top) = (self.origin.x + px(x), self.origin.y + px(y));
+            (left, top, left + px(w), top + px(h), click)
         });
-        if STOP_BUTTON.with(Cell::get).is_some() == on_screen.is_some() {
-            STOP_BUTTON.with(|slot| slot.set(on_screen));
+        if TARGET.with(Cell::get).is_some() == on_screen.is_some() {
+            TARGET.with(|slot| slot.set(on_screen));
             return;
         }
-        STOP_BUTTON.with(|slot| slot.set(on_screen));
+        TARGET.with(|slot| slot.set(on_screen));
         // SAFETY: reads and writes our own window's extended style.
         unsafe {
             let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
@@ -312,8 +332,9 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
         WM_NCHITTEST => {
             // Screen coordinates, packed as two signed 16-bit halves.
             let (x, y) = (i32::from(lparam.0 as i16), i32::from((lparam.0 >> 16) as i16));
-            let on_button =
-                STOP_BUTTON.with(Cell::get).is_some_and(|(cx, cy, r)| (x - cx).pow(2) + (y - cy).pow(2) <= r * r);
+            let on_button = TARGET
+                .with(Cell::get)
+                .is_some_and(|(left, top, right, bottom, _)| x >= left && x <= right && y >= top && y <= bottom);
             LRESULT(if on_button { HTCLIENT as isize } else { HTTRANSPARENT as isize })
         }
         WM_SETCURSOR => {
@@ -328,11 +349,22 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
         // Take the click without taking focus; act on release, like a button.
         WM_LBUTTONDOWN => LRESULT(0),
         WM_LBUTTONUP => {
-            DICTATION.with(|slot| {
-                if let Some(dictation) = slot.borrow().as_ref() {
-                    let _ = dictation.send(Input::Stop);
+            match TARGET.with(Cell::get).map(|(.., click)| click) {
+                Some(Click::Stop) => DICTATION.with(|slot| {
+                    if let Some(dictation) = slot.borrow().as_ref() {
+                        let _ = dictation.send(Input::Stop);
+                    }
+                }),
+                Some(Click::Fix(fix)) => {
+                    crate::shared::open_url(fix.url());
+                    DISMISSED.with(|dismissed| dismissed.set(true));
+                    // SAFETY: posts to this thread's own queue; the loop reads DISMISSED on WM_APP.
+                    unsafe {
+                        let _ = PostThreadMessageW(GetCurrentThreadId(), WM_APP, WPARAM(0), LPARAM(0));
+                    }
                 }
-            });
+                None => {}
+            }
             LRESULT(0)
         }
         // SAFETY: default handling for a message Windows sent to our own window.

@@ -77,6 +77,72 @@ fn an_error_stays_six_seconds_then_fades() {
 }
 
 #[test]
+fn a_note_hugs_its_words_in_one_line_shows_grey_flat_bars_and_leaves_after_three_seconds() {
+    let mut look = Look::default();
+    look.set(Show::Note("No voice heard".into()));
+    assert_eq!(look.width.target, MESSAGE_TEXT_X + text_width("No voice heard", ERROR_TEXT) + 16.0);
+    assert_eq!(look.height.target, 36.0);
+    play(&mut look, 0.6);
+    let pixmap = look.draw(1.0).expect("pixmap");
+    let (cx, cy) = centre(36.0);
+    // The middle flat bar, where an error's red icon would be: grey, not red.
+    let icon = rgba_at(&pixmap, cx - look.width.value / 2.0 + 24.0, cy);
+    assert!(icon[0] > 140 && (i32::from(icon[0]) - i32::from(icon[2])).abs() < 30, "{icon:?}");
+    assert_eq!(look.target(), None, "a note takes no clicks");
+    play(&mut look, 2.0);
+    assert!(!look.is_hidden());
+    assert!(!play(&mut look, 1.5), "gone, and no more frames");
+    assert!(look.is_hidden());
+}
+
+#[test]
+fn a_problem_has_one_button_on_the_right_that_opens_its_fix() {
+    let mut look = Look::default();
+    look.set(Show::Problem { text: "No sound from Microphone Array. Is it muted?".into(), fix: Fix::PickMic });
+    assert_eq!(look.target(), None, "no button until the pill has grown to hold it");
+    play(&mut look, 0.6);
+    let ((x, y, w, h), click) = look.target().expect("a button");
+    assert_eq!(click, Click::Fix(Fix::PickMic));
+    let right = (CANVAS.0 + look.width.value) / 2.0;
+    assert!((right - (x + w) - 8.0).abs() < 0.01, "inset 8 from the right end");
+    assert_eq!(h, 36.0);
+    assert!(look.height.value - h - 16.0 < 0.01, "inset 8 top and bottom: {}", look.height.value);
+    let (cx, cy) = centre(look.height.value);
+    assert!(look.covers(cx, cy) && !look.covers(cx, cy - 40.0));
+    // The label sits inside the button: bright text on the elevated fill.
+    let pixmap = look.draw(1.0).expect("pixmap");
+    let lit = (0..w as u32)
+        .filter(|dx| rgba_at(&pixmap, x + *dx as f32, y + h / 2.0).iter().take(3).all(|c| *c > 200))
+        .count();
+    assert!(lit > 0, "the label");
+}
+
+#[test]
+fn a_problem_waits_while_the_pointer_is_on_it() {
+    let mut look = Look::default();
+    look.set(Show::Problem { text: "Windows is blocking likh from the mic.".into(), fix: Fix::MicAccess });
+    assert!(look.reading());
+    look.hover(true);
+    play(&mut look, 10.0);
+    assert!(!look.is_hidden(), "still up after 10 s under the pointer");
+    look.hover(false);
+    play(&mut look, 6.5);
+    assert!(look.is_hidden());
+}
+
+#[test]
+fn a_silent_mic_stays_up_while_recording_and_settles_without_frames() {
+    let mut look = Look::default();
+    look.set(Show::Listening);
+    play(&mut look, 0.5);
+    look.set(Show::MicSilent { device: "Microphone Array".into() });
+    assert!(!play(&mut look, 2.0), "a still message draws no frames");
+    assert!(!look.is_hidden());
+    assert!(!play(&mut look, 30.0));
+    assert!(!look.is_hidden(), "it leaves when the dictation does, not on a timer");
+}
+
+#[test]
 fn long_errors_wrap_to_two_lines_and_trail_off() {
     let short = wrap("Can't reach ChatGPT.", 300.0);
     assert_eq!(short, vec!["Can't reach ChatGPT."]);
@@ -172,6 +238,9 @@ fn brand_board_pill() {
         ("warning", Show::Warning { seconds_left: 55 }),
         ("quiet-stop", Show::QuietStop { left: Duration::from_millis(2_600), after: Duration::from_secs(5) }),
         ("error", Show::Error("Your Codex sign-in expired. Open Codex once to refresh it, then try again.".into())),
+        ("problem", Show::Problem { text: "No sound from Microphone Array. Is it muted?".into(), fix: Fix::PickMic }),
+        ("note", Show::Note("No voice heard".into())),
+        ("mic-silent", Show::MicSilent { device: "Microphone Array".into() }),
     ];
     for (name, show) in states {
         let mut look = Look::default();

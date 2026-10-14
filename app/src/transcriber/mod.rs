@@ -129,6 +129,13 @@ impl Transcriber {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Failure {
     TooShort,
+    /// The recording had sound but no voice in it; nothing was sent.
+    NoVoice,
+    /// The mic sent only digital silence; nothing was sent. `blocked`: Windows' privacy settings keep likh off it.
+    MicSilent {
+        device: String,
+        blocked: bool,
+    },
     SignIn(CodexStatus),
     Rejected,
     Offline,
@@ -147,6 +154,9 @@ impl Failure {
     pub fn message(&self) -> String {
         match self {
             Failure::TooShort => "That was too short to hear. Hold the keys while you talk.".into(),
+            Failure::NoVoice => "No voice heard".into(),
+            Failure::MicSilent { blocked: true, .. } => crate::microphone::BLOCKED.into(),
+            Failure::MicSilent { device, .. } => format!("No sound from {device}. Is it muted?"),
             Failure::SignIn(CodexStatus::Expired(_)) => {
                 "Your Codex sign-in expired. Open Codex once to refresh it, then try again.".into()
             }

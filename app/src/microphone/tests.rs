@@ -127,3 +127,48 @@ fn a_quiet_room_alone_never_counts_as_speech() {
     std::thread::sleep(Duration::from_millis(800));
     assert_eq!(recording.quiet_for(), None);
 }
+
+#[test]
+fn a_muted_mic_never_sounds_but_a_quiet_room_does() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    // A muted mic: exact zeros, as Windows hands them over.
+    let muted = dir.path().join("muted.wav");
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 16_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(&muted, spec).expect("create wav");
+    for _ in 0..16_000 {
+        writer.write_sample(0i16).expect("zero");
+    }
+    writer.finalize().expect("finalize");
+    let recording = Recording::start_from(Some(muted), |_| {}).expect("start");
+    std::thread::sleep(Duration::from_millis(600));
+    assert!(!recording.sounded());
+    assert!(!recording.spoke());
+    assert_eq!(recording.device(), "muted.wav");
+
+    // About -60 dBFS of hiss: quiet, but a working mic.
+    let room = dir.path().join("room.wav");
+    speech_then_silence(&room, 0.0, 1.0);
+    let recording = Recording::start_from(Some(room), |_| {}).expect("start");
+    std::thread::sleep(Duration::from_millis(600));
+    assert!(recording.sounded());
+    assert!(!recording.spoke());
+
+    let talk = dir.path().join("talk.wav");
+    speech_then_silence(&talk, 0.6, 0.2);
+    let recording = Recording::start_from(Some(talk), |_| {}).expect("start");
+    std::thread::sleep(Duration::from_millis(700));
+    assert!(recording.sounded() && recording.spoke());
+}
+
+#[test]
+fn messages_name_the_mic_the_way_windows_sound_settings_do() {
+    assert_eq!(short_name("Microphone Array (Realtek(R) Audio)"), "Microphone Array");
+    assert_eq!(short_name("Headset (WH-1000XM4 Hands-Free AG Audio)"), "Headset");
+    assert_eq!(short_name("Yeti Stereo Microphone"), "Yeti Stereo Microphone");
+    assert_eq!(short_name("(Unnamed device)"), "(Unnamed device)");
+}

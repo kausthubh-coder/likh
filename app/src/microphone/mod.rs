@@ -23,6 +23,11 @@ mod tests;
 /// One level per 30ms of audio: smooth enough for bars, about 33 redraws a second.
 const WINDOW: Duration = Duration::from_millis(30);
 
+/// Below this a sample is digital silence (-80 dBFS): what a muted mic, or one
+/// Windows blocks, sends. A quiet room on a real mic sits around -60 dBFS, and
+/// even a whisper is far above it.
+const SOUND_FLOOR: f32 = 0.000_1;
+
 /// The loudness range the bars cover: -55 dBFS (a quiet room) is empty and
 /// -10 dBFS (talking close to the mic) is full.
 const FLOOR_DB: f32 = -55.0;
@@ -80,6 +85,10 @@ pub struct Recording {
     heard: Arc<Mutex<Heard>>,
     /// The last moment a voice was heard (`silence::Listener`); None until someone speaks.
     last_voice: Arc<Mutex<Option<Instant>>>,
+    /// Any sample above digital silence so far.
+    sounded: Arc<AtomicBool>,
+    /// The mic's name as Windows shows it, or the replayed file's name.
+    device: String,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -101,14 +110,16 @@ impl Recording {
         let stop = Arc::new(AtomicBool::new(false));
         let heard = Arc::new(Mutex::new(Heard::default()));
         let last_voice = Arc::new(Mutex::new(None));
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
-        let (thread_stop, thread_heard, voice) = (stop.clone(), heard.clone(), last_voice.clone());
+        let sounded = Arc::new(AtomicBool::new(false));
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<String, String>>();
+        let (thread_stop, thread_heard) = (stop.clone(), heard.clone());
+        let ears = Ears { last_voice: last_voice.clone(), sounded: sounded.clone() };
         let thread = std::thread::Builder::new()
             .name("likh-recorder".into())
-            .spawn(move || record(source, on_level, voice, thread_stop, thread_heard, ready_tx))
+            .spawn(move || record(source, on_level, ears, thread_stop, thread_heard, ready_tx))
             .map_err(|error| error.to_string())?;
         match ready_rx.recv() {
-            Ok(Ok(())) => Ok(Self { stop, heard, last_voice, thread: Some(thread) }),
+            Ok(Ok(device)) => Ok(Self { stop, heard, last_voice, sounded, device, thread: Some(thread) }),
             Ok(Err(reason)) => Err(reason),
             Err(_) => Err("The microphone thread stopped before it started.".into()),
         }
@@ -117,6 +128,22 @@ impl Recording {
     /// How long it has been quiet since the last speech; None if nobody has spoken yet.
     pub fn quiet_for(&self) -> Option<Duration> {
         self.last_voice.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).map(|at| at.elapsed())
+    }
+
+    /// Someone has spoken: at least `silence::ARM_AFTER` of voice so far.
+    pub fn spoke(&self) -> bool {
+        self.last_voice.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).is_some()
+    }
+
+    /// The mic has sent anything but digital silence. False means it's muted,
+    /// blocked or broken, not that the room is quiet.
+    pub fn sounded(&self) -> bool {
+        self.sounded.load(Ordering::Relaxed)
+    }
+
+    /// The mic's name as Windows shows it ("Microphone Array"), for messages.
+    pub fn device(&self) -> &str {
+        &self.device
     }
 
     /// Stops and returns what was heard, as 16 kHz mono.
@@ -140,21 +167,30 @@ impl Drop for Recording {
     }
 }
 
+/// What the recorder thread reports back while it listens.
+struct Ears {
+    last_voice: Arc<Mutex<Option<Instant>>>,
+    sounded: Arc<AtomicBool>,
+}
+
 fn record(
     source: Option<PathBuf>,
     mut on_level: impl FnMut(f32) + Send + 'static,
-    last_voice: Arc<Mutex<Option<Instant>>>,
+    ears: Ears,
     stop: Arc<AtomicBool>,
     heard: Arc<Mutex<Heard>>,
-    ready: mpsc::Sender<Result<(), String>>,
+    ready: mpsc::Sender<Result<String, String>>,
 ) {
     let mut meter: Option<Meter> = None;
     let mut listener: Option<crate::silence::Listener> = None;
     let mut keep = move |rate: u32, mono: &[f32]| {
         meter.get_or_insert_with(|| Meter::new(window_for(rate))).push(mono.iter().copied(), &mut on_level);
+        if !ears.sounded.load(Ordering::Relaxed) && mono.iter().any(|sample| sample.abs() > SOUND_FLOOR) {
+            ears.sounded.store(true, Ordering::Relaxed);
+        }
         let listener = listener.get_or_insert_with(|| crate::silence::Listener::new(rate));
         if let Some(ago) = listener.push(mono) {
-            *last_voice.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Instant::now().checked_sub(ago);
+            *ears.last_voice.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Instant::now().checked_sub(ago);
         }
         let mut heard = heard.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         heard.rate = rate;
@@ -169,7 +205,8 @@ fn record(
                     return;
                 }
             };
-            let _ = ready.send(Ok(()));
+            let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into());
+            let _ = ready.send(Ok(name));
             // Feed the file as if a mic were hearing it: one 30ms chunk every 30ms,
             // kept to the clock. Sleeping 30ms per chunk drifted badly on slow
             // machines (each sleep overshoots), so a long file came out short.
@@ -191,19 +228,52 @@ fn record(
         }
         None => {
             let stream = match open_input(keep) {
-                Ok(input) => input.stream,
+                Ok(input) => {
+                    let _ = ready.send(Ok(short_name(&input.device)));
+                    input.stream
+                }
                 Err(reason) => {
                     let _ = ready.send(Err(reason));
                     return;
                 }
             };
-            let _ = ready.send(Ok(()));
             while !stop.load(Ordering::SeqCst) {
                 std::thread::sleep(Duration::from_millis(10));
             }
             drop(stream);
         }
     }
+}
+
+/// Windows names an input "Microphone Array (Realtek(R) Audio)": the name its
+/// Sound settings show in large type, then the driver in brackets. Messages use the name.
+pub fn short_name(device: &str) -> String {
+    match device.split_once(" (") {
+        Some((name, _)) if !name.trim().is_empty() => name.trim().to_string(),
+        _ => device.trim().to_string(),
+    }
+}
+
+/// What the pill says when `blocked_by_windows`.
+pub const BLOCKED: &str = "Windows is blocking likh from the mic.";
+
+/// Windows' privacy settings keep desktop apps off the mic: for everyone, for
+/// this user, or for apps installed outside the Store (likh is one).
+#[cfg(target_os = "windows")]
+pub fn blocked_by_windows() -> bool {
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    const STORE: &str = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone";
+    let denied = |root: &RegKey, path: &str| {
+        root.open_subkey(path).and_then(|key| key.get_value::<String, _>("Value")).is_ok_and(|value| value == "Deny")
+    };
+    let (machine, user) = (RegKey::predef(HKEY_LOCAL_MACHINE), RegKey::predef(HKEY_CURRENT_USER));
+    denied(&machine, STORE) || denied(&user, STORE) || denied(&user, &format!(r"{STORE}\NonPackaged"))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn blocked_by_windows() -> bool {
+    false
 }
 
 fn window_for(rate: u32) -> usize {

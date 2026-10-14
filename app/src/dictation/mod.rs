@@ -6,7 +6,7 @@
 
 use crate::commands::{self, Action, Groups, Press};
 use crate::microphone::Recording;
-use crate::pill::{Pill, Show};
+use crate::pill::{Fix, Pill, Show};
 use crate::settings::{Mode, Settings};
 use crate::sounds::Cue;
 use crate::transcriber::{Failure, Transcriber};
@@ -27,6 +27,10 @@ pub const TAP: Duration = Duration::from_millis(300);
 /// Hands-free shows its quiet countdown only after this much quiet, so the
 /// pauses between sentences don't make the ring flicker.
 pub const QUIET_GRACE: Duration = Duration::from_secs(1);
+/// A mic that has sent only digital silence for this long is muted or blocked:
+/// the pill says so while there's still time to fix it. People start talking
+/// well within it, and a quiet room isn't digital silence.
+pub const SILENT_AFTER: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Input {
@@ -40,8 +44,17 @@ pub enum Input {
     Stop,
     /// Esc, or `likh ctl cancel`.
     Cancel,
-    /// The mic couldn't open.
-    MicFailed(String),
+    /// The mic couldn't open. `blocked`: Windows' privacy settings keep likh off it.
+    MicFailed {
+        reason: String,
+        blocked: bool,
+    },
+    /// Sent with each tick while recording: has the mic sent anything but
+    /// digital silence yet, and what is it called.
+    Sound {
+        heard: bool,
+        device: String,
+    },
     Transcribed(Result<String, Failure>),
     /// Sent every 250ms while recording, for the countdown and the cap.
     Tick,
@@ -93,11 +106,13 @@ pub struct Dictation {
     warned_at: Option<u64>,
     /// The pill is counting down to silence stop.
     counting_quiet: bool,
+    /// The pill is saying the mic is silent.
+    warned_silent: bool,
 }
 
 impl Default for Dictation {
     fn default() -> Self {
-        Self { phase: Phase::Idle, started: None, warned_at: None, counting_quiet: false }
+        Self { phase: Phase::Idle, started: None, warned_at: None, counting_quiet: false, warned_silent: false }
     }
 }
 
@@ -114,6 +129,7 @@ impl Dictation {
                 self.started = Some(now);
                 self.warned_at = None;
                 self.counting_quiet = false;
+                self.warned_silent = false;
                 let (phase, show) = match choices.mode {
                     Mode::Tap => (Phase::HandsFree, Show::HandsFree),
                     Mode::Hold | Mode::HoldOrTap => (Phase::Recording, Show::Listening),
@@ -132,11 +148,24 @@ impl Dictation {
             (Phase::HandsFree, Input::Hold) => self.transcribe(),
             (_, Input::Stop) if recording => self.transcribe(),
             (_, Input::Cancel) if recording => self.stop(Effect::Discard, Show::Cancelled),
-            (_, Input::MicFailed(reason)) if recording => {
-                let mut effects =
-                    self.stop(Effect::Discard, Show::Error(format!("likh can't hear a microphone. {reason}")));
+            (_, Input::MicFailed { reason, blocked }) if recording => {
+                let show = if blocked {
+                    Show::Problem { text: crate::microphone::BLOCKED.into(), fix: Fix::MicAccess }
+                } else {
+                    Show::Error(format!("likh can't hear a microphone. {reason}"))
+                };
+                let mut effects = self.stop(Effect::Discard, show);
                 effects.push(Effect::Sound(Cue::Error));
                 effects
+            }
+            (_, Input::Sound { heard: false, device }) if recording && held >= SILENT_AFTER && !self.warned_silent => {
+                self.warned_silent = true;
+                vec![Effect::Pill(Show::MicSilent { device })]
+            }
+            // Sound came back (unmuted mid-dictation): the bars return.
+            (phase, Input::Sound { heard: true, .. }) if recording && self.warned_silent => {
+                self.warned_silent = false;
+                vec![Effect::Pill(if phase == Phase::HandsFree { Show::HandsFree } else { Show::Listening })]
             }
             (_, Input::Tick) if recording && held >= LONGEST => self.transcribe(),
             // Holding the keys means you decide when it ends; only hands-free stops by itself.
@@ -185,6 +214,15 @@ impl Dictation {
                         }
                     }
                     Err(Failure::TooShort) => vec![Effect::Pill(Show::Cancelled)],
+                    // Nothing broke: a grey note, and no error sound.
+                    Err(failure @ Failure::NoVoice) => vec![Effect::Pill(Show::Note(failure.message()))],
+                    Err(failure @ Failure::MicSilent { blocked, .. }) => vec![
+                        Effect::Sound(Cue::Error),
+                        Effect::Pill(Show::Problem {
+                            text: failure.message(),
+                            fix: if blocked { Fix::MicAccess } else { Fix::PickMic },
+                        }),
+                    ],
                     Err(failure) => vec![Effect::Sound(Cue::Error), Effect::Pill(Show::Error(failure.message()))],
                 }
             }
@@ -208,6 +246,32 @@ impl Dictation {
         self.phase = Phase::Idle;
         self.started = None;
         vec![effect, Effect::Pill(show)]
+    }
+}
+
+/// What the mic made of a recording, read just before it stops.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ears {
+    /// Anything but digital silence.
+    pub sounded: bool,
+    /// At least `silence::ARM_AFTER` of voice.
+    pub spoke: bool,
+    pub device: String,
+}
+
+impl Ears {
+    /// Why `seconds` of this recording aren't worth sending, if they aren't.
+    /// Too-short recordings are left to the transcriber, which drops them quietly.
+    pub fn heard_nothing(&self, seconds: f32) -> Option<Failure> {
+        if seconds < crate::transcriber::SHORTEST.as_secs_f32() {
+            None
+        } else if !self.sounded {
+            Some(Failure::MicSilent { device: self.device.clone(), blocked: crate::microphone::blocked_by_windows() })
+        } else if !self.spoke {
+            Some(Failure::NoVoice)
+        } else {
+            None
+        }
     }
 }
 
@@ -304,13 +368,17 @@ fn run(
         };
         let failed = match &input {
             Input::Transcribed(Err(failure)) => Some(failure.message()),
-            Input::MicFailed(reason) => Some(reason.clone()),
+            Input::MicFailed { reason, .. } => Some(reason.clone()),
             _ => None,
         };
-        // Each tick also reports the quiet since the last speech, for silence stop.
-        let quiet = match input {
-            Input::Tick => running.recording.as_ref().and_then(Recording::quiet_for),
-            _ => None,
+        // Each tick also reports the quiet since the last speech, for silence
+        // stop, and whether the mic has sent any sound at all.
+        let (quiet, sound) = match (&input, running.recording.as_ref()) {
+            (Input::Tick, Some(recording)) => (
+                recording.quiet_for(),
+                Some(Input::Sound { heard: recording.sounded(), device: recording.device().to_string() }),
+            ),
+            _ => (None, None),
         };
         let chosen = settings.read().map(|s| s.clone()).unwrap_or_else(|poisoned| poisoned.into_inner().clone());
         let choices = Choices {
@@ -322,6 +390,9 @@ fn run(
         let mut effects = dictation.handle(input, now, choices);
         if let Some(quiet) = quiet {
             effects.extend(dictation.handle(Input::Quiet(quiet), now, choices));
+        }
+        if let Some(sound) = sound {
+            effects.extend(dictation.handle(sound, now, choices));
         }
         for effect in effects {
             match effect {
@@ -336,14 +407,21 @@ fn run(
                     match Recording::start(move |level| levels.level(level)) {
                         Ok(started) => running.recording = Some(started),
                         Err(reason) => {
-                            let _ = tx.send(Input::MicFailed(reason));
+                            let blocked = crate::microphone::blocked_by_windows();
+                            let _ = tx.send(Input::MicFailed { reason, blocked });
                         }
                     }
                     running.transcriber = Some(transcriber);
                 }
                 Effect::Transcribe => {
                     running.resume_media();
-                    let samples = running.recording.take().map(Recording::finish).unwrap_or_default();
+                    let recording = running.recording.take();
+                    let ears = recording.as_ref().map(|r| Ears {
+                        sounded: r.sounded(),
+                        spoke: r.spoke(),
+                        device: r.device().to_string(),
+                    });
+                    let samples = recording.map(Recording::finish).unwrap_or_default();
                     let seconds = samples.len() as f32 / crate::transcriber::SAMPLE_RATE as f32;
                     released = Some((Instant::now(), seconds));
                     let transcriber = running
@@ -351,6 +429,11 @@ fn run(
                         .take()
                         .unwrap_or_else(|| Arc::new(Transcriber::new(chosen.engine, fake.as_deref())));
                     let tx = tx.clone();
+                    // Silence goes nowhere: an upload of it costs a call and can come back as made-up words.
+                    if let Some(failure) = ears.and_then(|ears| ears.heard_nothing(seconds)) {
+                        let _ = tx.send(Input::Transcribed(Err(failure)));
+                        continue;
+                    }
                     let (words, fix_names) = (chosen.dictionary.clone(), chosen.fix_names);
                     std::thread::spawn(move || {
                         let heard = transcriber.transcribe(&samples, &words);
