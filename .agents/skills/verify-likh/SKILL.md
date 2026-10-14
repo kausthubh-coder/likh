@@ -11,7 +11,7 @@ Read `features/README.md`, then the feature file you're proving.
 
 ## Launch
 
-1. Build once: `cargo build -p likh`. The binary is `target/debug/likh.exe`.
+1. Build: `cargo build -p likh`. The binary is `target/debug/likh.exe`. `bun run setup` has given this checkout its own `LIKH_HOME` (in `.env.local`; `bun run doctor` prints it).
 2. Pick the sign-in state to test. Never use the real `~/.codex` for UI proofs:
    ```sh
    bun scripts/fake-codex-home.mjs expired    # or not-installed | signed-out | connected
@@ -21,10 +21,10 @@ Read `features/README.md`, then the feature file you're proving.
    ```sh
    CODEX_HOME="<printed path>" ./target/debug/likh.exe onboarding
    ```
-   If the person's own likh is already running (`Get-Process likh` lists one under `AppData\Local\Programs\likh`), a second `likh run` just opens their window. Give yours its own home instead: `LIKH_HOME="$(pwd)/.agents/qa/<name>/home"`. It gets its own settings, history, onboarding marker and `likh ctl` pipe (named after the folder). Set the same `LIKH_HOME` for every `likh ctl` call. Their Ctrl+Space stays theirs, so drive yours with `likh ctl`.
-4. **Ready signal:** a visible top-level window titled `likh` appears, owned by the new PID. Capture the PID by path, never by name alone:
+   Always run yours with this checkout's `LIKH_HOME`: `bun run dev` and `bun run likh <args>` set it for you; for `./target/debug/likh.exe` set it yourself from `.env.local`. Without it, `likh run` opens the person's own likh window, or runs on their settings, history and update check. It gets its own settings, history, onboarding marker and `likh ctl` pipe (named after the folder, so a scratch home needs a folder name no other worktree uses). Set the same `LIKH_HOME` for every `likh ctl` call. When the person's likh is running, Ctrl+Space stays theirs, so drive yours with `likh ctl`.
+4. **Ready signal:** a visible top-level window titled `likh` appears, owned by the new PID. Capture the PID by this checkout's path, never by name alone:
    ```powershell
-   (Get-Process likh | Where-Object { $_.Path -like "*dev\likh\target*" }).Id
+   (Get-Process likh | Where-Object { $_.Path -like "$PWD\target\*" }).Id
    ```
    If that lists more than one PID, one of them isn't yours. Stop and find out whose it is before driving anything.
 
