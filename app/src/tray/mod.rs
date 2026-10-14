@@ -119,7 +119,9 @@ impl App {
             return window::gain_focus(*id);
         }
         let (id, opened) = window::open(onboarding::window_settings());
-        self.setup = Some((id, Onboarding::in_app(id, self.dictation.clone(), self.settings.clone())));
+        let setup = Onboarding::in_app(id, self.dictation.clone(), self.settings.clone())
+            .hold_still(crate::pill::animations_off());
+        self.setup = Some((id, setup));
         opened.discard()
     }
 
@@ -263,7 +265,7 @@ fn build(hold_to_talk: &str) -> Option<Tray> {
         &shortcut as &dyn tray_icon::menu::IsMenuItem,
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(OPEN, "Open likh", true, None),
-        &MenuItem::with_id(SETUP, "Set up again…", true, None),
+        &MenuItem::with_id(SETUP, "Run setup again…", true, None),
         &update,
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(QUIT, "Quit likh", true, None),

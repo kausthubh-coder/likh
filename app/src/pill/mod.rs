@@ -48,6 +48,20 @@ const FADE_SECONDS: f32 = 0.15;
 /// The quiet countdown shows its seconds instead of the stop square for this long at the end.
 const QUIET_DIGITS_SECONDS: f32 = 3.0;
 
+/// Windows' "Show animations" is off. The pill and onboarding then fade
+/// instead of moving (BRAND.md, Reduced motion). It lives here because reading
+/// it is a Win32 call, and `pill/windows.rs` is where those are allowed.
+pub fn animations_off() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        !windows::animations_on()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
 /// What the pill shows. Hidden draws nothing at all.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Show {
@@ -161,6 +175,9 @@ pub struct Look {
     linger: Option<f32>,
     /// Error text broken into the lines it will draw as.
     lines: Vec<String>,
+    /// Animations are off: the pill takes each shape at once (its fade stays),
+    /// and thinking pulses in place instead of travelling.
+    still: bool,
 }
 
 impl Default for Look {
@@ -175,6 +192,7 @@ impl Default for Look {
             clock: 0.0,
             linger: None,
             lines: Vec::new(),
+            still: false,
         }
     }
 }
@@ -182,6 +200,10 @@ impl Default for Look {
 impl Look {
     pub fn is_hidden(&self) -> bool {
         self.show == Show::Hidden && self.alpha <= 0.0
+    }
+
+    pub fn hold_still(&mut self, still: bool) {
+        self.still = still;
     }
 
     pub fn set(&mut self, show: Show) {
@@ -203,6 +225,12 @@ impl Look {
         };
         self.width.target = width;
         self.height.target = height;
+        if self.still {
+            for spring in [&mut self.width, &mut self.height] {
+                spring.value = spring.target;
+                spring.velocity = 0.0;
+            }
+        }
         self.linger = match show {
             Show::Done | Show::Cancelled => Some(SLIVER_SECONDS),
             Show::Error(_) => Some(ERROR_SECONDS),
@@ -264,6 +292,8 @@ impl Look {
                 Show::Listening | Show::HandsFree | Show::QuietStop { .. } | Show::Warning { .. } => {
                     self.history[age] * (1.0 - 0.12 * age as f32)
                 }
+                // Still: the bars stand level and `draw` pulses them instead.
+                Show::Thinking if self.still => 0.3,
                 // A slow travelling wave, left to right (1.2s loop).
                 Show::Thinking => 0.15 + 0.35 * (1.0 + (self.clock * 5.2 - i as f32 * 0.7).sin()) / 2.0,
                 _ => 0.0,
@@ -324,12 +354,18 @@ impl Look {
             Show::Error(_) => self.draw_error(&mut pixmap, &clip, x, cy, scale),
             _ => {
                 let color = if self.show == Show::Thinking { p.text_muted } else { p.accent };
+                // Still and thinking: a gentle opacity pulse on the same 1.2s loop, nothing travels.
+                let pulse = if self.still && self.show == Show::Thinking {
+                    0.7 + 0.3 * (self.clock * std::f32::consts::TAU / 1.2).cos()
+                } else {
+                    1.0
+                };
                 for (i, level) in self.bars.iter().enumerate() {
                     let bar_h = (4.0 + level * 16.0).min(h - 8.0).max(0.0);
                     let bar_x = x + BAR_INSET + i as f32 * (BAR_WIDTH + BAR_GAP);
                     let bar = capsule(bar_x, cy - bar_h / 2.0, BAR_WIDTH, bar_h.max(BAR_WIDTH));
                     if bar_h > 0.0 && h > 16.0 {
-                        fill(&mut pixmap, bar, to_skia(color, 1.0), at, Some(&clip));
+                        fill(&mut pixmap, bar, to_skia(color, pulse), at, Some(&clip));
                     }
                 }
             }
@@ -465,8 +501,20 @@ fn font() -> Option<FontRef<'static>> {
 }
 
 pub fn text_width(text: &str, size: f32) -> f32 {
+    width_at(text, PxScale::from(size))
+}
+
+/// The width of `text` at an iced text size. iced sizes text by the em;
+/// ab_glyph's `PxScale` (what the pill draws with) is the taller ascent-to-descent height.
+pub fn ui_text_width(text: &str, size: f32) -> f32 {
     let Some(font) = font() else { return 0.0 };
-    let scaled = font.as_scaled(PxScale::from(size));
+    let per_em = font.units_per_em().map_or(1.0, |units| font.height_unscaled() / units);
+    width_at(text, PxScale::from(size * per_em))
+}
+
+fn width_at(text: &str, px: PxScale) -> f32 {
+    let Some(font) = font() else { return 0.0 };
+    let scaled = font.as_scaled(px);
     let mut width = 0.0;
     let mut previous = None;
     for c in text.chars() {

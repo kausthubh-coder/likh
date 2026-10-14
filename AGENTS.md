@@ -25,7 +25,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/media/` | pauses music and videos while you talk and plays them again (Windows media controls; nothing on macOS) |
 | `app/src/sounds/` | the start, stop and error cues, synthesized |
 | `app/src/autostart/` | start with Windows (the Run key) |
-| `app/src/panel/` | the likh window from the tray: General, Transcription, Commands, History, About |
+| `app/src/panel/` | the likh window from the tray: Dictation, Transcription, Commands, History, App; the shortcut's key caps and keyboard (`shortcut.rs`); its drawn icons (`icons.rs`) |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings; `LIKH_AUDIO=file.wav` replays a file instead |
 | `app/src/silence/` | silence stop: is someone talking? A small voice detector (earshot) hears a voice, not loudness; `eval.rs` scores it in quiet and noisy rooms |
