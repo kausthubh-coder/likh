@@ -94,6 +94,8 @@ pub struct Settings {
     pub mode: Mode,
     /// Which service turns speech into text.
     pub engine: Engine,
+    /// The mic to record from; None follows Windows' default input.
+    pub microphone: Option<crate::microphone::Choice>,
     pub silence_stop: SilenceStop,
     /// Pause music and videos while you talk, and play them again after.
     pub pause_media: bool,
@@ -123,6 +125,7 @@ impl Default for Settings {
             mouse: MouseTrigger::default(),
             mode: Mode::default(),
             engine: Engine::default(),
+            microphone: None,
             silence_stop: SilenceStop::default(),
             // Only Windows can pause other apps' media today.
             pause_media: cfg!(target_os = "windows"),

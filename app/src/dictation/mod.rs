@@ -51,9 +51,10 @@ pub enum Input {
         blocked: bool,
     },
     /// Sent with each tick while recording: has the mic sent anything but
-    /// digital silence yet, and what is it called.
+    /// digital silence yet, has it gone away, and what is it called.
     Sound {
         heard: bool,
+        lost: bool,
         device: String,
     },
     Transcribed(Result<String, Failure>),
@@ -113,11 +114,20 @@ pub struct Dictation {
     counting_quiet: bool,
     /// The pill is saying the mic is silent.
     warned_silent: bool,
+    /// The mic went away mid-recording; the paste says so.
+    lost_mic: Option<String>,
 }
 
 impl Default for Dictation {
     fn default() -> Self {
-        Self { phase: Phase::Idle, started: None, warned_at: None, counting_quiet: false, warned_silent: false }
+        Self {
+            phase: Phase::Idle,
+            started: None,
+            warned_at: None,
+            counting_quiet: false,
+            warned_silent: false,
+            lost_mic: None,
+        }
     }
 }
 
@@ -135,6 +145,7 @@ impl Dictation {
                 self.warned_at = None;
                 self.counting_quiet = false;
                 self.warned_silent = false;
+                self.lost_mic = None;
                 let (phase, show) = match choices.mode {
                     Mode::Tap => (Phase::HandsFree, Show::HandsFree),
                     Mode::Hold | Mode::HoldOrTap => (Phase::Recording, Show::Listening),
@@ -165,7 +176,14 @@ impl Dictation {
                 effects.push(Effect::Sound(Cue::Error));
                 effects
             }
-            (_, Input::Sound { heard: false, device }) if recording && held >= SILENT_AFTER && !self.warned_silent => {
+            // Unplugged mid-sentence: keep what it heard and paste it, rather than lose it all.
+            (_, Input::Sound { lost: true, device, .. }) if recording => {
+                self.lost_mic = Some(device);
+                self.transcribe()
+            }
+            (_, Input::Sound { heard: false, device, .. })
+                if recording && held >= SILENT_AFTER && !self.warned_silent =>
+            {
                 self.warned_silent = true;
                 vec![Effect::Pill(Show::MicSilent { device })]
             }
@@ -215,7 +233,13 @@ impl Dictation {
                                 vec![Effect::Pill(Show::Cancelled)]
                             }
                             Action::Paste { text, then } => {
-                                vec![Effect::Pill(Show::Done), Effect::Paste { text, then }]
+                                let show = match self.lost_mic.take() {
+                                    Some(device) => {
+                                        Show::Note(format!("{device} was disconnected. Pasted what it heard."))
+                                    }
+                                    None => Show::Done,
+                                };
+                                vec![Effect::Pill(show), Effect::Paste { text, then }]
                             }
                             Action::Undo => vec![Effect::Pill(Show::Done), Effect::Undo],
                         }
@@ -395,7 +419,11 @@ fn run(
         let (quiet, sound) = match (&input, running.recording.as_ref()) {
             (Input::Tick, Some(recording)) => (
                 recording.quiet_for(),
-                Some(Input::Sound { heard: recording.sounded(), device: recording.device().to_string() }),
+                Some(Input::Sound {
+                    heard: recording.sounded(),
+                    lost: recording.lost(),
+                    device: recording.device().to_string(),
+                }),
             ),
             _ => (None, None),
         };
@@ -423,7 +451,8 @@ fn run(
                         running.paused = Some(std::thread::spawn(crate::media::pause_playing));
                     }
                     let levels = pill.clone();
-                    match Recording::start(move |level| levels.level(level)) {
+                    let mic = chosen.microphone.as_ref().map(|choice| choice.id.clone());
+                    match Recording::start(mic, move |level| levels.level(level)) {
                         Ok(started) => running.recording = Some(started),
                         Err(reason) => {
                             let blocked = crate::microphone::blocked_by_windows();

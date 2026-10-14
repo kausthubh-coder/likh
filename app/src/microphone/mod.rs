@@ -11,6 +11,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample};
 use iced::futures::Stream;
 use iced::futures::channel::mpsc::Sender;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -40,22 +41,85 @@ pub enum Event {
     Failed(String),
 }
 
-/// Opens the default input device and reports its level until the stream is dropped.
-pub fn listen() -> impl Stream<Item = Event> {
-    iced::stream::channel(64, async |output: Sender<Event>| {
+/// The mic the user picked, saved by Windows' id for it (stable across
+/// unplugging) with the name to show while it's gone.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Choice {
+    pub id: String,
+    pub name: String,
+}
+
+/// One input that's connected now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mic {
+    pub id: String,
+    /// The name Windows shows ("Microphone Array"), plus the driver when two share it.
+    pub name: String,
+    /// Bluetooth headsets drop to call quality while their mic is open.
+    pub bluetooth: bool,
+}
+
+/// Every input connected now, in Windows' order.
+pub fn inputs() -> Vec<Mic> {
+    let Ok(devices) = cpal::default_host().input_devices() else { return Vec::new() };
+    let found: Vec<Found> = devices
+        .filter_map(|device| {
+            let id = device.id().ok()?.to_string();
+            let description = device.description().ok()?;
+            let bluetooth = description.interface_type() == cpal::InterfaceType::Bluetooth;
+            Some((id, short_name(description.name()), description.driver().map(clean_driver), bluetooth))
+        })
+        .collect();
+    name_mics(&found)
+}
+
+/// What Windows says about one input: its id, name, driver and whether it's Bluetooth.
+type Found = (String, String, Option<String>, bool);
+
+/// Names each input as Windows does, adding the driver only where two share a name
+/// (a laptop's "Microphone" from two different chips).
+fn name_mics(found: &[Found]) -> Vec<Mic> {
+    found
+        .iter()
+        .map(|(id, name, driver, bluetooth)| {
+            let shared = found.iter().filter(|(_, other, ..)| other == name).count() > 1;
+            let name = match driver {
+                Some(driver) if shared => format!("{name} \u{b7} {driver}"),
+                _ => name.clone(),
+            };
+            Mic { id: id.clone(), name, bluetooth: *bluetooth }
+        })
+        .collect()
+}
+
+/// The input Windows uses by default right now.
+pub fn system_default() -> Option<Mic> {
+    let id = cpal::default_host().default_input_device()?.id().ok()?.to_string();
+    inputs().into_iter().find(|mic| mic.id == id)
+}
+
+/// "Realtek(R) Audio" reads as "Realtek Audio".
+fn clean_driver(driver: &str) -> String {
+    driver.replace("(R)", "").replace("(TM)", "").split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Opens `mic` (or the default input) and reports its level until the stream is dropped.
+pub fn listen(mic: &Option<String>) -> impl Stream<Item = Event> + use<> {
+    let mic = mic.clone();
+    iced::stream::channel(64, async move |output: Sender<Event>| {
         // cpal streams can't move between threads on every platform, so one
         // thread owns it for its whole life.
-        let spawned = std::thread::Builder::new().name("likh-meter".into()).spawn(move || meter(output));
+        let spawned = std::thread::Builder::new().name("likh-meter".into()).spawn(move || meter(mic, output));
         if let Err(error) = spawned {
             eprintln!("likh: could not start the microphone thread: {error}");
         }
     })
 }
 
-fn meter(mut output: Sender<Event>) {
+fn meter(mic: Option<String>, mut output: Sender<Event>) {
     let mut levels = output.clone();
     let mut meter: Option<Meter> = None;
-    let opened = open_input(move |rate, mono| {
+    let opened = open_input(mic.as_deref(), Arc::new(AtomicBool::new(false)), move |rate, mono| {
         let meter = meter.get_or_insert_with(|| Meter::new(window_for(rate)));
         meter.push(mono.iter().copied(), |level| {
             // A full channel means the UI is behind; dropping a level is fine.
@@ -87,6 +151,8 @@ pub struct Recording {
     last_voice: Arc<Mutex<Option<Instant>>>,
     /// Any sample above digital silence so far.
     sounded: Arc<AtomicBool>,
+    /// The picked mic went away mid-recording (unplugged, or a headset turned off).
+    lost: Arc<AtomicBool>,
     /// The mic's name as Windows shows it, or the replayed file's name.
     device: String,
     thread: Option<JoinHandle<()>>,
@@ -99,27 +165,34 @@ struct Heard {
 }
 
 impl Recording {
-    /// Starts recording now. `on_level` gets a 0–1 level every 30ms, for the pill's bars.
-    /// Returns once the mic is really open, or with the reason it couldn't be.
-    pub fn start(on_level: impl FnMut(f32) + Send + 'static) -> Result<Self, String> {
-        Self::start_from(std::env::var_os("LIKH_AUDIO").map(PathBuf::from), on_level)
+    /// Starts recording now from `mic` (an id from `inputs`; None, or one
+    /// that's gone, is Windows' default). `on_level` gets a 0–1 level every
+    /// 30ms, for the pill's bars. Returns once the mic is really open, or with
+    /// the reason it couldn't be.
+    pub fn start(mic: Option<String>, on_level: impl FnMut(f32) + Send + 'static) -> Result<Self, String> {
+        Self::start_from(std::env::var_os("LIKH_AUDIO").map(PathBuf::from), mic, on_level)
     }
 
-    /// `source` is a WAV file to replay, or `None` for the default microphone.
-    pub fn start_from(source: Option<PathBuf>, on_level: impl FnMut(f32) + Send + 'static) -> Result<Self, String> {
+    /// `source` is a WAV file to replay, or `None` for the microphone.
+    pub fn start_from(
+        source: Option<PathBuf>,
+        mic: Option<String>,
+        on_level: impl FnMut(f32) + Send + 'static,
+    ) -> Result<Self, String> {
         let stop = Arc::new(AtomicBool::new(false));
         let heard = Arc::new(Mutex::new(Heard::default()));
         let last_voice = Arc::new(Mutex::new(None));
         let sounded = Arc::new(AtomicBool::new(false));
+        let lost = Arc::new(AtomicBool::new(false));
         let (ready_tx, ready_rx) = mpsc::channel::<Result<String, String>>();
         let (thread_stop, thread_heard) = (stop.clone(), heard.clone());
-        let ears = Ears { last_voice: last_voice.clone(), sounded: sounded.clone() };
+        let ears = Ears { last_voice: last_voice.clone(), sounded: sounded.clone(), lost: lost.clone() };
         let thread = std::thread::Builder::new()
             .name("likh-recorder".into())
-            .spawn(move || record(source, on_level, ears, thread_stop, thread_heard, ready_tx))
+            .spawn(move || record(source, mic, on_level, ears, thread_stop, thread_heard, ready_tx))
             .map_err(|error| error.to_string())?;
         match ready_rx.recv() {
-            Ok(Ok(device)) => Ok(Self { stop, heard, last_voice, sounded, device, thread: Some(thread) }),
+            Ok(Ok(device)) => Ok(Self { stop, heard, last_voice, sounded, lost, device, thread: Some(thread) }),
             Ok(Err(reason)) => Err(reason),
             Err(_) => Err("The microphone thread stopped before it started.".into()),
         }
@@ -139,6 +212,11 @@ impl Recording {
     /// blocked or broken, not that the room is quiet.
     pub fn sounded(&self) -> bool {
         self.sounded.load(Ordering::Relaxed)
+    }
+
+    /// The mic went away mid-recording; what came before it is still kept.
+    pub fn lost(&self) -> bool {
+        self.lost.load(Ordering::Relaxed)
     }
 
     /// The mic's name as Windows shows it ("Microphone Array"), for messages.
@@ -171,16 +249,19 @@ impl Drop for Recording {
 struct Ears {
     last_voice: Arc<Mutex<Option<Instant>>>,
     sounded: Arc<AtomicBool>,
+    lost: Arc<AtomicBool>,
 }
 
 fn record(
     source: Option<PathBuf>,
+    mic: Option<String>,
     mut on_level: impl FnMut(f32) + Send + 'static,
     ears: Ears,
     stop: Arc<AtomicBool>,
     heard: Arc<Mutex<Heard>>,
     ready: mpsc::Sender<Result<String, String>>,
 ) {
+    let lost = ears.lost.clone();
     let mut meter: Option<Meter> = None;
     let mut listener: Option<crate::silence::Listener> = None;
     let mut keep = move |rate: u32, mono: &[f32]| {
@@ -227,9 +308,9 @@ fn record(
             }
         }
         None => {
-            let stream = match open_input(keep) {
+            let stream = match open_input(mic.as_deref(), lost, keep) {
                 Ok(input) => {
-                    let _ = ready.send(Ok(short_name(&input.device)));
+                    let _ = ready.send(Ok(input.device));
                     input.stream
                 }
                 Err(reason) => {
@@ -299,28 +380,41 @@ fn read_wav(path: &PathBuf) -> Result<(u32, Vec<f32>), String> {
 
 struct Input {
     stream: cpal::Stream,
+    /// Its name as Windows shows it ("Microphone Array").
     device: String,
 }
 
-/// Opens the default input and calls `on_audio(sample_rate, mono)` for every buffer.
-fn open_input(on_audio: impl FnMut(u32, &[f32]) + Send + 'static) -> Result<Input, String> {
-    let device = cpal::default_host().default_input_device().ok_or("No microphone is connected.")?;
+/// Opens `mic` (an id from `inputs`), or Windows' default when it's None or
+/// not connected, and calls `on_audio(sample_rate, mono)` for every buffer.
+/// `lost` turns true if the mic goes away while open.
+fn open_input(
+    mic: Option<&str>,
+    lost: Arc<AtomicBool>,
+    on_audio: impl FnMut(u32, &[f32]) + Send + 'static,
+) -> Result<Input, String> {
+    let host = cpal::default_host();
+    let picked = mic.and_then(|id| {
+        host.input_devices().ok()?.find(|device| device.id().is_ok_and(|found| found.to_string() == id))
+    });
+    // The default follows Windows when it switches inputs; a picked mic can only go away.
+    let device = picked.or_else(|| host.default_input_device()).ok_or("No microphone is connected.")?;
     let supported = device.default_input_config().map_err(|error| error.to_string())?;
     let config = supported.config();
     let stream = match supported.sample_format() {
-        SampleFormat::F32 => build::<f32>(&device, config, on_audio),
-        SampleFormat::I16 => build::<i16>(&device, config, on_audio),
-        SampleFormat::U16 => build::<u16>(&device, config, on_audio),
-        SampleFormat::I32 => build::<i32>(&device, config, on_audio),
+        SampleFormat::F32 => build::<f32>(&device, config, lost, on_audio),
+        SampleFormat::I16 => build::<i16>(&device, config, lost, on_audio),
+        SampleFormat::U16 => build::<u16>(&device, config, lost, on_audio),
+        SampleFormat::I32 => build::<i32>(&device, config, lost, on_audio),
         other => return Err(format!("The microphone uses a sample format likh can't read yet ({other:?}).")),
     }?;
     stream.play().map_err(|error| error.to_string())?;
-    Ok(Input { stream, device: device.to_string() })
+    Ok(Input { stream, device: short_name(&device.to_string()) })
 }
 
 fn build<T>(
     device: &cpal::Device,
     config: cpal::StreamConfig,
+    lost: Arc<AtomicBool>,
     mut on_audio: impl FnMut(u32, &[f32]) + Send + 'static,
 ) -> Result<cpal::Stream, String>
 where
@@ -342,7 +436,12 @@ where
                 );
                 on_audio(rate, &mono);
             },
-            |error| eprintln!("likh: microphone error: {error}"),
+            move |error: cpal::Error| {
+                eprintln!("likh: microphone error: {error}");
+                if matches!(error.kind(), cpal::ErrorKind::DeviceNotAvailable | cpal::ErrorKind::StreamInvalidated) {
+                    lost.store(true, Ordering::Relaxed);
+                }
+            },
             None,
         )
         .map_err(|error| error.to_string())

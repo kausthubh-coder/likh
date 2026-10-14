@@ -205,7 +205,7 @@ fn a_mic_windows_blocks_offers_its_privacy_page() {
 }
 
 fn sound(heard: bool) -> Input {
-    Input::Sound { heard, device: "Microphone Array".into() }
+    Input::Sound { heard, lost: false, device: "Microphone Array".into() }
 }
 
 #[test]
@@ -440,5 +440,30 @@ fn press_tab_presses_tab_after_the_paste() {
     assert_eq!(
         d.handle(Input::Transcribed(Ok("Priya Raman, press tab.".into())), after(t0, 2_600), HOLD_OR_TAP),
         vec![Effect::Pill(Show::Done), Effect::Paste { text: "Priya Raman".into(), then: Some(Press::Tab) }]
+    );
+}
+
+#[test]
+fn a_mic_unplugged_mid_sentence_pastes_what_it_heard_and_says_so() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    let lost = Input::Sound { heard: true, lost: true, device: "WH-1000XM4".into() };
+    assert_eq!(d.handle(lost.clone(), after(t0, 3_000), HOLD_OR_TAP), transcribing());
+    // Said once: the next tick finds it already transcribing.
+    assert_eq!(d.handle(lost, after(t0, 3_250), HOLD_OR_TAP), vec![]);
+    assert_eq!(
+        d.handle(Input::Transcribed(Ok("Meet at three.".into())), after(t0, 3_900), HOLD_OR_TAP),
+        vec![
+            Effect::Pill(Show::Note("WH-1000XM4 was disconnected. Pasted what it heard.".into())),
+            paste("Meet at three.")
+        ]
+    );
+    // The next dictation is an ordinary one.
+    d.handle(Input::Hold, after(t0, 9_000), HOLD_OR_TAP);
+    d.handle(Input::Release(after(t0, 11_000)), after(t0, 11_000), HOLD_OR_TAP);
+    assert_eq!(
+        d.handle(Input::Transcribed(Ok("Okay.".into())), after(t0, 11_500), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::Done), paste("Okay.")]
     );
 }

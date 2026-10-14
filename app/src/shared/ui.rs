@@ -146,6 +146,48 @@ pub fn segmented<'a, M: Clone + 'a, T: Copy + PartialEq + 'a>(
         .into()
 }
 
+/// Pick one of many (a mic, a language): a field like a text field that opens
+/// a list on `elevated`, one step above the panel it sits on.
+/// `on_open` lets the caller refresh what's in it (mics come and go).
+pub fn dropdown<'a, M: Clone + 'a, T: Clone + PartialEq + std::fmt::Display + 'a>(
+    options: Vec<T>,
+    picked: Option<T>,
+    on_pick: impl Fn(T) -> M + 'a,
+    on_open: M,
+) -> Element<'a, M> {
+    let p = palette();
+    iced::widget::pick_list(options, picked, on_pick)
+        .on_open(on_open)
+        .text_size(size::SMALL)
+        .font(theme::UI_MEDIUM)
+        .padding([space::S2, space::S3])
+        .width(240)
+        .style(move |_, status| iced::widget::pick_list::Style {
+            text_color: p.text,
+            placeholder_color: p.text_subtle,
+            handle_color: p.text_muted,
+            background: Background::Color(p.surface),
+            border: Border {
+                radius: radius::CONTROL.into(),
+                width: 1.0,
+                color: match status {
+                    iced::widget::pick_list::Status::Opened { .. } => fade(p.accent, 0.5),
+                    iced::widget::pick_list::Status::Hovered => p.edge_strong,
+                    iced::widget::pick_list::Status::Active => p.edge,
+                },
+            },
+        })
+        .menu_style(move |_| iced::widget::overlay::menu::Style {
+            background: Background::Color(p.elevated),
+            border: Border { radius: radius::CONTROL.into(), width: 1.0, color: p.edge },
+            text_color: p.text_muted,
+            selected_text_color: p.text,
+            selected_background: Background::Color(p.hover),
+            shadow: theme::shadow_raised(),
+        })
+        .into()
+}
+
 /// A text field on `surface` that lights its edge peach while focused.
 pub fn field_style(status: iced::widget::text_input::Status) -> iced::widget::text_input::Style {
     let p = palette();

@@ -28,7 +28,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/autostart/` | start with Windows (the Run key) |
 | `app/src/panel/` | the likh window from the tray: Dictation, Transcription, Commands, Dictionary, History, App; the shortcut's key caps and keyboard (`shortcut.rs`); its drawn icons (`icons.rs`) |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
-| `app/src/microphone/` | levels and recordings; `LIKH_AUDIO=file.wav` replays a file instead |
+| `app/src/microphone/` | levels and recordings from the picked mic (saved by Windows' id; Windows' default when none is picked or it's unplugged), the list of inputs, and whether Windows' privacy settings block the mic; `LIKH_AUDIO=file.wav` replays a file instead. `cargo test -p likh mic_pick_live -- --ignored` opens this machine's real inputs |
 | `app/src/silence/` | silence stop: is someone talking? A small voice detector (earshot) hears a voice, not loudness; `eval.rs` scores it in quiet and noisy rooms |
 | `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), each engine's glyph (`glyph.rs`); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back; `LIKH_PASTE=<file>` logs pastes and key presses there instead |

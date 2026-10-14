@@ -72,7 +72,7 @@ fn a_replayed_wav_is_recorded_at_16khz_with_levels() {
     let levels = Arc::new(Mutex::new(Vec::new()));
     let seen = levels.clone();
     let recording =
-        Recording::start_from(Some(path), move |level| seen.lock().expect("levels").push(level)).expect("start");
+        Recording::start_from(Some(path), None, move |level| seen.lock().expect("levels").push(level)).expect("start");
     std::thread::sleep(Duration::from_millis(900));
     let samples = recording.finish();
     assert!((samples.len() as i32 - 9_600).abs() <= 2, "{} samples", samples.len());
@@ -83,7 +83,7 @@ fn a_replayed_wav_is_recorded_at_16khz_with_levels() {
 
 #[test]
 fn a_missing_file_fails_to_start_and_says_which() {
-    let error = Recording::start_from(Some(PathBuf::from("no/such.wav")), |_| {}).err().expect("should fail");
+    let error = Recording::start_from(Some(PathBuf::from("no/such.wav")), None, |_| {}).err().expect("should fail");
     assert!(error.starts_with(&format!("Can't read {}", PathBuf::from("no/such.wav").display())), "{error}");
 }
 
@@ -111,7 +111,7 @@ fn quiet_is_counted_from_the_last_speech() {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("then-quiet.wav");
     speech_then_silence(&path, 0.4, 1.6);
-    let recording = Recording::start_from(Some(path), |_| {}).expect("start");
+    let recording = Recording::start_from(Some(path), None, |_| {}).expect("start");
     std::thread::sleep(Duration::from_millis(1_500));
     let quiet = recording.quiet_for().expect("the tone counts as speech");
     // Speech ended 0.4 s in; at 1.5 s about 1.1 s of quiet has passed.
@@ -123,7 +123,7 @@ fn a_quiet_room_alone_never_counts_as_speech() {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("room.wav");
     speech_then_silence(&path, 0.0, 1.0);
-    let recording = Recording::start_from(Some(path), |_| {}).expect("start");
+    let recording = Recording::start_from(Some(path), None, |_| {}).expect("start");
     std::thread::sleep(Duration::from_millis(800));
     assert_eq!(recording.quiet_for(), None);
 }
@@ -144,7 +144,7 @@ fn a_muted_mic_never_sounds_but_a_quiet_room_does() {
         writer.write_sample(0i16).expect("zero");
     }
     writer.finalize().expect("finalize");
-    let recording = Recording::start_from(Some(muted), |_| {}).expect("start");
+    let recording = Recording::start_from(Some(muted), None, |_| {}).expect("start");
     std::thread::sleep(Duration::from_millis(600));
     assert!(!recording.sounded());
     assert!(!recording.spoke());
@@ -153,14 +153,14 @@ fn a_muted_mic_never_sounds_but_a_quiet_room_does() {
     // About -60 dBFS of hiss: quiet, but a working mic.
     let room = dir.path().join("room.wav");
     speech_then_silence(&room, 0.0, 1.0);
-    let recording = Recording::start_from(Some(room), |_| {}).expect("start");
+    let recording = Recording::start_from(Some(room), None, |_| {}).expect("start");
     std::thread::sleep(Duration::from_millis(600));
     assert!(recording.sounded());
     assert!(!recording.spoke());
 
     let talk = dir.path().join("talk.wav");
     speech_then_silence(&talk, 0.6, 0.2);
-    let recording = Recording::start_from(Some(talk), |_| {}).expect("start");
+    let recording = Recording::start_from(Some(talk), None, |_| {}).expect("start");
     std::thread::sleep(Duration::from_millis(700));
     assert!(recording.sounded() && recording.spoke());
 }
@@ -171,4 +171,54 @@ fn messages_name_the_mic_the_way_windows_sound_settings_do() {
     assert_eq!(short_name("Headset (WH-1000XM4 Hands-Free AG Audio)"), "Headset");
     assert_eq!(short_name("Yeti Stereo Microphone"), "Yeti Stereo Microphone");
     assert_eq!(short_name("(Unnamed device)"), "(Unnamed device)");
+}
+
+#[test]
+fn mics_are_named_like_windows_names_them_with_the_driver_only_to_tell_two_apart() {
+    let found = |id: &str, name: &str, driver: &str, bluetooth: bool| {
+        (id.to_string(), name.to_string(), Some(clean_driver(driver)), bluetooth)
+    };
+    let mics = name_mics(&[
+        found("a", "Microphone", "Realtek(R) Audio", false),
+        found("b", "Microphone", "Intel(R) Smart Sound Technology", false),
+        found("c", "Headset", "WH-1000XM4 Hands-Free AG Audio", true),
+    ]);
+    let names: Vec<&str> = mics.iter().map(|mic| mic.name.as_str()).collect();
+    assert_eq!(names, ["Microphone \u{b7} Realtek Audio", "Microphone \u{b7} Intel Smart Sound Technology", "Headset"]);
+    assert_eq!(mics.iter().map(|mic| mic.bluetooth).collect::<Vec<_>>(), [false, false, true]);
+}
+
+#[test]
+fn a_replayed_file_ignores_the_mic_pick_and_is_never_lost() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("talk.wav");
+    speech_then_silence(&path, 0.6, 0.2);
+    let recording = Recording::start_from(Some(path), Some("wasapi:gone".into()), |_| {}).expect("start");
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(recording.device(), "talk.wav");
+    assert!(!recording.lost());
+}
+
+/// Opens this machine's real inputs for a moment (nothing is kept or sent).
+/// Run: cargo test -p likh mic_pick_live -- --ignored --nocapture
+#[test]
+#[ignore = "opens this machine's microphones"]
+fn mic_pick_live() {
+    let mics = inputs();
+    println!("inputs: {:?}", mics.iter().map(|mic| &mic.name).collect::<Vec<_>>());
+    let default = system_default().expect("a default input");
+    for mic in &mics {
+        let recording = Recording::start_from(None, Some(mic.id.clone()), |_| {}).expect("open the picked mic");
+        // How long a real mic sends digital silence after opening: the silent-mic note waits 2 s.
+        let opened = std::time::Instant::now();
+        while !recording.sounded() && opened.elapsed() < Duration::from_secs(3) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        println!("picked {} -> opened {}, first sound after {:?}", mic.name, recording.device(), opened.elapsed());
+        assert!(recording.sounded() && opened.elapsed() < Duration::from_secs(1), "{} stayed silent", mic.name);
+        assert!(mic.name.starts_with(recording.device()), "{} opened {}", mic.name, recording.device());
+    }
+    let gone = Recording::start_from(None, Some("wasapi:{unplugged}".into()), |_| {}).expect("fall back");
+    println!("unplugged pick -> opened {}", gone.device());
+    assert!(default.name.starts_with(gone.device()));
 }

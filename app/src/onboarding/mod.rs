@@ -486,7 +486,8 @@ impl Onboarding {
         let step = match (&self.step, &self.codex) {
             (Step::Connect, _) if self.wants_recheck() => time::every(Duration::from_secs(2)).map(|_| Message::Recheck),
             (Step::Connect, _) => Subscription::none(),
-            (Step::Microphone, _) => Subscription::run(microphone::listen).map(Message::Mic),
+            // Onboarding comes before any pick, so it listens to Windows' default.
+            (Step::Microphone, _) => Subscription::run_with(None, microphone::listen).map(Message::Mic),
             // Picking a new shortcut reads the window's own keys.
             (Step::Shortcut, _) if self.practice.capturing.is_some() => keyboard::listen().map(Message::Key),
             // Otherwise the global shortcut has the keys, so watch the dictation instead.

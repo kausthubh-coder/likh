@@ -1,6 +1,6 @@
 # Settings
 
-The likh window, opened from the tray (`Open likh`, or a double click on the icon). It's borderless, 720 x 520, with five tabs down the left and the version and update button at their foot. Every setting is one row in a panel, and every tab fits without scrolling except a long History. Every change saves at once to `settings.json` in likh's data folder, and the next dictation uses it.
+The likh window, opened from the tray (`Open likh`, or a double click on the icon). It's borderless, 720 x 580, with six tabs down the left and the version and update button at their foot. Every setting is one row in a panel, and every tab fits without scrolling except a long History. Every change saves at once to `settings.json` in likh's data folder, and the next dictation uses it.
 
 ## Sub-features
 
@@ -27,10 +27,11 @@ Preconditions:
 - A test instance with its own `LIKH_HOME` and a fake `CODEX_HOME` (see `../SKILL.md`, Launch), its PID captured by path.
 - Open the window: `LIKH_HOME=... ./target/release/likh.exe ctl open` from Bash (or `Start-Process -Wait` in PowerShell).
 
-Logical coordinates in the 720 x 520 window:
+Logical coordinates in the 720 x 580 window:
 
-- **Tabs:** x 92; Dictation y 84, Transcription y 116, Commands y 149, History y 182, App y 215.
-- **Update button:** (154, 482).
+- **Tabs:** x 92; Dictation y 84, Transcription y 116, Commands y 149, Dictionary y 182, History y 215, App y 248.
+- **Update button:** (154, 542).
+- **Microphone** (Dictation): Test (413, 415), the list (560, 415). Test opens the mic (Windows shows its mic icon) until Stop or another tab.
 - **Engines** (Transcription): ChatGPT (400, 135), Groq (400, 266).
 - **Change** (Dictation): (405, 150).
 - After each click, wait about 600 ms, then `scripts/screenshot-window.ps1 -ProcessId <pid> -Out .agents/qa/settings/<tab>.png`.

@@ -116,9 +116,10 @@ fn run(skip_onboarding: bool) -> ExitCode {
         settings.read().map(|s| (s.shortcut, s.paste_last, s.mouse)).unwrap_or_default();
     // One inbox for the dictation: the shortcut, the pill's stop button and `likh ctl` all send to it.
     let (dictation, inputs) = mpsc::channel();
-    let pill = pill::Pill::spawn(dictation.clone());
-    let fake = transcriber::Transcriber::fake_from_env();
+    // One inbox for the tray's thread: `likh ctl open`, update news, a dictation landing, the pill's Pick mic.
     let (ui, ui_requests) = iced::futures::channel::mpsc::unbounded();
+    let pill = pill::Pill::spawn(dictation.clone(), ui.clone());
+    let fake = transcriber::Transcriber::fake_from_env();
     let updates = update::Updates::new(Some(ui.clone()));
     let status = dictation::spawn(dictation.clone(), inputs, pill, fake, settings.clone(), updates.clone(), ui.clone());
     if settings.read().is_ok_and(|s| s.auto_update) {

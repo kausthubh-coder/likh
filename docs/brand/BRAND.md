@@ -107,7 +107,7 @@ The pill hugs what it shows. Seven bars (4px wide, 3px apart, 46px in all) sit 1
 | `done` | back to resting | 250ms; the pasted text is the feedback, no checkmark toast |
 | `time running out` | 100 x 36 | from 9:00: bars + an amber ring that empties over the last minute, seconds left inside it (`55`) |
 | `error` | 200 to 360 x 52 | red icon, one sentence (two lines at most). Stays 6 s, longer while the pointer is on it |
-| `problem` | 200 to 360 x 52 | an error with its fix: one pill-shaped button on the right (36 tall, inset 8) that opens it and dismisses the pill. "No sound from Microphone Array. Is it muted?" · Pick mic |
+| `problem` | 200 to 360 x 52 | an error with its fix: one pill-shaped button on the right (36 tall, inset 8) that opens it and dismisses the pill. "No sound from Microphone Array. Is it muted?" · Pick mic (opens likh at the Microphone row) |
 | `note` | hugs its words x 36 (52 for two lines) | nothing broke, nothing happened: three grey bars lying flat, one sentence, no sound. "No voice heard". Stays 3 s |
 | `mic silent` | hugs its words x 36 | while recording, after 2 s of digital silence: the note's look, "Microphone Array is silent. Is it muted?". Stays until sound arrives (the bars come back) or the dictation ends |
 | `cancelled` | back to resting | bars fall flat, `exit` timing |
