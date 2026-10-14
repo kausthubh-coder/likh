@@ -12,6 +12,8 @@
 
 use super::{CANVAS, Click, Command, Look};
 use crate::dictation::Input;
+use crate::tray::Pick;
+use iced::futures::channel::mpsc::UnboundedSender;
 use std::cell::{Cell, RefCell};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Instant;
@@ -63,10 +65,11 @@ type OnScreen = (i32, i32, i32, i32, Click);
 thread_local! {
     // The window procedure runs on the pill thread, so what it needs lives there:
     // the one button that takes clicks (left, top, right, bottom on screen, in
-    // pixels, and what it does), where a stop goes, and whether a click asked
-    // the pill to step aside.
+    // pixels, and what it does), where a stop goes, where opening likh's
+    // window goes, and whether a click asked the pill to step aside.
     static TARGET: Cell<Option<OnScreen>> = const { Cell::new(None) };
     static DICTATION: RefCell<Option<Sender<Input>>> = const { RefCell::new(None) };
+    static UI: RefCell<Option<UnboundedSender<Pick>>> = const { RefCell::new(None) };
     static DISMISSED: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -85,13 +88,18 @@ impl Waker {
     }
 }
 
-pub fn spawn(commands: Receiver<Command>, dictation: Sender<Input>) -> Result<Waker, String> {
+pub fn spawn(
+    commands: Receiver<Command>,
+    dictation: Sender<Input>,
+    ui: UnboundedSender<Pick>,
+) -> Result<Waker, String> {
     let (ready_tx, ready_rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("likh-pill".into())
         .spawn(move || match Overlay::create() {
             Ok(overlay) => {
                 DICTATION.with(|slot| *slot.borrow_mut() = Some(dictation));
+                UI.with(|slot| *slot.borrow_mut() = Some(ui));
                 // SAFETY: no arguments; returns this thread's id.
                 let _ = ready_tx.send(Ok(unsafe { GetCurrentThreadId() }));
                 overlay.run(commands);
@@ -356,7 +364,14 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
                     }
                 }),
                 Some(Click::Fix(fix)) => {
-                    crate::shared::open_url(fix.url());
+                    match fix.url() {
+                        Some(url) => crate::shared::open_url(url),
+                        None => UI.with(|slot| {
+                            if let Some(ui) = slot.borrow().as_ref() {
+                                let _ = ui.unbounded_send(Pick::Microphone);
+                            }
+                        }),
+                    }
                     DISMISSED.with(|dismissed| dismissed.set(true));
                     // SAFETY: posts to this thread's own queue; the loop reads DISMISSED on WM_APP.
                     unsafe {

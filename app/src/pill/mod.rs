@@ -100,7 +100,7 @@ pub enum Show {
 /// What a problem's button opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fix {
-    /// Windows' sound settings, where the input is picked and unmuted.
+    /// likh's own Microphone row, with its list and Test meter.
     PickMic,
     /// Windows' microphone privacy page.
     MicAccess,
@@ -114,10 +114,11 @@ impl Fix {
         }
     }
 
-    pub fn url(self) -> &'static str {
+    /// A Windows settings page, or None when the fix is in likh's own window.
+    pub fn url(self) -> Option<&'static str> {
         match self {
-            Fix::PickMic => "ms-settings:sound",
-            Fix::MicAccess => "ms-settings:privacy-microphone",
+            Fix::PickMic => None,
+            Fix::MicAccess => Some("ms-settings:privacy-microphone"),
         }
     }
 }
@@ -187,11 +188,14 @@ impl Pill {
     /// Opens the pill's window on its own thread. Clicks on the hands-free stop
     /// button go to `dictation`. If the window fails, dictation still works; it
     /// just has nothing on screen.
-    pub fn spawn(dictation: Sender<crate::dictation::Input>) -> Self {
+    pub fn spawn(
+        dictation: Sender<crate::dictation::Input>,
+        ui: iced::futures::channel::mpsc::UnboundedSender<crate::tray::Pick>,
+    ) -> Self {
         #[cfg(target_os = "windows")]
         {
             let (tx, rx) = std::sync::mpsc::channel();
-            match windows::spawn(rx, dictation) {
+            match windows::spawn(rx, dictation, ui) {
                 Ok(waker) => Self { commands: Some(tx), waker: Some(waker) },
                 Err(reason) => {
                     eprintln!("likh: no pill on screen: {reason}");
@@ -202,7 +206,7 @@ impl Pill {
         #[cfg(not(target_os = "windows"))]
         {
             // macOS alpha: dictation works, the overlay comes later (docs/plan.md).
-            let _ = dictation;
+            let _ = (dictation, ui);
             Self::none()
         }
     }

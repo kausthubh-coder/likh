@@ -46,6 +46,12 @@ pub enum Pick {
     CopyLast,
     /// A dictation was pasted (sent by the dictation thread): refresh the copy line.
     Dictated,
+    /// The pill's "Pick mic": open the likh window at the Microphone row.
+    #[cfg_attr(
+        not(target_os = "windows"),
+        allow(dead_code, reason = "only the Windows pill has a Pick mic button; macOS (alpha) has no pill window yet")
+    )]
+    Microphone,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +162,17 @@ impl App {
                     self.open_setup()
                 } else {
                     self.open_panel()
+                }
+            }
+            Message::Tray(Pick::Microphone) => {
+                let opened = self.open_panel();
+                match &mut self.panel {
+                    Some((id, panel)) => {
+                        let id = *id;
+                        let to_tab = panel.update(panel::Message::Tab(panel::Tab::Dictation));
+                        Task::batch([opened, to_tab.map(move |message| Message::Panel(id, message))])
+                    }
+                    None => opened,
                 }
             }
             Message::Tray(Pick::Setup) | Message::Panel(_, panel::Message::RunSetup) => self.open_setup(),

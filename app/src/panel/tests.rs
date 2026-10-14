@@ -19,10 +19,20 @@ fn panel() -> Fixture {
         last: None,
         last_text: None,
     }));
-    let files =
-        Files { settings: Some(dir.path().join("settings.json")), history: Some(dir.path().join("history.jsonl")) };
+    let files = Files {
+        settings: Some(dir.path().join("settings.json")),
+        history: Some(dir.path().join("history.jsonl")),
+        mics: two_mics,
+    };
     let panel = Panel::new(window::Id::unique(), settings.clone(), status, Updates::new(None), files);
     Fixture { panel, settings, dir }
+}
+
+/// A laptop's own mic (Windows' default) and a Bluetooth headset, never this machine's.
+fn two_mics() -> (Vec<Mic>, Option<Mic>) {
+    let laptop = Mic { id: "wasapi:laptop".into(), name: "Microphone Array".into(), bluetooth: false };
+    let headset = Mic { id: "wasapi:headset".into(), name: "WH-1000XM4".into(), bluetooth: true };
+    (vec![laptop.clone(), headset], Some(laptop))
 }
 
 fn press(panel: &mut Panel, label: &str) {
@@ -245,6 +255,13 @@ fn brand_board_panel() {
     f.settings.write().expect("settings").shortcut =
         Binding::new(true, true, false, false, crate::hotkey::KeyName("D")).expect("a valid shortcut");
     snap(&out, "dictation-saved", &f.panel);
+    // The headset picked and being tested: the meter, Stop, and the Bluetooth line.
+    f.panel.saved = false;
+    let (options, _) = f.panel.mic_options();
+    let _ = f.panel.update(Message::Microphone(options[2].clone()));
+    f.panel.testing = true;
+    f.panel.mic_levels = [0.2, 0.5, 0.8, 0.6, 0.9, 0.4, 0.7];
+    snap(&out, "dictation-microphone", &f.panel);
 }
 
 /// Renders the window as it looks now to `<out>/<name>-tiny-skia.png`.
@@ -471,4 +488,58 @@ fn picking_paste_last_keys_leaves_the_dictation_shortcut_alone_and_refuses_its_k
     // Esc backs out with the old keys.
     let _ = f.panel.update(Message::Key(key(keyboard::key::Code::Escape, keyboard::Modifiers::empty())));
     assert!(shows(&f.panel, "Alt+Shift+Z"));
+}
+
+#[test]
+fn the_microphone_list_starts_on_windows_default_and_saves_a_pick() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let (options, picked) = f.panel.mic_options();
+    let labels: Vec<String> = options.iter().map(ToString::to_string).collect();
+    assert_eq!(labels, ["Default \u{b7} Microphone Array", "Microphone Array", "WH-1000XM4"]);
+    assert_eq!(picked, options[0]);
+    // The list draws its own label, out of the simulator's reach; the row's words are widgets.
+    assert!(shows(&f.panel, "Microphone") && shows(&f.panel, "Test"));
+
+    let _ = f.panel.update(Message::Microphone(options[1].clone()));
+    let saved = Settings::load_from(&f.dir.path().join("settings.json"));
+    assert_eq!(saved.microphone, Some(Choice { id: "wasapi:laptop".into(), name: "Microphone Array".into() }));
+}
+
+#[test]
+fn a_bluetooth_pick_warns_about_call_quality() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let (options, _) = f.panel.mic_options();
+    let _ = f.panel.update(Message::Microphone(options[2].clone()));
+    assert!(shows(&f.panel, "Bluetooth headsets drop to call quality while you talk."));
+}
+
+#[test]
+fn a_picked_mic_thats_unplugged_stays_listed_and_says_whats_used_instead() {
+    let _ui = test_ui::lock();
+    let f = panel();
+    f.settings.write().expect("settings").microphone =
+        Some(Choice { id: "wasapi:yeti".into(), name: "Yeti Stereo Microphone".into() });
+    let (options, picked) = f.panel.mic_options();
+    assert_eq!(picked.to_string(), "Yeti Stereo Microphone (not connected)");
+    assert_eq!(options.last(), Some(&picked));
+    assert!(shows(&f.panel, "Not connected. Using Microphone Array until it's back."));
+}
+
+#[test]
+fn the_mic_opens_only_while_testing_and_closes_when_you_leave_the_tab() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    assert!(!f.panel.testing, "opening the window never opens the mic");
+    let _ = f.panel.update(Message::TestMic(true));
+    assert!(shows(&f.panel, "Stop"));
+    for level in [0.2, 0.9, 0.5] {
+        let _ = f.panel.update(Message::MicHeard(microphone::Event::Level(level)));
+    }
+    assert_eq!(f.panel.mic_levels[MIC_BARS - 3..], [0.2, 0.9, 0.5]);
+    let _ = f.panel.update(Message::Tab(Tab::History));
+    assert!(!f.panel.testing);
+    let _ = f.panel.update(Message::Tab(Tab::Dictation));
+    assert!(shows(&f.panel, "Test"));
 }

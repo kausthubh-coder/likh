@@ -18,11 +18,12 @@ use crate::commands::Group;
 use crate::dictation::Status;
 use crate::history::{self, Entry};
 use crate::hotkey::{self, Binding, MouseTrigger, capture};
+use crate::microphone::{self, Choice, Mic};
 use crate::onboarding::{self, GroqSetup, Tone};
 use crate::settings::{Mode, Settings, SilenceStop};
 use crate::shared::icon;
 use crate::shared::theme::{self, Palette, palette, radius, size, space};
-use crate::shared::ui::{field_style, pill_fill, said, segmented, switch};
+use crate::shared::ui::{dropdown, field_style, pill_fill, said, segmented, switch};
 use crate::transcriber::{Engine, Failure, glyph, groq};
 use crate::update::{self, Updates};
 use iced::widget::{
@@ -42,7 +43,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[cfg(test)]
 mod tests;
 
-pub const WINDOW: Size = Size::new(720.0, 520.0);
+/// Tall enough for Dictation with the Microphone row and its one-line note, so no tab scrolls but History.
+pub const WINDOW: Size = Size::new(720.0, 580.0);
 const REPO: &str = "https://github.com/kausthubh-coder/likh";
 /// Plenty to scroll back through; the file keeps everything.
 const HISTORY_SHOWN: usize = 200;
@@ -114,6 +116,12 @@ pub enum Message {
     ChangePasteLast,
     /// Paste last on these keys, or off.
     PasteLast(Option<Binding>),
+    Microphone(MicOption),
+    /// The Microphone list opened: look at what's connected now.
+    FindMics,
+    /// Test, or Stop testing.
+    TestMic(bool),
+    MicHeard(microphone::Event),
     Key(keyboard::Event),
     /// A frame while a key cap flies or the update button spins.
     Frame(Instant),
@@ -189,17 +197,47 @@ pub struct Panel {
     spin: f32,
     last_frame: Option<Instant>,
     files: Files,
+    /// The inputs connected when the list was last opened, and which one Windows uses.
+    mics: Vec<Mic>,
+    default_mic: Option<Mic>,
+    /// The Test meter is listening. The mic opens only then, never just because the tab is open.
+    testing: bool,
+    /// The meter's levels, newest last.
+    mic_levels: [f32; MIC_BARS],
 }
 
-/// Where the settings and history live. The app passes the real files; tests pass temporary ones.
+/// The Test meter: the pill's seven bars, small.
+const MIC_BARS: usize = 7;
+
+/// One line of the Microphone list: Windows' default, or a mic by name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MicOption {
+    choice: Option<Choice>,
+    label: String,
+}
+
+impl std::fmt::Display for MicOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
+}
+
+/// Where the settings and history live, and how to list this computer's
+/// mics. The app passes the real ones; tests pass temporary files and made-up mics.
 pub struct Files {
     pub settings: Option<PathBuf>,
     pub history: Option<PathBuf>,
+    /// The mics connected now, and Windows' default among them.
+    pub mics: fn() -> (Vec<Mic>, Option<Mic>),
 }
 
 impl Files {
     pub fn real() -> Self {
-        Self { settings: crate::settings::folder().map(|dir| dir.join("settings.json")), history: history::file() }
+        Self {
+            settings: crate::settings::folder().map(|dir| dir.join("settings.json")),
+            history: history::file(),
+            mics: || (microphone::inputs(), microphone::system_default()),
+        }
     }
 }
 
@@ -229,6 +267,8 @@ impl Panel {
         files: Files,
     ) -> Self {
         let shortcut = settings.read().map(|s| s.shortcut).unwrap_or_default();
+        // It opens on Dictation, where the Microphone list is.
+        let (mics, default_mic) = (files.mics)();
         Self {
             window,
             tab: Tab::Dictation,
@@ -248,7 +288,11 @@ impl Panel {
             copied: None,
             spin: 0.0,
             last_frame: None,
+            mics,
+            default_mic,
             files,
+            testing: false,
+            mic_levels: [0.0; MIC_BARS],
         }
     }
 
@@ -289,6 +333,11 @@ impl Panel {
         match message {
             Message::Tab(tab) => {
                 self.stop_capturing();
+                // Leaving the row lets go of the mic.
+                self.testing = false;
+                if tab == Tab::Dictation {
+                    self.find_mics();
+                }
                 self.tab = tab;
                 self.notice = None;
                 self.saved = false;
@@ -323,6 +372,24 @@ impl Panel {
             Message::KeepShortcut => {
                 self.stop_capturing();
                 self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
+            }
+            Message::Microphone(option) => {
+                self.change(|s| s.microphone = option.choice);
+                self.mic_levels = [0.0; MIC_BARS];
+            }
+            Message::FindMics => self.find_mics(),
+            Message::TestMic(on) => {
+                self.testing = on;
+                self.mic_levels = [0.0; MIC_BARS];
+            }
+            Message::MicHeard(microphone::Event::Level(level)) => {
+                self.mic_levels.rotate_left(1);
+                self.mic_levels[MIC_BARS - 1] = level;
+            }
+            Message::MicHeard(microphone::Event::Opened { .. }) => {}
+            Message::MicHeard(microphone::Event::Failed(reason)) => {
+                self.testing = false;
+                self.notice = Some((format!("likh can't hear that mic. {reason}"), Tone::Danger));
             }
             Message::PasteLast(keys) => match hotkey::set_paste_last(keys) {
                 Ok(()) => self.change(|s| s.paste_last = keys),
@@ -496,6 +563,90 @@ impl Panel {
     /// Releases the shortcut if the window closes mid-capture.
     pub fn closing(&mut self) {
         self.stop_capturing();
+        self.testing = false;
+    }
+
+    fn find_mics(&mut self) {
+        (self.mics, self.default_mic) = (self.files.mics)();
+    }
+
+    /// The Microphone list: Windows' default first, then each mic, then the
+    /// picked one if it isn't connected, so the list still shows what's picked.
+    fn mic_options(&self) -> (Vec<MicOption>, MicOption) {
+        let default = MicOption {
+            choice: None,
+            label: match &self.default_mic {
+                // Windows' own word for it, with the mic it means today.
+                Some(mic) => format!("Default \u{b7} {}", mic.name),
+                None => "Default".into(),
+            },
+        };
+        let mut options = vec![default.clone()];
+        options.extend(self.mics.iter().map(|mic| MicOption {
+            choice: Some(Choice { id: mic.id.clone(), name: mic.name.clone() }),
+            label: mic.name.clone(),
+        }));
+        let picked = match self.chosen().microphone {
+            None => default,
+            Some(choice) => match options.iter().find(|option| option.choice.as_ref() == Some(&choice)) {
+                Some(found) => found.clone(),
+                None => {
+                    let gone = MicOption { label: format!("{} (not connected)", choice.name), choice: Some(choice) };
+                    options.push(gone.clone());
+                    gone
+                }
+            },
+        };
+        (options, picked)
+    }
+
+    /// The Microphone row: the list, Test (or the meter and Stop while
+    /// testing), and a line when the pick needs one.
+    fn microphone_line(&self, p: &Palette) -> Line<'_> {
+        let (options, picked) = self.mic_options();
+        let chosen = self.chosen().microphone;
+        let connected = chosen.as_ref().is_none_or(|choice| self.mics.iter().any(|mic| mic.id == choice.id));
+        let using = match &chosen {
+            Some(choice) if connected => self.mics.iter().find(|mic| mic.id == choice.id),
+            _ => self.default_mic.as_ref(),
+        };
+        let what = if !connected {
+            let fallback = self.default_mic.as_ref().map_or("Windows' default", |mic| mic.name.as_str());
+            Some(format!("Not connected. Using {fallback} until it's back."))
+        } else if using.is_some_and(|mic| mic.bluetooth) {
+            Some("Bluetooth headsets drop to call quality while you talk.".to_string())
+        } else {
+            None
+        };
+        let mut control = row![].spacing(space::S3).align_y(Alignment::Center);
+        if self.testing {
+            let accent = p.accent;
+            let bars = row(self.mic_levels.iter().map(|level| {
+                container(Space::new()).width(3).height(4.0 + level * 12.0).style(move |_| pill_fill(accent)).into()
+            }))
+            .spacing(2)
+            .height(16)
+            .align_y(Alignment::Center);
+            control = control.push(bars).push(link(p, "Stop", Message::TestMic(false)));
+        } else {
+            control = control.push(link(p, "Test", Message::TestMic(true)));
+        }
+        control = control.push(dropdown(options, Some(picked), Message::Microphone, Message::FindMics));
+        let top = row![container(named(p, "Microphone", None)).width(Length::Fill), control]
+            .spacing(space::S4)
+            .align_y(Alignment::Center);
+        // The list takes most of the row, so its line runs under the whole row, not under the name.
+        match what {
+            Some(what) => Line::custom(
+                column![
+                    top,
+                    text(what).size(size::SMALL).line_height(theme::line_height(size::SMALL)).color(p.text_muted)
+                ]
+                .spacing(space::S1)
+                .into(),
+            ),
+            None => Line::custom(top.into()),
+        }
     }
 
     /// A key cap in flight, or the update button spinning. Otherwise the window draws nothing.
@@ -508,7 +659,14 @@ impl Panel {
         // Keys reach the window only while it has focus: Esc to close, or a new shortcut.
         let keys = keyboard::listen().map(Message::Key);
         let frames = if self.wants_frames() { window::frames().map(Message::Frame) } else { Subscription::none() };
-        Subscription::batch([keys, frames])
+        // Keyed by the picked mic, so picking another while testing listens to that one.
+        let mic = if self.testing {
+            let picked = self.chosen().microphone.map(|choice| choice.id);
+            Subscription::run_with(picked, microphone::listen).map(Message::MicHeard)
+        } else {
+            Subscription::none()
+        };
+        Subscription::batch([keys, frames, mic])
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -725,8 +883,10 @@ impl Panel {
         let mouse_options = MouseTrigger::ALL.map(|trigger| (trigger, trigger.name()));
         let mode_options = Mode::ALL.map(|mode| (mode, mode.name()));
         let quiet_options = SilenceStop::ALL.map(|after| (after, after.name()));
-        let mut talk =
-            vec![Line::plain(named(p, "Sounds", None), switch(chosen.sounds)).press(Message::Sounds(!chosen.sounds))];
+        let mut talk = vec![
+            self.microphone_line(p),
+            Line::plain(named(p, "Sounds", None), switch(chosen.sounds)).press(Message::Sounds(!chosen.sounds)),
+        ];
         if crate::media::SUPPORTED {
             talk.push(
                 Line::plain(named(p, "Pause music and videos", None), switch(chosen.pause_media))
