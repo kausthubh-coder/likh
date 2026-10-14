@@ -238,10 +238,7 @@ fn brand_board_pill() {
         ("warning", Show::Warning { seconds_left: 55 }),
         ("quiet-stop", Show::QuietStop { left: Duration::from_millis(2_600), after: Duration::from_secs(5) }),
         ("error", Show::Error("Your Codex sign-in expired. Open Codex once to refresh it, then try again.".into())),
-        (
-            "problem",
-            Show::Problem { text: "No sound from Microphone Array. Is it muted?".into(), fix: Fix::PickMic },
-        ),
+        ("problem", Show::Problem { text: "No sound from Microphone Array. Is it muted?".into(), fix: Fix::PickMic }),
         ("note", Show::Note("No voice heard".into())),
         ("mic-silent", Show::MicSilent { device: "Microphone Array".into() }),
     ];
