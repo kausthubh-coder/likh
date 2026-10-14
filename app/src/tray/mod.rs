@@ -47,6 +47,10 @@ pub enum Pick {
     /// A dictation was pasted (sent by the dictation thread): refresh the copy line.
     Dictated,
     /// The pill's "Pick mic": open the likh window at the Microphone row.
+    #[cfg_attr(
+        not(target_os = "windows"),
+        allow(dead_code, reason = "only the Windows pill has a Pick mic button; macOS (alpha) has no pill window yet")
+    )]
     Microphone,
 }
 
