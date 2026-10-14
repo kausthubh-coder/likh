@@ -64,10 +64,16 @@ pub fn verify(key: &str) -> Result<(), Failure> {
     }
 }
 
-pub fn transcribe(key: &str, wav: &[u8], seconds: f32) -> Result<String, Failure> {
+/// `prompt` is the user's dictionary as a sentence (`dictionary::whisper_prompt`):
+/// Whisper spells names the way the prompt does.
+pub fn transcribe(key: &str, wav: &[u8], seconds: f32, prompt: Option<&str>) -> Result<String, Failure> {
     let boundary = boundary();
     // temperature 0 keeps Whisper from getting creative with quiet audio.
-    let body = multipart(&boundary, wav, &[("model", MODEL), ("response_format", "json"), ("temperature", "0")]);
+    let mut fields = vec![("model", MODEL), ("response_format", "json"), ("temperature", "0")];
+    if let Some(prompt) = prompt {
+        fields.push(("prompt", prompt));
+    }
+    let body = multipart(&boundary, wav, &fields);
     let mut response = agent(seconds, USER_AGENT)
         .post(TRANSCRIPTIONS)
         .header("Authorization", format!("Bearer {}", key.trim()))

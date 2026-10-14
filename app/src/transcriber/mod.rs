@@ -20,7 +20,7 @@ mod tests;
 pub const SAMPLE_RATE: u32 = 16_000;
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/transcribe";
 /// What the Codex desktop app sends (docs/codex.md, The request).
-const USER_AGENT: &str = "Codex Desktop/26.1007.2314.0 (Windows NT 10.0; x64)";
+pub const USER_AGENT: &str = "Codex Desktop/26.1007.2314.0 (Windows NT 10.0; x64)";
 /// Anything shorter is a stray tap, not speech; the servers reject it anyway.
 pub const SHORTEST: Duration = Duration::from_millis(300);
 
@@ -101,7 +101,9 @@ impl Transcriber {
     }
 
     /// `samples` are 16 kHz mono in -1..1. Blocks until the service answers.
-    pub fn transcribe(&self, samples: &[f32]) -> Result<String, Failure> {
+    /// `words` is the user's dictionary: Groq hears it as a prompt, ChatGPT has
+    /// nowhere to take it (`dictionary::fix` handles that one afterwards).
+    pub fn transcribe(&self, samples: &[f32], words: &[String]) -> Result<String, Failure> {
         if samples.len() < (SAMPLE_RATE as f32 * SHORTEST.as_secs_f32()) as usize {
             return Err(Failure::TooShort);
         }
@@ -116,7 +118,8 @@ impl Transcriber {
             }
             Transcriber::Groq => {
                 let key = groq::saved_key().ok_or(Failure::GroqNoKey)?;
-                groq::transcribe(&key, &wav(samples), seconds)
+                let prompt = crate::dictionary::whisper_prompt(words);
+                groq::transcribe(&key, &wav(samples), seconds, prompt.as_deref())
             }
         }
     }
@@ -185,7 +188,7 @@ fn post(credentials: &Credentials, wav: &[u8], seconds: f32) -> Result<String, F
 
 /// An HTTP client whose timeout grows with the recording: uploads scale with
 /// length, and a fixed timeout cut long ones off in the prototype.
-fn agent(seconds: f32, user_agent: &str) -> ureq::Agent {
+pub fn agent(seconds: f32, user_agent: &str) -> ureq::Agent {
     let timeout = Duration::from_secs(15) + Duration::from_secs_f32(seconds * 0.5);
     ureq::Agent::config_builder()
         .http_status_as_error(false)

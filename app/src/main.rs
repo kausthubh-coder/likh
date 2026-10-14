@@ -5,6 +5,7 @@ mod codex_auth;
 mod commands;
 mod ctl;
 mod dictation;
+mod dictionary;
 mod history;
 mod hotkey;
 mod media;

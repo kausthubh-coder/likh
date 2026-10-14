@@ -19,13 +19,14 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
 | `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it |
 | `app/src/hotkey/` | the shortcut (Ctrl+Space by default), an optional mouse button (a low-level hook, installed only while one is picked) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
-| `app/src/settings/` | what the user chose (shortcut, mouse button, mode, silence stop, engine, sounds, pause media, commands, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
+| `app/src/settings/` | what the user chose (shortcut, mouse button, mode, silence stop, engine, sounds, pause media, commands, dictionary, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
 | `app/src/history/` | past dictations, one JSON line each, on this computer only |
 | `app/src/commands/` | spoken commands in four groups: lines ("new line", "new bullet"), keys ("press enter", "press tab"), scratch ("scratch that"), punctuation by name (off by default) |
+| `app/src/dictionary/` | the user's own words (project names, people): Groq hears them as its prompt; after any engine, a quick ChatGPT pass through Codex's sign-in puts misheard ones right (`gpt-6-luna` on `/backend-api/codex/responses`, gives up after 4 s and pastes what it heard) |
 | `app/src/media/` | pauses music and videos while you talk and plays them again (Windows media controls; nothing on macOS) |
 | `app/src/sounds/` | the start, stop and error cues, synthesized |
 | `app/src/autostart/` | start with Windows (the Run key) |
-| `app/src/panel/` | the likh window from the tray: Dictation, Transcription, Commands, History, App; the shortcut's key caps and keyboard (`shortcut.rs`); its drawn icons (`icons.rs`) |
+| `app/src/panel/` | the likh window from the tray: Dictation, Transcription, Commands, Dictionary, History, App; the shortcut's key caps and keyboard (`shortcut.rs`); its drawn icons (`icons.rs`) |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings; `LIKH_AUDIO=file.wav` replays a file instead |
 | `app/src/silence/` | silence stop: is someone talking? A small voice detector (earshot) hears a voice, not loudness; `eval.rs` scores it in quiet and noisy rooms |

@@ -14,6 +14,8 @@ pub enum Shape {
     Mic,
     Wave,
     Code,
+    /// An open book: the dictionary.
+    Book,
     Clock,
     Gear,
     Refresh,
@@ -106,6 +108,16 @@ impl<M> canvas::Program<M> for Icon {
                 b.line_to(at(11.5, 12.5));
                 b.move_to(at(9.5, 3.0));
                 b.line_to(at(6.5, 13.0));
+            }),
+            Shape::Book => Path::new(|b| {
+                for edge in [2.0, 14.0] {
+                    b.move_to(at(8.0, 4.0));
+                    b.line_to(at(edge, 2.5));
+                    b.line_to(at(edge, 12.0));
+                    b.line_to(at(8.0, 13.5));
+                }
+                b.move_to(at(8.0, 4.0));
+                b.line_to(at(8.0, 13.5));
             }),
             Shape::Clock => Path::new(|b| {
                 b.circle(at(8.0, 8.0), 6.0 * unit);

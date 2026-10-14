@@ -15,6 +15,18 @@ likh does what the Codex desktop app does when you dictate into it. It reads the
 - **Response:** `{ "text": "..." }`
 - **Speed:** about 0.9 s for 7 s of speech in the prototype.
 
+## Fixing names: the dictionary
+
+`/transcribe` takes no word list, and ChatGPT's own dictation dictionary (`GET/POST /backend-api/dictation/custom_dictionary[/words]`, `DELETE …/words/{word_id}`, shown in Codex's Voice settings) doesn't change what it returns. The developer added "Critly", "Kriyan" and "Studi" there on 2026-10-13 and still got "currently" and "Korean", in likh and in ChatGPT itself.
+
+Codex fixes names the way likh now does: a second model call after the transcript, with the word list and the transcript (`dictation_cleanup` in the app's bundle). likh's version (`app/src/dictionary/`):
+
+- **Endpoint:** `POST https://chatgpt.com/backend-api/codex/responses`, the Codex CLI's own. Same bearer token, `ChatGPT-Account-Id` and `originator` as above, plus `OpenAI-Beta: responses=experimental` and `Accept: text/event-stream`.
+- **Body:** Responses API with `model: gpt-6-luna`, `reasoning.effort: low`, `service_tier: priority` (Codex's "Fast": 1.5x for this model at no extra usage), `store: false`, `stream: true`. The answer is the `response.output_text.done` event's `text`.
+- **Speed:** 1.0 to 1.3 s warm, 2.0 s for the first call (2026-10-13, `cargo test -p likh dictionary_live -- --ignored --nocapture`).
+- **Why Luna:** `cargo test -p likh dictionary_speed -- --ignored --nocapture` sends the same fix to each fast model in turn, 5 rounds. On 2026-10-13: `gpt-6-luna` median 1372 ms (1159 to 1585), `gpt-6-sol` 1408 ms (1314 to 1706), `gpt-5.6-luna` 1489 ms (1263 to 1811), `gpt-6.1-sol` 1785 ms (1650 to 2463). All four fixed the sentence every time. The first three overlap, so none is measurably faster; Luna is the cheapest of them. The answer is about 15 words, so the wait is the model starting, not its output speed.
+- **Never in the way:** on any failure, after 4 s, or when the answer is far longer or shorter than the transcript, likh pastes what it heard.
+
 ## Rules likh follows
 
 - **Never refresh or write the tokens.** Codex rotates its refresh token, so a second writer would sign the user out of Codex.
