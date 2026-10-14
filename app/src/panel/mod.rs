@@ -24,7 +24,7 @@ use crate::settings::{Mode, Settings, SilenceStop};
 use crate::shared::icon;
 use crate::shared::theme::{self, Palette, palette, radius, size, space};
 use crate::shared::ui::{dropdown, field_style, pill_fill, said, segmented, switch};
-use crate::transcriber::{Engine, Failure, glyph, groq};
+use crate::transcriber::{Engine, Failure, glyph, groq, language};
 use crate::update::{self, Updates};
 use iced::widget::{
     Space, button, canvas as canvas_widget, column, container, mouse_area, operation, row, scrollable, stack, text,
@@ -122,6 +122,7 @@ pub enum Message {
     /// Test, or Stop testing.
     TestMic(bool),
     MicHeard(microphone::Event),
+    Language(LanguageOption),
     Key(keyboard::Event),
     /// A frame while a key cap flies or the update button spins.
     Frame(Instant),
@@ -208,6 +209,19 @@ pub struct Panel {
 
 /// The Test meter: the pill's seven bars, small.
 const MIC_BARS: usize = 7;
+
+/// One line of the Language list: Auto-detect, or a language by its English name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LanguageOption {
+    code: Option<&'static str>,
+    label: &'static str,
+}
+
+impl std::fmt::Display for LanguageOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label)
+    }
+}
 
 /// One line of the Microphone list: Windows' default, or a mic by name.
 #[derive(Debug, Clone, PartialEq)]
@@ -378,6 +392,7 @@ impl Panel {
                 self.mic_levels = [0.0; MIC_BARS];
             }
             Message::FindMics => self.find_mics(),
+            Message::Language(option) => self.change(|s| s.language = option.code.map(String::from)),
             Message::TestMic(on) => {
                 self.testing = on;
                 self.mic_levels = [0.0; MIC_BARS];
@@ -631,7 +646,7 @@ impl Panel {
         } else {
             control = control.push(link(p, "Test", Message::TestMic(true)));
         }
-        control = control.push(dropdown(options, Some(picked), Message::Microphone, Message::FindMics));
+        control = control.push(dropdown(options, Some(picked), Message::Microphone, Some(Message::FindMics)));
         let top = row![container(named(p, "Microphone", None)).width(Length::Fill), control]
             .spacing(space::S4)
             .align_y(Alignment::Center);
@@ -963,9 +978,41 @@ impl Panel {
                 text("Your audio goes to the one you pick, and nowhere else.").size(size::SMALL).color(p.text_subtle)
             )
             .padding([0.0, space::S4]),
+            Space::new().height(space::S3),
+            group(p, vec![self.language_line(p)]),
         ]
         .spacing(space::S2)
         .into()
+    }
+
+    /// Language: Auto-detect, or one pinned, with why you'd leave it on auto.
+    fn language_line(&self, p: &Palette) -> Line<'_> {
+        let auto = LanguageOption { code: None, label: "Auto-detect" };
+        let mut options = vec![auto.clone()];
+        options.extend(language::ALL.iter().map(|l| LanguageOption { code: Some(l.code), label: l.name }));
+        let picked = self
+            .chosen()
+            .language
+            .as_deref()
+            .and_then(language::find)
+            .map_or(auto, |l| LanguageOption { code: Some(l.code), label: l.name });
+        let top = row![
+            container(named(p, "Language", None)).width(Length::Fill),
+            dropdown(options, Some(picked), Message::Language, None)
+        ]
+        .spacing(space::S4)
+        .align_y(Alignment::Center);
+        Line::custom(
+            column![
+                top,
+                text("Auto handles mixed languages. Pick one if likh writes the wrong one.")
+                    .size(size::SMALL)
+                    .line_height(theme::line_height(size::SMALL))
+                    .color(p.text_muted)
+            ]
+            .spacing(space::S1)
+            .into(),
+        )
     }
 
     fn engine_panel<'a>(&'a self, p: &Palette, engine: Engine, picked: bool) -> Element<'a, Message> {

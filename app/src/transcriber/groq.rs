@@ -64,16 +64,24 @@ pub fn verify(key: &str) -> Result<(), Failure> {
     }
 }
 
-/// `prompt` is the user's dictionary as a sentence (`dictionary::whisper_prompt`):
-/// Whisper spells names the way the prompt does.
-pub fn transcribe(key: &str, wav: &[u8], seconds: f32, prompt: Option<&str>) -> Result<String, Failure> {
-    let boundary = boundary();
+/// What Groq gets besides the file. `prompt` is the user's dictionary as a
+/// sentence (`dictionary::whisper_prompt`): Whisper spells names the way the
+/// prompt does. `language` is a pinned ISO-639-1 code.
+pub fn fields<'a>(prompt: Option<&'a str>, language: Option<&'a str>) -> Vec<(&'static str, &'a str)> {
     // temperature 0 keeps Whisper from getting creative with quiet audio.
     let mut fields = vec![("model", MODEL), ("response_format", "json"), ("temperature", "0")];
     if let Some(prompt) = prompt {
         fields.push(("prompt", prompt));
     }
-    let body = multipart(&boundary, wav, &fields);
+    if let Some(language) = language {
+        fields.push(("language", language));
+    }
+    fields
+}
+
+pub fn transcribe(key: &str, wav: &[u8], seconds: f32, fields: &[(&str, &str)]) -> Result<String, Failure> {
+    let boundary = boundary();
+    let body = multipart(&boundary, wav, fields);
     let mut response = agent(seconds, USER_AGENT)
         .post(TRANSCRIPTIONS)
         .header("Authorization", format!("Bearer {}", key.trim()))

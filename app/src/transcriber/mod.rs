@@ -13,6 +13,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub mod glyph;
 pub mod groq;
+pub mod language;
 
 #[cfg(test)]
 mod tests;
@@ -103,7 +104,8 @@ impl Transcriber {
     /// `samples` are 16 kHz mono in -1..1. Blocks until the service answers.
     /// `words` is the user's dictionary: Groq hears it as a prompt, ChatGPT has
     /// nowhere to take it (`dictionary::fix` handles that one afterwards).
-    pub fn transcribe(&self, samples: &[f32], words: &[String]) -> Result<String, Failure> {
+    /// `language` is a pinned ISO-639-1 code (`language::ALL`); None lets the engine detect it.
+    pub fn transcribe(&self, samples: &[f32], words: &[String], language: Option<&str>) -> Result<String, Failure> {
         if samples.len() < (SAMPLE_RATE as f32 * SHORTEST.as_secs_f32()) as usize {
             return Err(Failure::TooShort);
         }
@@ -114,12 +116,12 @@ impl Transcriber {
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
                 let home = codex_auth::codex_home().ok_or(Failure::SignIn(CodexStatus::NotInstalled))?;
                 let credentials = codex_auth::credentials(&home, now).map_err(Failure::SignIn)?;
-                post(&credentials, &wav(samples), seconds)
+                post(&credentials, &wav(samples), seconds, language)
             }
             Transcriber::Groq => {
                 let key = groq::saved_key().ok_or(Failure::GroqNoKey)?;
                 let prompt = crate::dictionary::whisper_prompt(words);
-                groq::transcribe(&key, &wav(samples), seconds, prompt.as_deref())
+                groq::transcribe(&key, &wav(samples), seconds, &groq::fields(prompt.as_deref(), language))
             }
         }
     }
@@ -179,9 +181,9 @@ impl Failure {
     }
 }
 
-fn post(credentials: &Credentials, wav: &[u8], seconds: f32) -> Result<String, Failure> {
+fn post(credentials: &Credentials, wav: &[u8], seconds: f32, language: Option<&str>) -> Result<String, Failure> {
     let boundary = boundary();
-    let body = multipart(&boundary, wav, &[]);
+    let body = multipart(&boundary, wav, &codex_fields(language));
     let mut request = agent(seconds, USER_AGENT)
         .post(ENDPOINT)
         .header("Authorization", format!("Bearer {}", credentials.access_token))
@@ -235,6 +237,11 @@ fn read_text(body: &str) -> Result<String, Failure> {
 }
 
 /// A multipart body: the WAV as the `file` part, then any plain `fields`.
+/// What ChatGPT's `/transcribe` gets besides the file: the language, when one is pinned.
+pub fn codex_fields(language: Option<&str>) -> Vec<(&'static str, &str)> {
+    language.map(|code| ("language", code)).into_iter().collect()
+}
+
 fn multipart(boundary: &str, wav: &[u8], fields: &[(&str, &str)]) -> Vec<u8> {
     let mut body = Vec::with_capacity(wav.len() + 256);
     body.extend_from_slice(

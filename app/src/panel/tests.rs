@@ -543,3 +543,16 @@ fn the_mic_opens_only_while_testing_and_closes_when_you_leave_the_tab() {
     let _ = f.panel.update(Message::Tab(Tab::Dictation));
     assert!(shows(&f.panel, "Test"));
 }
+
+#[test]
+fn language_starts_on_auto_detect_and_saves_a_pinned_code() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let _ = f.panel.update(Message::Tab(Tab::Transcription));
+    assert!(shows(&f.panel, "Language"));
+    assert!(shows(&f.panel, "Auto handles mixed languages. Pick one if likh writes the wrong one."));
+    let _ = f.panel.update(Message::Language(LanguageOption { code: Some("hi"), label: "Hindi" }));
+    assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).language.as_deref(), Some("hi"));
+    let _ = f.panel.update(Message::Language(LanguageOption { code: None, label: "Auto-detect" }));
+    assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).language, None);
+}

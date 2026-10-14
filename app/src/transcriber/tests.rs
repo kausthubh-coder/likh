@@ -46,13 +46,43 @@ fn every_error_maps_to_a_fix_the_user_can_act_on() {
 #[test]
 fn a_tap_is_too_short_and_never_reaches_chatgpt() {
     // Codex would fail without a sign-in; TooShort proves it never got that far.
-    assert_eq!(Transcriber::Codex.transcribe(&speech(0.2), &[]), Err(Failure::TooShort));
+    assert_eq!(Transcriber::Codex.transcribe(&speech(0.2), &[], None), Err(Failure::TooShort));
 }
 
 #[test]
 fn the_echo_transcriber_returns_its_text() {
     let echo = Transcriber::Echo("Hello from the fake.".into());
-    assert_eq!(echo.transcribe(&speech(1.0), &["Critly".into()]), Ok("Hello from the fake.".into()));
+    assert_eq!(echo.transcribe(&speech(1.0), &["Critly".into()], Some("hi")), Ok("Hello from the fake.".into()));
+}
+
+#[test]
+fn chatgpt_gets_a_language_part_only_when_one_is_pinned() {
+    assert_eq!(codex_fields(None), vec![]);
+    assert_eq!(codex_fields(Some("hi")), vec![("language", "hi")]);
+    let body = String::from_utf8_lossy(&multipart("b0und", b"RIFFdata", &codex_fields(Some("hi")))).into_owned();
+    assert!(body.ends_with(
+        "RIFFdata\r\n--b0und\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nhi\r\n--b0und--\r\n"
+    ));
+}
+
+#[test]
+fn groq_gets_the_language_after_its_prompt_when_one_is_pinned() {
+    let auto = groq::fields(Some("Critly."), None);
+    assert!(!auto.iter().any(|(name, _)| *name == "language"));
+    let pinned = groq::fields(Some("Critly."), Some("es"));
+    assert_eq!(&pinned[pinned.len() - 2..], [("prompt", "Critly."), ("language", "es")]);
+    assert_eq!(pinned[0], ("model", "whisper-large-v3-turbo"));
+}
+
+#[test]
+fn every_language_has_a_two_letter_code_and_the_list_reads_in_order() {
+    use language::{ALL, find};
+    assert!(ALL.iter().all(|l| l.code.len() == 2 && l.code.chars().all(|c| c.is_ascii_lowercase())));
+    assert!(ALL.windows(2).all(|pair| pair[0].name < pair[1].name), "sorted by English name");
+    assert_eq!(find("hi").map(|l| l.name), Some("Hindi"));
+    assert_eq!(find("te").map(|l| l.name), Some("Telugu"));
+    // An unknown code (an old or hand-edited file) is auto-detect, never sent.
+    assert_eq!(find("xx"), None);
 }
 
 #[test]
@@ -131,7 +161,8 @@ fn groq_live_transcribes_a_real_recording_and_refuses_a_made_up_key() {
 
     let started = std::time::Instant::now();
     let heard =
-        groq::transcribe(&key, &wav(&samples), samples.len() as f32 / SAMPLE_RATE as f32, None).expect("a transcript");
+        groq::transcribe(&key, &wav(&samples), samples.len() as f32 / SAMPLE_RATE as f32, &groq::fields(None, None))
+            .expect("a transcript");
     eprintln!("Groq heard {heard:?} in {:?}", started.elapsed());
     let words = |text: &str| -> Vec<String> {
         text.split_whitespace()

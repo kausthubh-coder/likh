@@ -72,6 +72,7 @@ fn what_you_save_is_what_you_load() {
             id: "wasapi:{0.0.1.00000000}.{eb70d1c2}".into(),
             name: "Microphone Array".into(),
         }),
+        language: Some("te".into()),
         silence_stop: SilenceStop::Long,
         pause_media: false,
         history: false,

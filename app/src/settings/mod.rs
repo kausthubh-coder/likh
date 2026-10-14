@@ -96,6 +96,8 @@ pub struct Settings {
     pub engine: Engine,
     /// The mic to record from; None follows Windows' default input.
     pub microphone: Option<crate::microphone::Choice>,
+    /// A pinned language, as an ISO-639-1 code (`transcriber::language`); None is auto-detect.
+    pub language: Option<String>,
     pub silence_stop: SilenceStop,
     /// Pause music and videos while you talk, and play them again after.
     pub pause_media: bool,
@@ -126,6 +128,7 @@ impl Default for Settings {
             mode: Mode::default(),
             engine: Engine::default(),
             microphone: None,
+            language: None,
             silence_stop: SilenceStop::default(),
             // Only Windows can pause other apps' media today.
             pause_media: cfg!(target_os = "windows"),
