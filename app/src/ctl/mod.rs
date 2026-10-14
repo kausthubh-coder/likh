@@ -19,7 +19,8 @@ use std::sync::{Arc, Mutex};
 #[cfg(test)]
 mod tests;
 
-pub const COMMANDS: [&str; 8] = ["status", "start", "stop", "cancel", "quit", "open", "update", "install-update"];
+pub const COMMANDS: [&str; 10] =
+    ["status", "start", "stop", "cancel", "paste-last", "copy-last", "quit", "open", "update", "install-update"];
 
 fn name() -> std::io::Result<Name<'static>> {
     let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
@@ -64,8 +65,14 @@ pub fn serve(
                 updates.check_now();
             }
             let (answer, input) = answer(line.trim(), &snapshot, &updates.state());
-            let answer = if line.trim() == "open" && ui.unbounded_send(crate::tray::Pick::Open).is_err() {
-                json!({ "ok": false, "error": "likh's window isn't ready. Try opening it again." })
+            // These two go to the tray's thread, like the menu lines they stand in for.
+            let to_tray = match line.trim() {
+                "open" => Some(crate::tray::Pick::Open),
+                "copy-last" => Some(crate::tray::Pick::CopyLast),
+                _ => None,
+            };
+            let answer = if to_tray.is_some_and(|pick| ui.unbounded_send(pick).is_err()) {
+                json!({ "ok": false, "error": "likh's window isn't ready. Try again." })
             } else {
                 answer
             };
@@ -113,7 +120,8 @@ pub fn answer(command: &str, status: &Status, update: &crate::update::State) -> 
         "start" => (ok, Some(Input::Hold)),
         "stop" => (ok, Some(Input::Stop)),
         "cancel" => (ok, Some(Input::Cancel)),
-        "quit" | "open" | "install-update" => (ok, None),
+        "paste-last" => (ok, Some(Input::PasteLast)),
+        "quit" | "open" | "copy-last" | "install-update" => (ok, None),
         "update" => (json!({ "ok": true, "update": update }), None),
         other => (
             json!({ "ok": false, "error": format!("unknown command {other:?}; try one of {}", COMMANDS.join(", ")) }),

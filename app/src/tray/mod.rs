@@ -27,6 +27,9 @@ const OPEN: &str = "open";
 const SETUP: &str = "setup";
 const QUIT: &str = "quit";
 const UPDATE: &str = "update";
+const COPY_LAST: &str = "copy-last";
+/// How much of the last dictation its menu line shows.
+const PREVIEW_CHARS: usize = 28;
 
 /// Something the person picked from the tray, or news for the windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +41,11 @@ pub enum Pick {
     Update,
     /// Where updating stands changed (sent by `update::Updates`): refresh the menu and windows.
     UpdateChanged,
+    /// "Copy last dictation": puts it on the clipboard. A paste from here would
+    /// land nowhere, since opening the menu takes focus from the text box.
+    CopyLast,
+    /// A dictation was pasted (sent by the dictation thread): refresh the copy line.
+    Dictated,
 }
 
 #[derive(Debug, Clone)]
@@ -69,11 +77,13 @@ impl Hash for UiRequests {
     }
 }
 
-/// The icon and the menu lines that change: the shortcut, and the update
-/// line. Kept alive for as long as likh runs; dropping it removes the icon.
+/// The icon and the menu lines that change: the shortcut, the last
+/// dictation, and the update line. Kept alive for as long as likh runs;
+/// dropping it removes the icon.
 struct Tray {
     icon: TrayIcon,
     shortcut: MenuItem,
+    copy_last: MenuItem,
     update: MenuItem,
 }
 
@@ -163,7 +173,14 @@ impl App {
                 Task::none()
             }
             // Nothing to do here: the menu below, and every window on its next draw, read the new state.
-            Message::Tray(Pick::UpdateChanged) => Task::none(),
+            Message::Tray(Pick::UpdateChanged | Pick::Dictated) => Task::none(),
+            Message::Tray(Pick::CopyLast) => {
+                let last = self.dictation.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).last_text.clone();
+                if let Some(Err(reason)) = last.map(|text| crate::paste::copy(&text)) {
+                    eprintln!("likh: couldn't copy the last dictation: {reason}");
+                }
+                Task::none()
+            }
             Message::Setup(id, message) => match &mut self.setup {
                 Some((open, onboarding)) if *open == id => {
                     onboarding.update(message).map(move |message| Message::Setup(id, message))
@@ -205,6 +222,12 @@ impl App {
                 tray.shortcut.set_text(&line);
                 let _ = tray.icon.set_tooltip(Some(format!("likh · {line}")));
             }
+            let last = self.dictation.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).last_text.clone();
+            let (line, enabled) = copy_line(last.as_deref());
+            if tray.copy_last.text() != line {
+                tray.copy_last.set_text(line);
+            }
+            tray.copy_last.set_enabled(enabled);
             let (line, enabled) = update_line(&self.updates.state());
             if tray.update.text() != line {
                 tray.update.set_text(line);
@@ -259,10 +282,13 @@ fn ui_requests(inbox: &UiRequests) -> UnboundedReceiver<Pick> {
 fn build(hold_to_talk: &str) -> Option<Tray> {
     let menu = Menu::new();
     let shortcut = MenuItem::new(hold_to_talk, false, None);
+    let (line, enabled) = copy_line(None);
+    let copy_last = MenuItem::with_id(COPY_LAST, line, enabled, None);
     let (line, enabled) = update_line(&State::Idle);
     let update = MenuItem::with_id(UPDATE, line, enabled, None);
     let items = [
         &shortcut as &dyn tray_icon::menu::IsMenuItem,
+        &copy_last,
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(OPEN, "Open likh", true, None),
         &MenuItem::with_id(SETUP, "Run setup again…", true, None),
@@ -279,7 +305,7 @@ fn build(hold_to_talk: &str) -> Option<Tray> {
         builder = builder.with_icon(image);
     }
     match builder.build() {
-        Ok(icon) => Some(Tray { icon, shortcut, update }),
+        Ok(icon) => Some(Tray { icon, shortcut, copy_last, update }),
         Err(error) => {
             eprintln!("likh: no tray icon: {error}");
             None
@@ -300,10 +326,26 @@ pub fn update_line(state: &State) -> (String, bool) {
     }
 }
 
+/// The tray's line for the last dictation, with its first words, and whether it can be picked.
+pub fn copy_line(last: Option<&str>) -> (String, bool) {
+    match last.map(str::trim).filter(|text| !text.is_empty()) {
+        None => ("Copy last dictation".into(), false),
+        Some(text) => {
+            let words: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let preview = match words.char_indices().nth(PREVIEW_CHARS) {
+                Some((end, _)) => format!("{}\u{2026}", words[..end].trim_end()),
+                None => words,
+            };
+            (format!("Copy \u{201c}{preview}\u{201d}"), true)
+        }
+    }
+}
+
 /// What a menu id means.
 pub fn pick_for_menu(id: &str) -> Option<Pick> {
     match id {
         OPEN => Some(Pick::Open),
+        COPY_LAST => Some(Pick::CopyLast),
         SETUP => Some(Pick::Setup),
         QUIT => Some(Pick::Quit),
         UPDATE => Some(Pick::Update),

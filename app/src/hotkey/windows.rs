@@ -38,6 +38,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 const SHORTCUT: i32 = 1;
 const ESCAPE: i32 = 2;
+const PASTE_LAST: i32 = 3;
 const POLL_MS: u32 = 15;
 const WATCH_ESCAPE: u32 = WM_APP + 1;
 const REBIND: u32 = WM_APP + 2;
@@ -51,14 +52,20 @@ static MOUSE: AtomicU8 = AtomicU8::new(0);
 
 /// The hotkey thread's id, for posting it commands.
 static THREAD: OnceLock<u32> = OnceLock::new();
-/// A rebind's new shortcut going in, and where its result goes back.
+/// A rebind going in (which hotkey, and its new keys or None for off), and where its result goes back.
 struct RebindRequest {
-    binding: Binding,
+    id: i32,
+    binding: Option<Binding>,
     reply: Sender<Result<(), String>>,
 }
 static REBIND_REQUEST: Mutex<Option<RebindRequest>> = Mutex::new(None);
 
-pub fn spawn(dictation: Sender<Input>, binding: Binding, mouse: MouseTrigger) -> Result<(), String> {
+pub fn spawn(
+    dictation: Sender<Input>,
+    binding: Binding,
+    paste_last: Option<Binding>,
+    mouse: MouseTrigger,
+) -> Result<(), String> {
     let (ready_tx, ready_rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("likh-hotkey".into())
@@ -66,18 +73,29 @@ pub fn spawn(dictation: Sender<Input>, binding: Binding, mouse: MouseTrigger) ->
             // SAFETY: no arguments; this thread's id.
             let _ = THREAD.set(unsafe { GetCurrentThreadId() });
             MOUSE.store(mouse_code(mouse), Ordering::SeqCst);
-            let _ = ready_tx.send(register(binding));
+            if let Some(Err(reason)) = paste_last.map(|keys| register(PASTE_LAST, keys)) {
+                eprintln!("likh: pasting the last dictation won't work: {reason}");
+            }
+            let _ = ready_tx.send(register(SHORTCUT, binding));
             // Keep running even if another app owns the shortcut: a rebind can still fix it.
-            run(dictation, binding);
+            run(dictation, binding, paste_last);
         })
         .map_err(|error| error.to_string())?;
     ready_rx.recv().map_err(|_| "the shortcut thread stopped before it started".to_string())?
 }
 
 pub fn rebind(binding: Binding) -> Result<(), String> {
+    request(SHORTCUT, Some(binding))
+}
+
+pub fn set_paste_last(binding: Option<Binding>) -> Result<(), String> {
+    request(PASTE_LAST, binding)
+}
+
+fn request(id: i32, binding: Option<Binding>) -> Result<(), String> {
     let (reply_tx, reply_rx) = mpsc::channel();
     *REBIND_REQUEST.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) =
-        Some(RebindRequest { binding, reply: reply_tx });
+        Some(RebindRequest { id, binding, reply: reply_tx });
     post(REBIND, 0)?;
     reply_rx
         .recv_timeout(std::time::Duration::from_secs(2))
@@ -179,9 +197,9 @@ fn modifiers(binding: Binding) -> HOT_KEY_MODIFIERS {
     flags
 }
 
-fn register(binding: Binding) -> Result<(), String> {
+fn register(id: i32, binding: Binding) -> Result<(), String> {
     // SAFETY: registers a hotkey for this thread; plain values only.
-    unsafe { RegisterHotKey(None, SHORTCUT, modifiers(binding), u32::from(binding.key.virtual_key())) }
+    unsafe { RegisterHotKey(None, id, modifiers(binding), u32::from(binding.key.virtual_key())) }
         .map_err(|_| format!("{binding} is already used by another app. Pick another shortcut."))
 }
 
@@ -204,9 +222,21 @@ fn still_held(binding: Binding) -> bool {
         && (!binding.win || is_down(VK_LWIN) || is_down(VK_RWIN))
 }
 
-fn run(dictation: Sender<Input>, mut binding: Binding) {
+/// No key of the shortcut is down any more.
+fn all_up(binding: Binding) -> bool {
+    !is_down(VIRTUAL_KEY(binding.key.virtual_key()))
+        && !(binding.ctrl && is_down(VK_CONTROL))
+        && !(binding.alt && is_down(VK_MENU))
+        && !(binding.shift && is_down(VK_SHIFT))
+        && !(binding.win && (is_down(VK_LWIN) || is_down(VK_RWIN)))
+}
+
+fn run(dictation: Sender<Input>, mut binding: Binding, mut paste_last: Option<Binding>) {
     let mut held = false;
     let mut timer = 0usize;
+    // Paste last waits for its keys to come up: a Ctrl+V sent while Alt and
+    // Shift are still down would reach the app as Ctrl+Alt+Shift+V.
+    let mut paste_timer = 0usize;
     let mut mouse_hook: Option<HHOOK> = None;
     hook_mouse(&mut mouse_hook);
     let mut msg = MSG::default();
@@ -221,6 +251,18 @@ fn run(dictation: Sender<Input>, mut binding: Binding) {
             }
             WM_HOTKEY if msg.wParam.0 == ESCAPE as usize => {
                 let _ = dictation.send(Input::Cancel);
+            }
+            WM_HOTKEY if msg.wParam.0 == PASTE_LAST as usize && paste_timer == 0 => {
+                // SAFETY: a thread timer (no window); WM_TIMER comes back to this loop.
+                paste_timer = unsafe { SetTimer(None, 0, POLL_MS, None) };
+            }
+            WM_TIMER if paste_timer != 0 && msg.wParam.0 == paste_timer => {
+                if paste_last.is_none_or(all_up) {
+                    // SAFETY: the thread timer we started above.
+                    let _ = unsafe { KillTimer(None, paste_timer) };
+                    paste_timer = 0;
+                    let _ = dictation.send(Input::PasteLast);
+                }
             }
             WM_TIMER if held && !still_held(binding) => {
                 held = false;
@@ -243,21 +285,34 @@ fn run(dictation: Sender<Input>, mut binding: Binding) {
                 let _ = unsafe { RegisterHotKey(None, ESCAPE, MOD_NOREPEAT, u32::from(VK_ESCAPE.0)) };
             }
             WATCH_ESCAPE => unregister(ESCAPE),
-            PAUSE if msg.wParam.0 == 1 => unregister(SHORTCUT),
-            PAUSE => {
-                // A rebind during the pause may already have registered it.
+            // Picking new keys pauses both shortcuts, so pressing either reaches the window.
+            PAUSE if msg.wParam.0 == 1 => {
                 unregister(SHORTCUT);
-                let _ = register(binding);
+                unregister(PASTE_LAST);
+            }
+            PAUSE => {
+                // A rebind during the pause may already have registered them.
+                unregister(SHORTCUT);
+                unregister(PASTE_LAST);
+                let _ = register(SHORTCUT, binding);
+                if let Some(keys) = paste_last {
+                    let _ = register(PASTE_LAST, keys);
+                }
             }
             REBIND => {
                 let request = REBIND_REQUEST.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
-                if let Some(RebindRequest { binding: next, reply }) = request {
-                    unregister(SHORTCUT);
-                    let result = register(next);
-                    if result.is_ok() {
-                        binding = next;
-                    } else {
-                        let _ = register(binding);
+                if let Some(RebindRequest { id, binding: next, reply }) = request {
+                    let current = if id == SHORTCUT { Some(binding) } else { paste_last };
+                    unregister(id);
+                    let result = next.map_or(Ok(()), |keys| register(id, keys));
+                    match (&result, id) {
+                        (Ok(()), SHORTCUT) => binding = next.unwrap_or(binding),
+                        (Ok(()), _) => paste_last = next,
+                        (Err(_), _) => {
+                            if let Some(keys) = current {
+                                let _ = register(id, keys);
+                            }
+                        }
                     }
                     let _ = reply.send(result);
                 }
@@ -280,7 +335,7 @@ mod tests {
         let _ui = crate::shared::test_ui::lock();
         let binding = Binding::new(true, true, true, false, KeyName("F10")).expect("test shortcut");
         let (dictation, _inputs) = mpsc::channel();
-        spawn(dictation, binding, MouseTrigger::Off).expect("register test shortcut");
+        spawn(dictation, binding, None, MouseTrigger::Off).expect("register test shortcut");
         let mut onboarding = Onboarding::new(CodexStatus::SignedOut);
         let _ = onboarding.update(Message::ChangeShortcut);
         assert!(wait_for_availability(binding, true), "capture should release the shortcut to the window");
@@ -292,7 +347,7 @@ mod tests {
         let until = Instant::now() + Duration::from_secs(2);
         while Instant::now() < until {
             // Register on this test thread to observe whether likh owns the keys.
-            let available = register(binding).is_ok();
+            let available = register(SHORTCUT, binding).is_ok();
             if available {
                 unregister(SHORTCUT);
             }

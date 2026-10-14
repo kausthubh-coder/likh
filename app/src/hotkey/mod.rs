@@ -40,6 +40,10 @@ impl Default for Binding {
     }
 }
 
+/// Pastes the last dictation again, out of the box. Wispr Flow uses the same
+/// keys, so people coming from it already know them.
+pub const PASTE_LAST: Binding = Binding { ctrl: false, alt: true, shift: true, win: false, key: KeyName("Z") };
+
 /// A mouse button that works like the shortcut: hold to talk, or tap for hands-free.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -200,16 +204,36 @@ impl TryFrom<String> for Binding {
     }
 }
 
-/// Starts listening for `binding` (and `mouse`) on its own thread. Err says why
-/// it couldn't (on Windows, usually that another app already owns the shortcut).
-pub fn spawn(dictation: Sender<Input>, binding: Binding, mouse: MouseTrigger) -> Result<(), String> {
+/// Starts listening for `binding` (and `mouse`, and `paste_last`) on its own
+/// thread. Err says why the shortcut couldn't start (on Windows, usually that
+/// another app already owns it); a paste-last shortcut that can't is only logged.
+pub fn spawn(
+    dictation: Sender<Input>,
+    binding: Binding,
+    paste_last: Option<Binding>,
+    mouse: MouseTrigger,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        windows::spawn(dictation, binding, mouse)
+        windows::spawn(dictation, binding, paste_last, mouse)
     }
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = paste_last;
         other::spawn(dictation, binding, mouse)
+    }
+}
+
+/// Swaps the paste-last shortcut, or turns it off with None. On error the old one stays.
+pub fn set_paste_last(binding: Option<Binding>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::set_paste_last(binding)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = binding;
+        Err("Pasting the last dictation isn't available on macOS yet.".into())
     }
 }
 

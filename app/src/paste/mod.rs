@@ -36,6 +36,15 @@ pub fn paste(text: &str) -> Result<Restore, String> {
     Ok(Restore { clipboard: Some(clipboard), previous })
 }
 
+/// Leaves `text` on the clipboard, for the person to paste where they like.
+pub fn copy(text: &str) -> Result<(), String> {
+    if let Some(log) = log_file() {
+        return log_line(&log, &serde_json::json!({ "copy": text }));
+    }
+    let mut clipboard = retry(Clipboard::new)?;
+    retry(|| clipboard.set_text(text))
+}
+
 /// "Scratch that": the app's own undo takes back the last paste.
 pub fn undo() -> Result<(), String> {
     if let Some(log) = log_file() {

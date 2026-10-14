@@ -10,6 +10,7 @@ use crate::pill::{Fix, Pill, Show};
 use crate::settings::{Mode, Settings};
 use crate::sounds::Cue;
 use crate::transcriber::{Failure, Transcriber};
+use iced::futures::channel::mpsc::UnboundedSender;
 use serde::Serialize;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, RwLock};
@@ -58,6 +59,8 @@ pub enum Input {
     Transcribed(Result<String, Failure>),
     /// Sent every 250ms while recording, for the countdown and the cap.
     Tick,
+    /// The paste-last shortcut (once its keys are up), or `likh ctl paste-last`.
+    PasteLast,
     /// Sent with each tick once someone has spoken: how long it has been quiet since.
     Quiet(Duration),
 }
@@ -75,6 +78,8 @@ pub enum Effect {
     },
     /// "Scratch that": undo the last paste.
     Undo,
+    /// Paste the last dictation's text again, or say there's none yet.
+    PasteLast,
     Sound(Cue),
     Pill(Show),
 }
@@ -146,6 +151,8 @@ impl Dictation {
             },
             (Phase::Recording, Input::Release(_)) => self.transcribe(),
             (Phase::HandsFree, Input::Hold) => self.transcribe(),
+            // Only between dictations: mid-recording it would paste into the sentence being spoken.
+            (Phase::Idle, Input::PasteLast) => vec![Effect::PasteLast],
             (_, Input::Stop) if recording => self.transcribe(),
             (_, Input::Cancel) if recording => self.stop(Effect::Discard, Show::Cancelled),
             (_, Input::MicFailed { reason, blocked }) if recording => {
@@ -291,6 +298,10 @@ pub struct Status {
     pub transcriber: &'static str,
     pub dictations: u64,
     pub last: Option<Last>,
+    /// What the last dictation pasted, for paste last and the tray's copy.
+    /// Never printed: `likh ctl status` leaves it out.
+    #[serde(skip)]
+    pub last_text: Option<String>,
 }
 
 /// Starts the dictation thread on `inputs`. `sender` is the same channel's
@@ -303,14 +314,20 @@ pub fn spawn(
     fake: Option<String>,
     settings: Arc<RwLock<Settings>>,
     updates: crate::update::Updates,
+    ui: UnboundedSender<crate::tray::Pick>,
 ) -> Arc<Mutex<Status>> {
-    let engine = settings.read().map(|s| s.engine).unwrap_or_default();
+    let (engine, history) = settings.read().map(|s| (s.engine, s.history)).unwrap_or_default();
     let transcriber = Transcriber::new(engine, fake.as_deref()).name();
-    let status = Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber, dictations: 0, last: None }));
+    // Paste last still works after a restart, from history when it's kept.
+    let last_text = crate::history::file()
+        .filter(|_| history)
+        .and_then(|file| crate::history::recent(&file, 1).pop())
+        .map(|entry| entry.text);
+    let status = Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber, dictations: 0, last: None, last_text }));
     let thread_status = status.clone();
     let spawned = std::thread::Builder::new()
         .name("likh-dictation".into())
-        .spawn(move || run(inputs, sender, pill, fake, thread_status, settings, updates));
+        .spawn(move || run(inputs, sender, pill, fake, thread_status, settings, updates, ui));
     if let Err(error) = spawned {
         eprintln!("likh: could not start dictation: {error}");
     }
@@ -339,6 +356,7 @@ impl Running {
     }
 }
 
+#[expect(clippy::too_many_arguments, reason = "the thread's whole world, handed over once by `spawn`")]
 fn run(
     rx: Receiver<Input>,
     tx: Sender<Input>,
@@ -347,6 +365,7 @@ fn run(
     status: Arc<Mutex<Status>>,
     settings: Arc<RwLock<Settings>>,
     updates: crate::update::Updates,
+    ui: UnboundedSender<crate::tray::Pick>,
 ) {
     let mut dictation = Dictation::default();
     let mut running = Running::default();
@@ -485,7 +504,12 @@ fn run(
                         let mut status = status.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                         status.dictations += 1;
                         status.last = Some(last);
+                        if restore.is_some() {
+                            status.last_text = Some(text.clone());
+                        }
                     }
+                    // The tray's "Copy last dictation" line shows its first words.
+                    let _ = ui.unbounded_send(crate::tray::Pick::Dictated);
                     // Someone is using likh right now: a fine moment for the daily update check,
                     // which never needs a timer of its own.
                     if chosen.auto_update {
@@ -498,6 +522,17 @@ fn run(
                             pill.show(Show::Error(format!("likh couldn't press {}. {reason}", key.name())));
                         }
                         restore.finish();
+                    }
+                }
+                Effect::PasteLast => {
+                    let last = status.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).last_text.clone();
+                    match last {
+                        // No pill: the text landing is the feedback, as with a dictation.
+                        Some(text) => match crate::paste::paste(&text) {
+                            Ok(restore) => restore.finish(),
+                            Err(reason) => pill.show(Show::Error(format!("likh couldn't paste. {reason}"))),
+                        },
+                        None => pill.show(Show::Note("Nothing to paste yet".into())),
                     }
                 }
                 Effect::Pill(show) => pill.show(show),

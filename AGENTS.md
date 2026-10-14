@@ -18,9 +18,9 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 |---|---|
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
 | `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it |
-| `app/src/hotkey/` | the shortcut (Ctrl+Space by default), an optional mouse button (a low-level hook, installed only while one is picked) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
+| `app/src/hotkey/` | the shortcut (Ctrl+Space by default), paste last (Alt+Shift+Z by default; it waits for its keys to come up before pasting), an optional mouse button (a low-level hook, installed only while one is picked) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
 | `app/src/settings/` | what the user chose (shortcut, mouse button, mode, silence stop, engine, sounds, pause media, commands, dictionary, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
-| `app/src/history/` | past dictations, one JSON line each, on this computer only |
+| `app/src/history/` | past dictations, one JSON line each, on this computer only. The newest is what paste last pastes after a restart |
 | `app/src/commands/` | spoken commands in four groups: lines ("new line", "new bullet"), keys ("press enter", "press tab"), scratch ("scratch that"), punctuation by name (off by default) |
 | `app/src/dictionary/` | the user's own words (project names, people): Groq hears them as its prompt; after any engine, a quick ChatGPT pass through Codex's sign-in puts misheard ones right (`gpt-6-luna` on `/backend-api/codex/responses`, gives up after 4 s and pastes what it heard) |
 | `app/src/media/` | pauses music and videos while you talk and plays them again (Windows media controls; nothing on macOS) |
@@ -52,7 +52,7 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Every task in a new worktree starts with the `worktree-likh` skill. Ship only with `ship-likh`, when I say so.
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, this checkout's own `LIKH_HOME` and site port). Safe to rerun
 - Doctor: `bun run doctor`. Run it first when anything looks off.
-- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|cancel|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
+- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|cancel|paste-last|copy-last|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
 - One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
 - Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`

@@ -3,7 +3,7 @@ use crate::dictation::Phase;
 use crate::update::State;
 
 fn idle() -> Status {
-    Status { phase: Phase::Idle, transcriber: "echo", dictations: 0, last: None }
+    Status { phase: Phase::Idle, transcriber: "echo", dictations: 0, last: None, last_text: None }
 }
 
 #[test]
@@ -11,6 +11,19 @@ fn start_stop_and_cancel_drive_a_dictation() {
     assert_eq!(answer("start", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::Hold)));
     assert_eq!(answer("stop", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::Stop)));
     assert_eq!(answer("cancel", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::Cancel)));
+}
+
+#[test]
+fn paste_last_goes_to_the_dictation_and_copy_last_to_the_tray() {
+    assert_eq!(answer("paste-last", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::PasteLast)));
+    assert_eq!(answer("copy-last", &idle(), &State::Idle), (json!({ "ok": true }), None));
+}
+
+#[test]
+fn status_never_prints_the_last_dictations_words() {
+    let said = Status { last_text: Some("my bank PIN is 4512".into()), ..idle() };
+    let (reply, _) = answer("status", &said, &State::Idle);
+    assert!(!reply.to_string().contains("4512"), "{reply}");
 }
 
 #[test]
@@ -41,6 +54,6 @@ fn an_unknown_command_lists_the_real_ones() {
     assert_eq!(reply["ok"], false);
     assert_eq!(
         reply["error"],
-        "unknown command \"paste\"; try one of status, start, stop, cancel, quit, open, update, install-update"
+        "unknown command \"paste\"; try one of status, start, stop, cancel, paste-last, copy-last, quit, open, update, install-update"
     );
 }

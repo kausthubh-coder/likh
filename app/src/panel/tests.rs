@@ -12,7 +12,13 @@ struct Fixture {
 fn panel() -> Fixture {
     let dir = tempfile::tempdir().expect("temp dir");
     let settings = Arc::new(RwLock::new(Settings::default()));
-    let status = Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber: "echo", dictations: 0, last: None }));
+    let status = Arc::new(Mutex::new(Status {
+        phase: Phase::Idle,
+        transcriber: "echo",
+        dictations: 0,
+        last: None,
+        last_text: None,
+    }));
     let files =
         Files { settings: Some(dir.path().join("settings.json")), history: Some(dir.path().join("history.jsonl")) };
     let panel = Panel::new(window::Id::unique(), settings.clone(), status, Updates::new(None), files);
@@ -419,4 +425,50 @@ fn automatic_update_checks_can_be_switched_off() {
     press(&mut f.panel, "App");
     let _ = f.panel.update(Message::AutoUpdate(false));
     assert!(!Settings::load_from(&f.dir.path().join("settings.json")).auto_update);
+}
+
+fn key(code: keyboard::key::Code, modifiers: keyboard::Modifiers) -> keyboard::Event {
+    keyboard::Event::KeyPressed {
+        key: keyboard::Key::Unidentified,
+        modified_key: keyboard::Key::Unidentified,
+        physical_key: keyboard::key::Physical::Code(code),
+        location: keyboard::Location::Standard,
+        modifiers,
+        text: None,
+        repeat: false,
+    }
+}
+
+#[test]
+fn history_shows_paste_last_on_its_keys_and_can_turn_it_off() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let _ = f.panel.update(Message::Tab(Tab::History));
+    assert!(shows(&f.panel, "Paste last dictation"));
+    assert!(shows(&f.panel, "Missed a paste? Puts it in again."));
+    assert!(shows(&f.panel, "Alt+Shift+Z") && shows(&f.panel, "Turn off"));
+    // With paste last off, the row offers it back on its usual keys.
+    f.settings.write().expect("settings").paste_last = None;
+    assert!(shows(&f.panel, "Turn on") && !shows(&f.panel, "Alt+Shift+Z"));
+}
+
+#[test]
+fn picking_paste_last_keys_leaves_the_dictation_shortcut_alone_and_refuses_its_keys() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let _ = f.panel.update(Message::Tab(Tab::History));
+    let _ = f.panel.update(Message::ChangePasteLast);
+    assert!(shows(&f.panel, "Press the new keys.") && shows(&f.panel, "Cancel"));
+    let _ = f.panel.update(Message::Key(keyboard::Event::ModifiersChanged(keyboard::Modifiers::CTRL)));
+    assert!(!f.panel.keys.moving(), "the dictation shortcut's caps stay put");
+
+    // Ctrl+Space already dictates.
+    let _ = f.panel.update(Message::Key(key(keyboard::key::Code::Space, keyboard::Modifiers::CTRL)));
+    assert!(shows(&f.panel, "Those keys already do something in likh. Pick others."));
+    assert!(shows(&f.panel, "Press the new keys."), "still picking");
+    assert_eq!(f.settings.read().expect("settings").paste_last, Some(hotkey::PASTE_LAST));
+
+    // Esc backs out with the old keys.
+    let _ = f.panel.update(Message::Key(key(keyboard::key::Code::Escape, keyboard::Modifiers::empty())));
+    assert!(shows(&f.panel, "Alt+Shift+Z"));
 }
