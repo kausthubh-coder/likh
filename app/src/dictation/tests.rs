@@ -279,6 +279,19 @@ fn a_silent_mic_is_a_problem_with_its_fix_and_the_error_sound() {
 }
 
 #[test]
+fn paste_last_works_only_between_dictations() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    assert_eq!(d.handle(Input::PasteLast, t0, HOLD_OR_TAP), vec![Effect::PasteLast]);
+    // Mid-recording it would land inside the sentence being spoken.
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    assert_eq!(d.handle(Input::PasteLast, after(t0, 500), HOLD_OR_TAP), vec![]);
+    d.handle(Input::Release(after(t0, 2_000)), after(t0, 2_000), HOLD_OR_TAP);
+    assert_eq!(d.handle(Input::PasteLast, after(t0, 2_100), HOLD_OR_TAP), vec![]);
+    assert_eq!(d.phase(), Phase::Transcribing);
+}
+
+#[test]
 fn only_a_recording_with_a_voice_in_it_is_sent() {
     let ears = |sounded, spoke| Ears { sounded, spoke, device: "Headset".into() };
     // Speech goes to the transcriber.

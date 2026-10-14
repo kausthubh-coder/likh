@@ -20,6 +20,19 @@ fn an_older_file_keeps_its_choices_and_gets_the_new_defaults() {
     assert_eq!(loaded.command_groups, Groups { lines: true, keys: true, scratch: true, punctuation: false });
     assert!(loaded.auto_update);
     assert!(loaded.dictionary.is_empty() && loaded.fix_names);
+    assert_eq!(loaded.paste_last.map(String::from), Some("Alt+Shift+Z".into()));
+}
+
+#[test]
+fn paste_last_saves_its_keys_or_off() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("settings.json");
+    std::fs::write(&path, r#"{ "paste_last": null, "sounds": false }"#).expect("write");
+    let off = Settings::load_from(&path);
+    assert_eq!((off.paste_last, off.sounds), (None, false));
+    std::fs::write(&path, r#"{ "paste_last": "Ctrl+Alt+V" }"#).expect("write");
+    let moved = Settings::load_from(&path);
+    assert_eq!(moved.paste_last, Binding::new(true, true, false, false, KeyName("V")).ok());
 }
 
 #[test]
@@ -51,6 +64,7 @@ fn what_you_save_is_what_you_load() {
     let path = dir.path().join("likh").join("settings.json");
     let chosen = Settings {
         shortcut: crate::hotkey::Binding::new(true, true, false, false, KeyName("D")).expect("valid"),
+        paste_last: None,
         mouse: MouseTrigger::Forward,
         mode: Mode::Tap,
         engine: Engine::Groq,

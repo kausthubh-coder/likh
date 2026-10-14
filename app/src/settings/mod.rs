@@ -87,6 +87,8 @@ impl SilenceStop {
 #[serde(default)]
 pub struct Settings {
     pub shortcut: Binding,
+    /// Pastes the last dictation again (`hotkey::PASTE_LAST` unless changed); None is off.
+    pub paste_last: Option<Binding>,
     /// A mouse button that works like the shortcut (hold, or tap for hands-free).
     pub mouse: MouseTrigger,
     pub mode: Mode,
@@ -117,6 +119,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             shortcut: Binding::default(),
+            paste_last: Some(crate::hotkey::PASTE_LAST),
             mouse: MouseTrigger::default(),
             mode: Mode::default(),
             engine: Engine::default(),

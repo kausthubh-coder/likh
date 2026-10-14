@@ -6,7 +6,22 @@ fn menu_ids_map_to_what_they_say() {
     assert_eq!(pick_for_menu("setup"), Some(Pick::Setup));
     assert_eq!(pick_for_menu("quit"), Some(Pick::Quit));
     assert_eq!(pick_for_menu("update"), Some(Pick::Update));
+    assert_eq!(pick_for_menu("copy-last"), Some(Pick::CopyLast));
     assert_eq!(pick_for_menu("Hold Ctrl + Space to talk"), None);
+}
+
+#[test]
+fn the_copy_line_shows_the_last_dictations_first_words_and_waits_for_one() {
+    assert_eq!(copy_line(None), ("Copy last dictation".into(), false));
+    assert_eq!(copy_line(Some("   ")), ("Copy last dictation".into(), false));
+    assert_eq!(copy_line(Some("Meet at three.")), ("Copy \u{201c}Meet at three.\u{201d}".into(), true));
+    // Long ones end in an ellipsis at a 28-character cut, line breaks folded to spaces.
+    let (line, enabled) = copy_line(Some("Remind me to send the deck\nto Priya tomorrow at nine."));
+    assert_eq!(line, "Copy \u{201c}Remind me to send the deck t\u{2026}\u{201d}");
+    assert!(enabled);
+    // Cut on a character, not a byte: no panic inside "é".
+    let (line, _) = copy_line(Some("Réunion à neuf heures avec l'équipe produit demain"));
+    assert!(line.ends_with("\u{2026}\u{201d}"), "{line}");
 }
 
 #[test]
@@ -34,6 +49,7 @@ fn app(marker: Option<PathBuf>) -> App {
             transcriber: "echo",
             dictations: 0,
             last: None,
+            last_text: None,
         })),
         settings: Arc::new(RwLock::new(Settings::default())),
         updates: Updates::new(None),

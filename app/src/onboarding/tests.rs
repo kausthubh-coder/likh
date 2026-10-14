@@ -123,7 +123,13 @@ fn a_missing_microphone_shows_the_fix_and_still_lets_you_continue() {
 }
 
 fn in_app() -> (Onboarding, Arc<Mutex<Status>>) {
-    let status = Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber: "echo", dictations: 0, last: None }));
+    let status = Arc::new(Mutex::new(Status {
+        phase: Phase::Idle,
+        transcriber: "echo",
+        dictations: 0,
+        last: None,
+        last_text: None,
+    }));
     let settings = Arc::new(RwLock::new(Settings::default()));
     let app = Onboarding::in_app(window::Id::unique(), status.clone(), settings);
     (Onboarding { codex: connected(), ..app }, status)
@@ -284,7 +290,15 @@ fn brand_board_onboarding() {
     let _ui = test_ui::lock();
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/brand/onboarding");
     let _ = std::fs::create_dir_all(&out);
-    let idle = || Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber: "codex", dictations: 0, last: None }));
+    let idle = || {
+        Arc::new(Mutex::new(Status {
+            phase: Phase::Idle,
+            transcriber: "codex",
+            dictations: 0,
+            last: None,
+            last_text: None,
+        }))
+    };
     let at = |step: Step, codex: CodexStatus| {
         let mut app = Onboarding { dictation: Some(idle()), ..Onboarding::new(codex) };
         let _ = app.go(step);

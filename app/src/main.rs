@@ -51,7 +51,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Drive the running app: status, start, stop, cancel or quit. Prints JSON.
+    /// Drive the running app: status, start, stop, cancel, paste-last, copy-last or quit. Prints JSON.
     Ctl {
         #[arg(value_parser = ctl::COMMANDS)]
         command: String,
@@ -112,21 +112,22 @@ fn run(skip_onboarding: bool) -> ExitCode {
         eprintln!("likh: couldn't move murmur's start-with-Windows entry over: {reason}");
     }
     let settings = Arc::new(RwLock::new(settings::Settings::load()));
-    let (shortcut, mouse) = settings.read().map(|s| (s.shortcut, s.mouse)).unwrap_or_default();
+    let (shortcut, paste_last, mouse) =
+        settings.read().map(|s| (s.shortcut, s.paste_last, s.mouse)).unwrap_or_default();
     // One inbox for the dictation: the shortcut, the pill's stop button and `likh ctl` all send to it.
     let (dictation, inputs) = mpsc::channel();
     let pill = pill::Pill::spawn(dictation.clone());
     let fake = transcriber::Transcriber::fake_from_env();
     let (ui, ui_requests) = iced::futures::channel::mpsc::unbounded();
     let updates = update::Updates::new(Some(ui.clone()));
-    let status = dictation::spawn(dictation.clone(), inputs, pill, fake, settings.clone(), updates.clone());
+    let status = dictation::spawn(dictation.clone(), inputs, pill, fake, settings.clone(), updates.clone(), ui.clone());
     if settings.read().is_ok_and(|s| s.auto_update) {
         updates.check_if_due();
     }
     if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui, updates.clone()) {
         eprintln!("likh: `likh ctl` won't work this time: {error}");
     }
-    match hotkey::spawn(dictation, shortcut, mouse) {
+    match hotkey::spawn(dictation, shortcut, paste_last, mouse) {
         Ok(()) => eprintln!("likh is running. Hold {shortcut} to talk; `likh ctl quit` stops it."),
         Err(reason) => eprintln!("likh: {reason} `likh ctl start` still works."),
     }

@@ -110,6 +110,10 @@ pub enum Message {
     Tab(Tab),
     ChangeShortcut,
     KeepShortcut,
+    /// Pick new keys for paste last.
+    ChangePasteLast,
+    /// Paste last on these keys, or off.
+    PasteLast(Option<Binding>),
     Key(keyboard::Event),
     /// A frame while a key cap flies or the update button spins.
     Frame(Instant),
@@ -151,6 +155,13 @@ pub enum Message {
     Drag,
 }
 
+/// The two shortcuts the Dictation tab can pick keys for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Picking {
+    Shortcut,
+    PasteLast,
+}
+
 pub struct Panel {
     window: window::Id,
     tab: Tab,
@@ -159,8 +170,10 @@ pub struct Panel {
     updates: Updates,
     codex: CodexStatus,
     groq: GroqSetup,
-    /// Picking a new shortcut: the modifiers held so far.
+    /// Picking new keys: the modifiers held so far.
     capturing: Option<keyboard::Modifiers>,
+    /// Which shortcut the keys being picked are for.
+    picking: Picking,
     /// The shortcut's caps and keyboard, and their motion.
     keys: Keys,
     /// A new shortcut was just saved; the line under it says so.
@@ -225,6 +238,7 @@ impl Panel {
             codex: onboarding::check_codex_now(),
             groq: GroqSetup::look(),
             capturing: None,
+            picking: Picking::Shortcut,
             keys: Keys::at_rest(&shortcut.parts()),
             saved: false,
             notice: None,
@@ -289,27 +303,58 @@ impl Panel {
                 return operation::snap_to(BODY, scrollable::RelativeOffset::START);
             }
             Message::ChangeShortcut => {
+                self.stop_capturing();
                 hotkey::pause(true);
                 self.capturing = Some(keyboard::Modifiers::empty());
+                self.picking = Picking::Shortcut;
                 self.notice = None;
                 self.saved = false;
                 self.keys.listen();
+            }
+            Message::ChangePasteLast => {
+                self.stop_capturing();
+                self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
+                hotkey::pause(true);
+                self.capturing = Some(keyboard::Modifiers::empty());
+                self.picking = Picking::PasteLast;
+                self.notice = None;
+                self.saved = false;
             }
             Message::KeepShortcut => {
                 self.stop_capturing();
                 self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
             }
+            Message::PasteLast(keys) => match hotkey::set_paste_last(keys) {
+                Ok(()) => self.change(|s| s.paste_last = keys),
+                Err(reason) => self.notice = Some((reason, Tone::Danger)),
+            },
             Message::Key(event) => match self.capturing {
                 Some(held) => match capture::on_event(&event, held) {
                     capture::Outcome::Waiting(held) => {
                         self.capturing = Some(held);
-                        self.keys.hold(&capture::held_parts(held));
+                        if self.picking == Picking::Shortcut {
+                            self.keys.hold(&capture::held_parts(held));
+                        }
                     }
                     capture::Outcome::Cancelled => {
                         self.stop_capturing();
                         self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
                     }
                     capture::Outcome::Refused(why) => self.notice = Some((why.into(), Tone::Danger)),
+                    // One set of keys can't do two things.
+                    capture::Outcome::Chosen(binding) if self.taken(binding) => {
+                        self.notice =
+                            Some(("Those keys already do something in likh. Pick others.".into(), Tone::Danger));
+                    }
+                    capture::Outcome::Chosen(binding) if self.picking == Picking::PasteLast => {
+                        match hotkey::set_paste_last(Some(binding)) {
+                            Ok(()) => {
+                                self.change(|s| s.paste_last = Some(binding));
+                                self.stop_capturing();
+                            }
+                            Err(reason) => self.notice = Some((reason, Tone::Danger)),
+                        }
+                    }
                     capture::Outcome::Chosen(binding) => match hotkey::rebind(binding) {
                         Ok(()) => {
                             self.change(|s| s.shortcut = binding);
@@ -431,6 +476,15 @@ impl Panel {
             Message::Drag => return window::drag(self.window),
         }
         Task::none()
+    }
+
+    /// The other shortcut already uses these keys.
+    fn taken(&self, binding: Binding) -> bool {
+        let chosen = self.chosen();
+        match self.picking {
+            Picking::Shortcut => chosen.paste_last == Some(binding),
+            Picking::PasteLast => chosen.shortcut == binding,
+        }
     }
 
     fn stop_capturing(&mut self) {
@@ -649,7 +703,8 @@ impl Panel {
     fn dictation_tab(&self, p: &Palette) -> Element<'_, Message> {
         let chosen = self.chosen();
         // The shortcut: its caps and the little keyboard, with a line under the caps and Change at its end.
-        let (line, tone, change): (String, Tone, Element<'_, Message>) = match self.capturing {
+        let picking_shortcut = self.capturing.filter(|_| self.picking == Picking::Shortcut);
+        let (line, tone, change): (String, Tone, Element<'_, Message>) = match picking_shortcut {
             Some(_) => ("Press your new shortcut.".into(), Tone::Neutral, link(p, "Cancel", Message::KeepShortcut)),
             None if self.saved => (
                 format!("Saved. Hold {} to talk.", chosen.shortcut),
@@ -706,6 +761,33 @@ impl Panel {
         ]
         .spacing(space::S4)
         .into()
+    }
+
+    /// Paste last, under Keep history: its keys with Change and Turn off, or Turn on when it's off.
+    fn paste_last_line(&self, p: &Palette) -> Line<'_> {
+        let picking = self.capturing.is_some() && self.picking == Picking::PasteLast;
+        let (what, control): (&str, Element<'_, Message>) = match self.chosen().paste_last {
+            _ if picking => ("Press the new keys.", link(p, "Cancel", Message::KeepShortcut)),
+            Some(keys) => (
+                "Missed a paste? Puts it in again.",
+                row![
+                    // The keys as one small mono chip: full key caps belong to the dictation shortcut.
+                    container(text(String::from(keys)).size(size::SMALL).font(theme::MONO).color(p.text))
+                        .padding([space::S1, space::S3])
+                        .style({
+                            let fill = p.elevated;
+                            move |_| pill_fill(fill)
+                        }),
+                    link(p, "Change", Message::ChangePasteLast),
+                    link(p, "Turn off", Message::PasteLast(None)),
+                ]
+                .spacing(space::S3)
+                .align_y(Alignment::Center)
+                .into(),
+            ),
+            None => ("Off", link(p, "Turn on", Message::PasteLast(Some(hotkey::PASTE_LAST)))),
+        };
+        Line::plain(named(p, "Paste last dictation", Some(what)), control)
     }
 
     /// Both engines, each with its own setup always showing, so picking one
@@ -936,6 +1018,7 @@ impl Panel {
                     switch(chosen.history),
                 )
                 .press(Message::KeepHistory(!chosen.history)),
+                self.paste_last_line(p),
             ],
         );
         if self.history.is_empty() {
