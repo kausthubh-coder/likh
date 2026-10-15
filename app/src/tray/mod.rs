@@ -201,7 +201,7 @@ impl App {
             Message::Tray(Pick::CopyLast) => {
                 let last = self.dictation.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).last_text.clone();
                 if let Some(Err(reason)) = last.map(|text| crate::paste::copy(&text)) {
-                    eprintln!("likh: couldn't copy the last dictation: {reason}");
+                    crate::diagnostics::error("tray", format!("couldn't copy the last dictation: {reason}"));
                 }
                 Task::none()
             }
@@ -226,7 +226,7 @@ impl App {
                     if let Some(marker) = self.first_run_marker.as_ref().filter(|_| finished) {
                         let _ = marker.parent().map(std::fs::create_dir_all);
                         if let Err(error) = std::fs::write(marker, "") {
-                            eprintln!("likh: couldn't save setup completion: {error}");
+                            crate::diagnostics::warn("onboarding", format!("couldn't save setup completion: {error}"));
                         } else {
                             self.first_run_marker = None;
                         }
@@ -263,7 +263,7 @@ impl App {
 
     fn restart_to_update(&self) {
         if let Err(reason) = self.updates.apply() {
-            eprintln!("likh: couldn't update: {reason}");
+            crate::diagnostics::error("update", format!("couldn't update: {reason}"));
         }
     }
 
@@ -321,7 +321,7 @@ fn build(hold_to_talk: &str) -> Option<Tray> {
         &MenuItem::with_id(QUIT, "Quit likh", true, None),
     ];
     if let Err(error) = menu.append_items(&items) {
-        eprintln!("likh: no tray menu: {error}");
+        crate::diagnostics::error("tray", format!("no tray menu: {error}"));
     }
     let image = tray_icon::Icon::from_rgba(icon::rgba(32), 32, 32).ok();
     let mut builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(format!("likh · {hold_to_talk}"));
@@ -331,7 +331,7 @@ fn build(hold_to_talk: &str) -> Option<Tray> {
     match builder.build() {
         Ok(icon) => Some(Tray { icon, shortcut, copy_last, update }),
         Err(error) => {
-            eprintln!("likh: no tray icon: {error}");
+            crate::diagnostics::error("tray", format!("no tray icon: {error}"));
             None
         }
     }

@@ -6,6 +6,7 @@
 
 use super::steps::{self, Cancel, Values};
 use super::{Action, Catalog, Context, Output, matcher, router, trust};
+use crate::diagnostics::{self, Span};
 use crate::dictation::Status;
 use crate::pill::{Fix, Pill, Show};
 use crate::settings::Settings;
@@ -144,19 +145,19 @@ impl Runner {
             return;
         };
         if let Err(reason) = super::prepare(&dir) {
-            eprintln!("likh: couldn't set up the actions folder: {reason}");
+            diagnostics::warn("actions", format!("couldn't set up the actions folder: {reason}"));
         }
         let catalog = Catalog::load(&dir);
         let (index, slots, routed) = match matcher::find(&catalog.actions, &said) {
             Some(found) => (found.action, found.slots, false),
-            None => match router::pick(&catalog.actions, &said) {
+            None => match timed_route(&catalog, &said) {
                 Ok(Some(picked)) => (picked.action, picked.slots, true),
                 Ok(None) => {
                     self.pill.show(Show::Note(format!("No action for \u{201c}{said}\u{201d}")));
                     return;
                 }
                 Err(reason) => {
-                    eprintln!("likh: no phrase matched and ChatGPT couldn't pick: {reason}");
+                    diagnostics::warn("actions", format!("no phrase matched and ChatGPT couldn't pick: {reason}"));
                     self.pill.show(Show::Note(format!("No action for \u{201c}{said}\u{201d}")));
                     return;
                 }
@@ -200,22 +201,28 @@ impl Runner {
             }
         };
         let started = std::time::Instant::now();
+        let whole = Span::start("action").with("action", action.id.clone()).with("routed", routed);
         for step in &action.steps {
             if cancel.load(Ordering::SeqCst) {
                 self.pill.show(Show::Cancelled);
                 return;
             }
-            match steps::run(step, &values, &dir, action.timeout, &cancel) {
+            let timed = Span::start("action_step").with("action", action.id.clone()).with("step", step_kind(step));
+            let ran = steps::run(step, &values, &dir, action.timeout, &cancel);
+            timed.end(ran.as_ref().map(|_| ()).map_err(Clone::clone));
+            match ran {
                 Ok(Some(result)) => {
                     values.values.insert("result".into(), result);
                 }
                 Ok(None) => {}
                 Err(why) if cancel.load(Ordering::SeqCst) => {
-                    eprintln!("likh: {} stopped: {why}", action.name);
+                    whole.end(Err(format!("stopped: {why}")));
                     self.pill.show(Show::Cancelled);
                     return;
                 }
                 Err(why) => {
+                    whole.end(Err(why.clone()));
+                    diagnostics::error("actions", format!("{} failed: {why}", action.id));
                     note_error(&action.id, Some(why.clone()));
                     self.fail(
                         settings,
@@ -226,6 +233,7 @@ impl Runner {
             }
         }
         note_error(&action.id, None);
+        whole.end(Ok(()));
         self.deliver(&action, &values, &job, settings, started.elapsed());
     }
 
@@ -316,7 +324,7 @@ impl Runner {
             if let Some(file) = crate::history::file()
                 && let Err(reason) = crate::history::append(&file, &entry)
             {
-                eprintln!("likh: couldn't save to history: {reason}");
+                diagnostics::warn("history", format!("couldn't save to history: {reason}"));
             }
         }
         if pasted {
@@ -328,6 +336,26 @@ impl Runner {
         } else {
             self.status.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).actions += 1;
         }
-        eprintln!("likh: {} done in {} ms", action.name, took.as_millis());
+        diagnostics::info("actions", format!("{} done in {} ms", action.id, took.as_millis()));
+    }
+}
+
+/// ChatGPT picking an action, timed.
+fn timed_route(catalog: &Catalog, said: &str) -> Result<Option<router::Picked>, String> {
+    let span = Span::start("action_route").with("offered", router::candidates(&catalog.actions).len());
+    let picked = router::pick(&catalog.actions, said);
+    span.end(picked.as_ref().map(|_| ()).map_err(Clone::clone));
+    picked
+}
+
+/// A step's kind, for the trace: never its text.
+fn step_kind(step: &super::Step) -> &'static str {
+    match step {
+        super::Step::Paste(_) => "paste",
+        super::Step::Keys(_) => "keys",
+        super::Step::Open(_) => "open",
+        super::Step::Wait(_) => "wait",
+        super::Step::Ask(_) => "ask",
+        super::Step::Run(_) => "run",
     }
 }

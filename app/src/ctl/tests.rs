@@ -60,6 +60,12 @@ fn an_unknown_command_lists_the_real_ones() {
     assert_eq!(reply["ok"], false);
     assert_eq!(
         reply["error"],
-        "unknown command \"paste\"; try one of status, start, stop, action-start, action-stop, cancel, paste-last, copy-last, quit, open, update, install-update"
+        "unknown command \"paste\"; try one of status, start, stop, action-start, action-stop, cancel, paste-last, copy-last, quit, open, update, install-update, diagnostics"
     );
+}
+
+#[test]
+fn diagnostics_is_a_command_that_tells_the_dictation_nothing() {
+    assert!(COMMANDS.contains(&"diagnostics"));
+    assert_eq!(answer("diagnostics", &idle(), &State::Idle), (json!({ "ok": true }), None));
 }

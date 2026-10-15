@@ -1,11 +1,11 @@
 //! The likh window, opened from the tray. Seven tabs, each with one job: how
 //! you start and stop a dictation (Dictation), which engine transcribes
 //! (Transcription), the spoken commands (Commands), your own actions
-//! (Actions), your own words (Dictionary), what you dictated (History), and
-//! startup, updates and links (App).
+//! (Actions), your own words (Dictionary), what you dictated (History),
+//! startup, updates and links (App), and what went wrong or slow lately (Diagnostics).
 //!
 //! Every setting is one row in a panel: its name on the left, its control on
-//! the right. Every tab fits without scrolling except a long History.
+//! the right. Every tab fits without scrolling except a long History and Diagnostics.
 //!
 //! Borderless like onboarding: drag it from anywhere empty, close it with the
 //! × or Esc. It draws only when something changes, plus the frames a moving
@@ -17,6 +17,7 @@ mod shortcut;
 
 use crate::codex_auth::CodexStatus;
 use crate::commands::Group;
+use crate::diagnostics::{self, Report, Sampler, Trace, Usage};
 use crate::dictation::Status;
 use crate::history::{self, Entry};
 use crate::hotkey::{self, Binding, MouseTrigger, capture};
@@ -54,6 +55,8 @@ const HISTORY_SHOWN: usize = 200;
 const PREVIEW_CHARS: usize = 240;
 /// A second "Clear" only counts this soon after the first.
 const CLEAR_ARMED: Duration = Duration::from_secs(3);
+/// How often the Diagnostics tab reads likh's memory and CPU, only while it's open.
+const SAMPLE_EVERY: Duration = Duration::from_secs(2);
 const GROQ_KEY: &str = "panel-groq-key";
 const NEW_WORD: &str = "panel-new-word";
 const BODY: &str = "panel-body";
@@ -82,11 +85,20 @@ pub enum Tab {
     Dictionary,
     History,
     App,
+    Diagnostics,
 }
 
 impl Tab {
-    const ALL: [Tab; 7] =
-        [Tab::Dictation, Tab::Transcription, Tab::Commands, Tab::Actions, Tab::Dictionary, Tab::History, Tab::App];
+    const ALL: [Tab; 8] = [
+        Tab::Dictation,
+        Tab::Transcription,
+        Tab::Commands,
+        Tab::Actions,
+        Tab::Dictionary,
+        Tab::History,
+        Tab::App,
+        Tab::Diagnostics,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -97,6 +109,7 @@ impl Tab {
             Tab::Dictionary => "Dictionary",
             Tab::History => "History",
             Tab::App => "App",
+            Tab::Diagnostics => "Diagnostics",
         }
     }
 
@@ -109,6 +122,7 @@ impl Tab {
             Tab::Dictionary => Shape::Book,
             Tab::History => Shape::Clock,
             Tab::App => Shape::Gear,
+            Tab::Diagnostics => Shape::Pulse,
         }
     }
 }
@@ -166,6 +180,15 @@ pub enum Message {
     Disarm,
     /// Handled by the tray, which owns onboarding.
     RunSetup,
+    /// Read the trace again.
+    Rediagnose,
+    /// The trace, read off the window's thread.
+    Diagnosed(Report),
+    /// Time to read likh's memory and CPU again.
+    Sample,
+    OpenLogs,
+    /// The report and likh's numbers as JSON, for a bug report.
+    CopyReport,
     Open(&'static str),
     Close,
     Drag,
@@ -217,6 +240,11 @@ pub struct Panel {
     mic_levels: [f32; MIC_BARS],
     /// The Actions tab: the folder as last read, and which view of it is open.
     actions: actions::State,
+    /// The trace summed up; None while it's being read.
+    report: Option<Report>,
+    /// Reads likh's own process. Held only while Diagnostics is open.
+    sampler: Option<Sampler>,
+    usage: Option<Usage>,
 }
 
 /// The Test meter: the pill's seven bars, small.
@@ -248,7 +276,7 @@ impl std::fmt::Display for MicOption {
     }
 }
 
-/// Where the settings and history live, and how to list this computer's
+/// Where the settings, history and logs live, and how to list this computer's
 /// mics. The app passes the real ones; tests pass temporary files and made-up mics.
 pub struct Files {
     pub settings: Option<PathBuf>,
@@ -256,6 +284,8 @@ pub struct Files {
     /// The actions folder, and where approvals of their scripts are kept.
     pub actions: Option<PathBuf>,
     pub approved: Option<PathBuf>,
+    /// The trace folder Diagnostics reads.
+    pub logs: Option<PathBuf>,
     /// The mics connected now, and Windows' default among them.
     pub mics: fn() -> (Vec<Mic>, Option<Mic>),
 }
@@ -267,6 +297,7 @@ impl Files {
             history: history::file(),
             actions: crate::actions::folder(),
             approved: crate::actions::trust::store(),
+            logs: diagnostics::folder(),
             mics: || (microphone::inputs(), microphone::system_default()),
         }
     }
@@ -325,7 +356,22 @@ impl Panel {
             testing: false,
             mic_levels: [0.0; MIC_BARS],
             actions: actions::State::default(),
+            report: None,
+            sampler: None,
+            usage: None,
         }
+    }
+
+    /// Reads the trace on its own thread: a few megabytes at most, but never on the window's.
+    fn diagnose(&mut self) -> Task<Message> {
+        self.report = None;
+        let Some(logs) = self.files.logs.clone() else {
+            self.report = Some(Report::default());
+            return Task::none();
+        };
+        Task::perform(crate::shared::off_thread(move || Trace::new(logs).read()), |report| {
+            Message::Diagnosed(report.unwrap_or_default())
+        })
     }
 
     fn chosen(&self) -> Settings {
@@ -374,16 +420,34 @@ impl Panel {
                 self.notice = None;
                 self.saved = false;
                 self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
-                match tab {
-                    Tab::History => self.load_history(),
+                // Leaving Diagnostics stops reading the process.
+                self.sampler = None;
+                self.usage = None;
+                let read = match tab {
+                    Tab::History => {
+                        self.load_history();
+                        Task::none()
+                    }
                     // Both engines show where they stand, so look at both. Fixing names needs Codex too.
-                    Tab::Transcription | Tab::Dictionary => self.codex = onboarding::check_codex_now(),
+                    Tab::Transcription | Tab::Dictionary => {
+                        self.codex = onboarding::check_codex_now();
+                        Task::none()
+                    }
                     // Read the folder again: an agent may have changed it since.
-                    Tab::Actions => self.load_actions(),
-                    Tab::Dictation | Tab::Commands | Tab::App => {}
-                }
+                    Tab::Actions => {
+                        self.load_actions();
+                        Task::none()
+                    }
+                    Tab::Diagnostics => {
+                        let mut sampler = Sampler::default();
+                        self.usage = sampler.sample();
+                        self.sampler = Some(sampler);
+                        self.diagnose()
+                    }
+                    Tab::Dictation | Tab::Commands | Tab::App => Task::none(),
+                };
                 // Each tab starts at its top.
-                return operation::snap_to(BODY, scrollable::RelativeOffset::START);
+                return Task::batch([read, operation::snap_to(BODY, scrollable::RelativeOffset::START)]);
             }
             Message::ChangeShortcut => {
                 self.stop_capturing();
@@ -589,6 +653,32 @@ impl Panel {
             }
             Message::Disarm => self.confirm_clear = false,
             Message::RunSetup => {}
+            Message::Rediagnose => return self.diagnose(),
+            Message::Diagnosed(report) => self.report = Some(report),
+            Message::Sample => {
+                if let Some(sampler) = &mut self.sampler {
+                    self.usage = sampler.sample();
+                }
+            }
+            Message::OpenLogs => {
+                if let Some(logs) = &self.files.logs {
+                    // Explorer opens the folder even before anything is written to it.
+                    let _ = std::fs::create_dir_all(logs);
+                    crate::shared::open_url(&logs.to_string_lossy());
+                }
+            }
+            Message::CopyReport => {
+                let copy = serde_json::json!({
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "process": self.usage,
+                    "report": self.report,
+                });
+                let words = serde_json::to_string_pretty(&copy).unwrap_or_default();
+                self.notice = match arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_text(words)) {
+                    Ok(()) => Some(("Copied. It has no dictation text in it.".into(), Tone::Success)),
+                    Err(reason) => Some((format!("Couldn't copy: {reason}"), Tone::Danger)),
+                };
+            }
             Message::Open(url) => crate::shared::open_url(url),
             Message::Close => return window::close(self.window),
             Message::Drag => return window::drag(self.window),
@@ -720,7 +810,13 @@ impl Panel {
         } else {
             Subscription::none()
         };
-        Subscription::batch([keys, frames, mic])
+        // The numbers move only while someone is looking at them.
+        let sample = if self.sampler.is_some() {
+            iced::time::every(SAMPLE_EVERY).map(|_| Message::Sample)
+        } else {
+            Subscription::none()
+        };
+        Subscription::batch([keys, frames, mic, sample])
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -733,6 +829,7 @@ impl Panel {
             Tab::Dictionary => self.dictionary(&p),
             Tab::History => self.history_list(&p),
             Tab::App => self.app(&p),
+            Tab::Diagnostics => self.diagnostics(&p),
         };
         // The notice lives in the header, which is always the same height, so nothing below moves when it shows.
         let words = self.notice.as_ref().or(self.groq.notice.as_ref().filter(|_| self.tab == Tab::Transcription));
@@ -1405,6 +1502,153 @@ impl Panel {
         ]
         .spacing(space::S4)
         .into()
+    }
+
+    /// likh's memory and CPU now, and what the trace says went wrong or slow:
+    /// the same lists as T3 Code's Diagnostics page.
+    fn diagnostics(&self, p: &Palette) -> Element<'_, Message> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let (memory, cpu, running) = match self.usage {
+            Some(usage) => (
+                format!("{:.0} MB", usage.memory_bytes as f64 / (1024.0 * 1024.0)),
+                usage.cpu_percent.map_or("Measuring\u{2026}".into(), |cpu| format!("{cpu:.1}%")),
+                running_for(usage.running_seconds),
+            ),
+            None => ("\u{2014}".into(), "\u{2014}".into(), "\u{2014}".into()),
+        };
+        let figure = |value: String| -> Element<'_, Message> {
+            text(value).size(size::SMALL).font(theme::MONO).color(p.text).into()
+        };
+        let process = group(
+            p,
+            vec![
+                Line::plain(named(p, "Memory", None), figure(memory)),
+                Line::plain(named(p, "CPU", Some("A share of the whole computer.")), figure(cpu)),
+                Line::plain(named(p, "Running for", None), figure(running)),
+            ],
+        );
+        let actions = row![
+            link(p, "Refresh", Message::Rediagnose),
+            link(p, "Copy report", Message::CopyReport),
+            link(p, "Open logs folder", Message::OpenLogs),
+        ]
+        .spacing(space::S5)
+        .padding([0.0, space::S4]);
+
+        let Some(report) = &self.report else {
+            return column![process, hint(p, "Reading the log\u{2026}")].spacing(space::S4).into();
+        };
+        let summary = match (self.files.logs.is_some(), report.first_at) {
+            (false, _) => "likh has no folder to keep a log in.".to_string(),
+            (true, None) => "Nothing logged yet. Each dictation adds its steps here.".to_string(),
+            (true, Some(first)) => format!(
+                "{} lines, the first {}. {} failed, {} took over {}.",
+                report.records,
+                ago_ms(first, now),
+                report.failures,
+                report.slow,
+                duration(report.slow_ms),
+            ),
+        };
+        let mut page = column![process, column![hint(p, &summary), actions].spacing(space::S2)].spacing(space::S4);
+
+        let failures: Vec<Line<'_>> = report
+            .common_failures
+            .iter()
+            .map(|failure| {
+                let meta = format!(
+                    "{} \u{b7} {}\u{d7} \u{b7} last {}",
+                    failure.name,
+                    failure.count,
+                    ago_ms(failure.last_at, now)
+                );
+                entry_line(p, failure.cause.clone(), meta, p.text_subtle, None)
+            })
+            .collect();
+        page = page.push(section(p, "What failed", failures, "Nothing has failed."));
+
+        let slowest: Vec<Line<'_>> = report
+            .slowest
+            .iter()
+            .map(|span| {
+                let meta = match &span.cause {
+                    Some(cause) => format!("{} \u{b7} failed: {cause}", ago_ms(span.at, now)),
+                    None => ago_ms(span.at, now),
+                };
+                entry_line(p, span.name.clone(), meta, p.text_subtle, Some(duration(span.duration_ms)))
+            })
+            .collect();
+        page = page.push(section(p, "Slowest", slowest, "Nothing timed yet."));
+
+        let busiest: Vec<Line<'_>> = report
+            .busiest
+            .iter()
+            .map(|step| {
+                let meta = match step.failures {
+                    0 => format!("average {} \u{b7} longest {}", duration(step.average_ms), duration(step.max_ms)),
+                    n => format!(
+                        "average {} \u{b7} longest {} \u{b7} {n} failed",
+                        duration(step.average_ms),
+                        duration(step.max_ms)
+                    ),
+                };
+                entry_line(p, step.name.clone(), meta, p.text_subtle, Some(format!("{}\u{d7}", step.count)))
+            })
+            .collect();
+        page = page.push(section(p, "Most often", busiest, "Nothing timed yet."));
+
+        let logs: Vec<Line<'_>> = report
+            .latest_logs
+            .iter()
+            .map(|line| {
+                let tint = if line.level == "error" { p.danger } else { p.warning };
+                let meta = format!("{} \u{b7} {} \u{b7} {}", line.level, line.source, ago_ms(line.at, now));
+                entry_line(p, line.message.clone(), meta, tint, None)
+            })
+            .collect();
+        page.push(section(p, "Warnings and errors", logs, "None.")).into()
+    }
+}
+
+/// A heading over a panel of rows, or a quiet line when there are none.
+fn section<'a>(p: &Palette, heading: &str, lines: Vec<Line<'a>>, empty: &str) -> Element<'a, Message> {
+    let body = if lines.is_empty() { hint(p, empty) } else { group(p, lines) };
+    column![label(p, heading), body].spacing(space::S2).into()
+}
+
+/// One row of a Diagnostics list: what happened, a line on when and how
+/// often, and a figure on the right when there is one.
+fn entry_line<'a>(p: &Palette, title: String, meta: String, tint: Color, figure: Option<String>) -> Line<'a> {
+    let words = column![
+        text(title).size(size::BODY).line_height(theme::line_height(size::BODY)),
+        text(meta).size(size::CAPTION).color(tint),
+    ]
+    .spacing(space::S1)
+    .width(Length::Fill);
+    match figure {
+        Some(figure) => {
+            Line::plain(words.into(), text(figure).size(size::SMALL).font(theme::MONO).color(p.text).into())
+        }
+        None => Line::custom(words.into()),
+    }
+}
+
+/// "640 ms", or "3.1 s" once it's over a second.
+fn duration(ms: f64) -> String {
+    if ms < 1000.0 { format!("{ms:.0} ms") } else { format!("{:.1} s", ms / 1000.0) }
+}
+
+/// `history::ago` for a time in milliseconds.
+fn ago_ms(at_ms: u64, now: u64) -> String {
+    history::ago(at_ms / 1000, now)
+}
+
+/// "45 s", "12 min", "3 h 5 min".
+fn running_for(seconds: u64) -> String {
+    match seconds {
+        0..60 => format!("{seconds} s"),
+        60..3600 => format!("{} min", seconds / 60),
+        _ => format!("{} h {} min", seconds / 3600, seconds % 3600 / 60),
     }
 }
 

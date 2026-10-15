@@ -85,11 +85,11 @@ pub fn spawn(dictation: Sender<Input>, triggers: Triggers) -> Result<(), String>
             MOUSE.store(mouse_code(triggers.mouse), Ordering::SeqCst);
             ACTION_MOUSE.store(mouse_code(triggers.action_mouse), Ordering::SeqCst);
             if let Some(Err(reason)) = triggers.paste_last.map(|keys| register(PASTE_LAST, keys)) {
-                eprintln!("likh: pasting the last dictation won't work: {reason}");
+                crate::diagnostics::warn("hotkey", format!("pasting the last dictation won't work: {reason}"));
             }
             let action = triggers.action_key.map(|keys| register(ACTION, keys));
             if let Some(Err(reason)) = &action {
-                eprintln!("likh: the action key won't work: {reason}");
+                crate::diagnostics::warn("hotkey", format!("the action key won't work: {reason}"));
             }
             super::note_action_key(action.is_some_and(|registered| registered.is_err()));
             let _ = ready_tx.send(register(SHORTCUT, triggers.shortcut));
@@ -196,7 +196,7 @@ fn hook_mouse(hook: &mut Option<HHOOK>) {
                     // SAFETY: changes this thread's own priority, so a busy machine doesn't time the hook out.
                     let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST) };
                 }
-                Err(error) => eprintln!("likh: the mouse button won't work: {error}"),
+                Err(error) => crate::diagnostics::warn("hotkey", format!("the mouse button won't work: {error}")),
             }
         }
         (false, Some(installed)) => {

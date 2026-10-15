@@ -5,8 +5,10 @@
 //! `likh ctl start` / `stop` are the shortcut going down and up,
 //! `action-start` / `action-stop` the same for the action key, `cancel` is Esc, `status` reports what likh is doing (and where updating stands),
 //! `update` checks for a newer likh now, `install-update` is "Restart to
-//! update", `quit` stops it.
+//! update", `diagnostics` sums up the trace (what failed, what was slow) with
+//! likh's memory, `quit` stops it.
 
+use crate::diagnostics::{self, Trace};
 use crate::dictation::{Input, Status};
 use interprocess::local_socket::prelude::*;
 use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Name, Stream};
@@ -19,7 +21,7 @@ use std::sync::{Arc, Mutex};
 #[cfg(test)]
 mod tests;
 
-pub const COMMANDS: [&str; 12] = [
+pub const COMMANDS: [&str; 13] = [
     "status",
     "start",
     "stop",
@@ -32,6 +34,7 @@ pub const COMMANDS: [&str; 12] = [
     "open",
     "update",
     "install-update",
+    "diagnostics",
 ];
 
 fn name() -> std::io::Result<Name<'static>> {
@@ -98,6 +101,18 @@ pub fn serve(
                 "install-update" => {
                     json!({ "ok": false, "error": "No update is ready yet. Run `likh ctl update` first." })
                 }
+                "diagnostics" => {
+                    // CPU is measured between two samples.
+                    let mut sampler = diagnostics::Sampler::default();
+                    let _ = sampler.sample();
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    json!({
+                        "ok": true,
+                        "logs": diagnostics::folder(),
+                        "process": sampler.sample(),
+                        "report": diagnostics::folder().map(|logs| Trace::new(logs).read()),
+                    })
+                }
                 _ => answer,
             };
             let quitting = line.trim() == "quit";
@@ -136,7 +151,7 @@ pub fn answer(command: &str, status: &Status, update: &crate::update::State) -> 
         "action-stop" => (ok, Some(Input::Stop)),
         "cancel" => (ok, Some(Input::Cancel)),
         "paste-last" => (ok, Some(Input::PasteLast)),
-        "quit" | "open" | "copy-last" | "install-update" => (ok, None),
+        "quit" | "open" | "copy-last" | "install-update" | "diagnostics" => (ok, None),
         "update" => (json!({ "ok": true, "update": update }), None),
         other => (
             json!({ "ok": false, "error": format!("unknown command {other:?}; try one of {}", COMMANDS.join(", ")) }),

@@ -28,7 +28,8 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/media/` | pauses music and videos while you talk and plays them again (Windows media controls; nothing on macOS) |
 | `app/src/sounds/` | the start, stop and error cues, synthesized |
 | `app/src/autostart/` | start with Windows (the Run key) |
-| `app/src/panel/` | the likh window from the tray: Dictation, Transcription, Commands, Actions (`actions.rs`), Dictionary, History, App; the shortcut's key caps and keyboard (`shortcut.rs`); its drawn icons (`icons.rs`) |
+| `app/src/diagnostics/` | what likh did and how long it took: each dictation step (microphone, transcribe, cleanup, paste, the whole dictation) and update checks as spans, plus every warning and error, one JSON line each in `<likh folder>/logs/trace.ndjson` (rolls at 1 MB, keeps 3 old files; never what was said). Summed up in the Diagnostics tab and `likh ctl diagnostics`. Log with `diagnostics::warn`/`error`/`info`, not `eprintln!`: the installed likh has no console |
+| `app/src/panel/` | the likh window from the tray: Dictation, Transcription, Commands, Actions (`actions.rs`), Dictionary, History, App, Diagnostics; the shortcut's key caps and keyboard (`shortcut.rs`); its drawn icons (`icons.rs`) |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings from the picked mic (saved by Windows' id; Windows' default when none is picked or it's unplugged), the list of inputs, and whether Windows' privacy settings block the mic; `LIKH_AUDIO=file.wav` replays a file instead. `cargo test -p likh mic_pick_live -- --ignored` opens this machine's real inputs |
 | `app/src/silence/` | silence stop: is someone talking? A small voice detector (earshot) hears a voice, not loudness; `eval.rs` scores it in quiet and noisy rooms |
@@ -54,7 +55,7 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Every task in a new worktree starts with the `worktree-likh` skill. Ship only with `ship-likh`, when I say so.
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, this checkout's own `LIKH_HOME` and site port). Safe to rerun
 - Doctor: `bun run doctor`. Run it first when anything looks off.
-- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|action-start|action-stop|cancel|paste-last|copy-last|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
+- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|action-start|action-stop|cancel|paste-last|copy-last|diagnostics|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
 - One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
 - Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`

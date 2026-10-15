@@ -152,7 +152,7 @@ The other engines' copy (onboarding and settings, `onboarding::engine_copy`):
 
 ## Settings window
 
-Calm and compact (Feel, above). Seven tabs, each with one job: Dictation, Transcription, Commands, Actions, Dictionary, History, App. Actions' icon is the pill's spark, outlined. Each has a drawn 16px icon in the sidebar, peach when it's the open tab. At the sidebar's foot: the version, and next to it one update button (check, spinning while checking, peach once an update is ready to restart into).
+Calm and compact (Feel, above). Eight tabs, each with one job: Dictation, Transcription, Commands, Actions, Dictionary, History, App, Diagnostics. Actions' icon is the pill's spark, outlined. Each has a drawn 16px icon in the sidebar, peach when it's the open tab. At the sidebar's foot: the version, and next to it one update button (check, spinning while checking, peach once an update is ready to restart into).
 
 - **Panels**: settings sit in rounded `surface` panels (radius 12, a 1px `edge`), one setting per row with a hairline between rows: the name on the left, the control on the right, a line under the name only when the name can't say it alone. A row that does something lights with the `hover` veil, rounded only where it meets the panel's corners. Every tab fits in the window without scrolling, except a long History; there is no scrollbar, and the edges fade.
 - **The shortcut** (Dictation): its key caps beside a small keyboard (15 units wide, keys on `elevated`) with the shortcut's keys lit peach. `Change` empties the caps into a dashed slot; each key you press lights on the keyboard and flies off it into the next slot (`spring.playful`), and the saved shortcut pulses once, left to right (1.08, 360ms, 45ms apart). It moves only then.

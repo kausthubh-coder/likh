@@ -115,7 +115,7 @@ pub fn listen(mic: &Option<String>) -> impl Stream<Item = Event> + use<> {
         // thread owns it for its whole life.
         let spawned = std::thread::Builder::new().name("likh-meter".into()).spawn(move || meter(mic, output));
         if let Err(error) = spawned {
-            eprintln!("likh: could not start the microphone thread: {error}");
+            crate::diagnostics::error("microphone", format!("could not start the microphone thread: {error}"));
         }
     })
 }
@@ -458,7 +458,7 @@ where
                 on_audio(rate, &mono);
             },
             move |error: cpal::Error| {
-                eprintln!("likh: microphone error: {error}");
+                crate::diagnostics::warn("microphone", format!("microphone error: {error}"));
                 if matches!(error.kind(), cpal::ErrorKind::DeviceNotAvailable | cpal::ErrorKind::StreamInvalidated) {
                     lost.store(true, Ordering::Relaxed);
                 }

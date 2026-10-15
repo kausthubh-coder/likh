@@ -83,23 +83,23 @@ pub fn run(text: &str, pass: &Pass) -> String {
     let Some(credentials) = codex_auth::codex_home().and_then(|home| codex_auth::credentials(&home, now).ok()) else {
         return text.to_owned();
     };
-    match ask(&credentials, request_body(text, pass), patience(text)).map(|stream| read_answer(&stream)) {
+    let span = crate::diagnostics::Span::start("cleanup")
+        .with("tidy", pass.tidy)
+        .with("words", pass.words.len())
+        .with("characters", text.chars().count());
+    let answer = ask(&credentials, request_body(text, pass), patience(text)).map(|stream| read_answer(&stream));
+    let why_not = match answer {
         Ok(Some(cleaned)) if is_the_transcript(text, &cleaned, pass.tidy) && keeps_commands(text, &cleaned, pass) => {
-            cleaned
+            span.end(Ok(()));
+            return cleaned;
         }
-        Ok(Some(_)) => {
-            eprintln!("likh: the cleanup changed too much, so likh pasted what it heard.");
-            text.to_owned()
-        }
-        Ok(None) => {
-            eprintln!("likh: the cleanup came back empty, so likh pasted what it heard.");
-            text.to_owned()
-        }
-        Err(reason) => {
-            eprintln!("likh: couldn't clean up ({reason}), so likh pasted what it heard.");
-            text.to_owned()
-        }
-    }
+        Ok(Some(_)) => "it changed too much".to_string(),
+        Ok(None) => "it came back empty".to_string(),
+        Err(reason) => reason,
+    };
+    span.end(Err(why_not.clone()));
+    crate::diagnostics::warn("cleanup", format!("couldn't clean up ({why_not}), so likh pasted what it heard."));
+    text.to_owned()
 }
 
 /// Sends one request to Codex's model endpoint and returns its event stream.

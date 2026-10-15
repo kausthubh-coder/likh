@@ -20,6 +20,8 @@ pub enum Shape {
     Book,
     Clock,
     Gear,
+    /// A heartbeat line: diagnostics.
+    Pulse,
     Refresh,
     /// A three-quarter ring, turned this far: checking for an update.
     Spin(f32),
@@ -144,6 +146,14 @@ impl<M> canvas::Program<M> for Icon {
                     b.move_to(at(8.0 + 4.5 * cos, 8.0 + 4.5 * sin));
                     b.line_to(at(8.0 + 6.5 * cos, 8.0 + 6.5 * sin));
                 }
+            }),
+            Shape::Pulse => Path::new(|b| {
+                b.move_to(at(1.5, 8.0));
+                b.line_to(at(4.5, 8.0));
+                b.line_to(at(6.5, 3.5));
+                b.line_to(at(9.5, 12.5));
+                b.line_to(at(11.5, 8.0));
+                b.line_to(at(14.5, 8.0));
             }),
             Shape::Refresh => Path::new(|b| {
                 ring(b, 0.0, 314.0, 5.0);

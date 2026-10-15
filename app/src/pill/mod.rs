@@ -225,7 +225,7 @@ impl Pill {
             match windows::spawn(rx, dictation, ui) {
                 Ok(waker) => Self { commands: Some(tx), waker: Some(waker) },
                 Err(reason) => {
-                    eprintln!("likh: no pill on screen: {reason}");
+                    crate::diagnostics::error("pill", format!("no pill on screen: {reason}"));
                     Self::none()
                 }
             }

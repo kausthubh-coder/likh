@@ -6,6 +6,7 @@ mod cleanup;
 mod codex_auth;
 mod commands;
 mod ctl;
+mod diagnostics;
 mod dictation;
 mod dictionary;
 mod history;
@@ -53,7 +54,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Drive the running app: status, start, stop, action-start, action-stop, cancel, paste-last, copy-last or quit. Prints JSON.
+    /// Drive the running app: status, start, stop, action-start, action-stop, cancel, paste-last, copy-last, diagnostics or quit. Prints JSON.
     Ctl {
         #[arg(value_parser = ctl::COMMANDS)]
         command: String,
@@ -138,22 +139,26 @@ fn run(skip_onboarding: bool) -> ExitCode {
     }
     // A test instance (`LIKH_HOME`) leaves the user's own folders and registry alone.
     let own_home = std::env::var_os("LIKH_HOME").is_none();
-    if let Some(data) = dirs::data_local_dir().filter(|_| own_home) {
-        match settings::adopt_murmur_folder(&data) {
-            Ok(true) => eprintln!("likh: moved your settings and history over from murmur."),
-            Ok(false) => {}
-            Err(reason) => eprintln!("likh: couldn't move murmur's settings over: {reason}"),
-        }
+    let adopted = dirs::data_local_dir().filter(|_| own_home).map(|data| settings::adopt_murmur_folder(&data));
+    // After the move, so the logs land in likh's folder, not murmur's.
+    if let Some(folder) = settings::folder() {
+        diagnostics::start(&folder);
+    }
+    diagnostics::info("app", format!("likh {} started.", env!("CARGO_PKG_VERSION")));
+    match adopted {
+        Some(Ok(true)) => diagnostics::info("app", "moved your settings and history over from murmur."),
+        Some(Err(reason)) => diagnostics::warn("app", format!("couldn't move murmur's settings over: {reason}")),
+        Some(Ok(false)) | None => {}
     }
     if own_home && let Err(reason) = autostart::adopt_murmur_value() {
-        eprintln!("likh: couldn't move murmur's start-with-Windows entry over: {reason}");
+        diagnostics::warn("autostart", format!("couldn't move murmur's start-with-Windows entry over: {reason}"));
     }
     let settings = Arc::new(RwLock::new(settings::Settings::load()));
     let triggers = hotkey::Triggers::from(&settings.read().map(|s| s.clone()).unwrap_or_default());
     let shortcut = triggers.shortcut;
     // The starters and README are there to read before the first action.
     if let Some(Err(reason)) = actions::folder().map(|dir| actions::prepare(&dir)) {
-        eprintln!("likh: couldn't set up the actions folder: {reason}");
+        diagnostics::warn("actions", format!("couldn't set up the actions folder: {reason}"));
     }
     // One inbox for the dictation: the shortcut, the pill's stop button and `likh ctl` all send to it.
     let (dictation, inputs) = mpsc::channel();
@@ -167,11 +172,13 @@ fn run(skip_onboarding: bool) -> ExitCode {
         updates.check_if_due();
     }
     if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui, updates.clone()) {
-        eprintln!("likh: `likh ctl` won't work this time: {error}");
+        diagnostics::warn("ctl", format!("`likh ctl` won't work this time: {error}"));
     }
     match hotkey::spawn(dictation, triggers) {
-        Ok(()) => eprintln!("likh is running. Hold {shortcut} to talk; `likh ctl quit` stops it."),
-        Err(reason) => eprintln!("likh: {reason} `likh ctl start` still works."),
+        Ok(()) => {
+            diagnostics::info("hotkey", format!("likh is running. Hold {shortcut} to talk; `likh ctl quit` stops it."))
+        }
+        Err(reason) => diagnostics::error("hotkey", format!("{reason} `likh ctl start` still works.")),
     }
 
     let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
@@ -179,7 +186,7 @@ fn run(skip_onboarding: bool) -> ExitCode {
     match tray::run(status, settings, first_run, ui_requests, updates) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("likh: {error}");
+            diagnostics::error("app", error.to_string());
             ExitCode::FAILURE
         }
     }

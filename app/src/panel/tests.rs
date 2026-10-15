@@ -25,6 +25,7 @@ fn panel() -> Fixture {
         history: Some(dir.path().join("history.jsonl")),
         actions: Some(dir.path().join("actions")),
         approved: Some(dir.path().join("approved")),
+        logs: Some(dir.path().join("logs")),
         mics: two_mics,
     };
     let panel = Panel::new(window::Id::unique(), settings.clone(), status, Updates::new(None), files);
@@ -308,6 +309,10 @@ fn brand_board_panel() {
         let _ = f.panel.update(Message::Action(message));
     }
     snap(&out, "actions-new", &f.panel);
+    write_trace(&f.dir.path().join("logs"));
+    open_diagnostics(&mut f);
+    let _ = f.panel.update(Message::Sample);
+    snap(&out, "diagnostics", &f.panel);
 }
 
 /// Renders the window as it looks now to `<out>/<name>-tiny-skia.png`.
@@ -693,4 +698,87 @@ fn new_action_writes_a_file_that_works_on_the_next_press() {
     let catalog = crate::actions::Catalog::load(&f.dir.path().join("actions"));
     let found = crate::actions::matcher::find(&catalog.actions, "Pause the music.").expect("it matches");
     assert_eq!(catalog.actions[found.action].name, "Pause music");
+}
+
+/// A trace like a day of use: two dictations, one that couldn't reach ChatGPT, a slow cleanup, a warning.
+fn write_trace(logs: &std::path::Path) {
+    use crate::diagnostics::Record;
+    let now = diagnostics::now_ms();
+    let trace = Trace::new(logs.to_path_buf());
+    let span = |name: &str, ago_ms: u64, duration_ms: f64, cause: Option<&str>| Record::Span {
+        name: name.into(),
+        at: now - ago_ms,
+        duration_ms,
+        cause: cause.map(str::to_owned),
+        attributes: serde_json::Map::new(),
+    };
+    for record in [
+        span("transcribe", 600_000, 820.0, None),
+        span("paste", 599_000, 45.0, None),
+        span("transcribe", 120_000, 310.0, Some("Can't reach ChatGPT. Check your connection and try again.")),
+        span("cleanup", 60_000, 4_200.0, Some("timed out")),
+        Record::Log {
+            level: "warn".into(),
+            source: "cleanup".into(),
+            message: "couldn't clean up (timed out), so likh pasted what it heard.".into(),
+            at: now - 60_000,
+        },
+    ] {
+        trace.append(&record);
+    }
+}
+
+fn open_diagnostics(f: &mut Fixture) {
+    let _ = f.panel.update(Message::Tab(Tab::Diagnostics));
+    // The app reads the trace on another thread; the test reads it here and hands it over the same way.
+    let report = Trace::new(f.dir.path().join("logs")).read();
+    let _ = f.panel.update(Message::Diagnosed(report));
+}
+
+#[test]
+fn diagnostics_lists_what_failed_what_was_slow_and_the_warnings() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    write_trace(&f.dir.path().join("logs"));
+    open_diagnostics(&mut f);
+
+    assert!(shows(&f.panel, "5 lines, the first 10 min ago. 2 failed, 1 took over 2.0 s."));
+    // What failed: the cause is the line, the step and how often under it.
+    assert!(shows(&f.panel, "Can't reach ChatGPT. Check your connection and try again."));
+    assert!(shows(&f.panel, "transcribe \u{b7} 1\u{d7} \u{b7} last 2 min ago"));
+    // Slowest first, with its time on the right.
+    assert!(shows(&f.panel, "4.2 s"));
+    assert!(shows(&f.panel, "1 min ago \u{b7} failed: timed out"));
+    // Most often: transcribe ran twice.
+    assert!(shows(&f.panel, "2\u{d7}"));
+    assert!(shows(&f.panel, "average 565 ms \u{b7} longest 820 ms \u{b7} 1 failed"));
+    assert!(shows(&f.panel, "couldn't clean up (timed out), so likh pasted what it heard."));
+    assert!(shows(&f.panel, "warn \u{b7} cleanup \u{b7} 1 min ago"));
+}
+
+#[test]
+fn an_empty_log_says_what_will_show_up() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    open_diagnostics(&mut f);
+    assert!(shows(&f.panel, "Nothing logged yet. Each dictation adds its steps here."));
+    assert!(shows(&f.panel, "Nothing has failed."));
+}
+
+#[test]
+fn diagnostics_reads_the_process_only_while_its_tab_is_open() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    assert!(f.panel.sampler.is_none(), "the window opens on Dictation, reading nothing");
+    open_diagnostics(&mut f);
+    assert!(f.panel.sampler.is_some());
+    let memory = f.panel.usage.expect("the first sample").memory_bytes;
+    assert!(memory > 1024 * 1024, "{memory}");
+    assert!(shows(&f.panel, "Measuring\u{2026}"), "CPU needs a second sample");
+    let _ = f.panel.update(Message::Sample);
+    assert!(f.panel.usage.is_some_and(|usage| usage.cpu_percent.is_some()));
+    assert!(!shows(&f.panel, "Measuring\u{2026}"));
+
+    let _ = f.panel.update(Message::Tab(Tab::App));
+    assert!(f.panel.sampler.is_none() && f.panel.usage.is_none(), "leaving the tab stops the sampling");
 }

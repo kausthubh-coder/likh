@@ -303,7 +303,7 @@ impl Onboarding {
             None => Ok(()),
         };
         if let Err(reason) = saved {
-            eprintln!("likh: couldn't save the engine: {reason}");
+            crate::diagnostics::warn("onboarding", format!("couldn't save the engine: {reason}"));
         }
     }
 

@@ -132,7 +132,12 @@ impl Updates {
         }
         let updates = self.clone();
         let spawned = std::thread::Builder::new().name("likh-update".into()).spawn(move || {
+            let span = crate::diagnostics::Span::start("update");
             let state = updates.check_and_download();
+            span.end(match &state {
+                State::Failed { reason } => Err(reason.clone()),
+                _ => Ok(()),
+            });
             updates.set(state);
         });
         if let Err(error) = spawned {
