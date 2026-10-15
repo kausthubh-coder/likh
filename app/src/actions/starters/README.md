@@ -121,3 +121,30 @@ github = "https://github.com"
 [[do]]
 open = "{site}"
 ```
+
+An app from the Start menu opens as `shell:AppsFolder\<id>`; `Get-StartApps`
+in PowerShell lists the ids. Use single quotes so TOML keeps the backslash.
+
+```toml
+name = "Open an app"
+say = ["open {target}"]
+output = "none"
+[lists.target]
+zen = 'shell:AppsFolder\F0DC299D809B9700'
+terminal = 'shell:AppsFolder\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App'
+[[do]]
+open = "{target}"
+```
+
+A T3 Code thread in one of your projects: `repo` is the project's GitHub
+repo, which is how T3 Code finds it ("new thread in krida fix the login").
+
+```toml
+name = "T3 thread in a project"
+say = ["new thread in {project} {text}", "new thread in {project} then {text}"]
+output = "none"
+[lists.project]
+krida = "your-name/krida"
+[[do]]
+open = "t3code://new?repo={project}&prompt={text}"
+```

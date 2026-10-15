@@ -106,15 +106,15 @@ pub fn read_pick(stream: &str, actions: &[Action], offered: &[usize]) -> Option<
     None
 }
 
-/// The model's arguments as the action's slots. A list slot must be one of
-/// its names (it becomes that name's value), or the pick doesn't count.
+/// The model's arguments as the action's slots. A list slot must be given and
+/// be one of its names (it becomes that name's value), or the pick doesn't
+/// count: an empty `open = "{site}"` would open File Explorer.
 fn slots(action: &Action, arguments: &Value) -> Option<BTreeMap<String, String>> {
     let mut slots = BTreeMap::new();
     for token in action.patterns.iter().flatten() {
         match token {
             Token::List(name) if !slots.contains_key(name) => {
-                let Some(said) = arguments[name].as_str() else { continue };
-                let said = super::matcher::words(said);
+                let said = super::matcher::words(arguments[name].as_str()?);
                 let (_, value) = action.lists.get(name)?.iter().find(|(spoken, _)| *spoken == said)?;
                 slots.insert(name.clone(), value.clone());
             }

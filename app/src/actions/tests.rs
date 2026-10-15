@@ -314,6 +314,8 @@ fn the_router_offers_each_action_as_a_tool_and_reads_back_the_one_picked() {
     assert_eq!(picked.slots["site"], "https://getlikh.vercel.app/docs?from=likh");
     // A name that isn't on the list, or a tool that wasn't offered, picks nothing.
     assert_eq!(router::read_pick(&call("action_1", r#"{"site":"gitlab"}"#), &actions, &offered), None);
+    // Leaving the list slot out picks nothing too: `open = "{site}"` would open an empty target (File Explorer).
+    assert_eq!(router::read_pick(&call("action_1", "{}"), &actions, &offered), None);
     assert_eq!(router::read_pick(&call("action_2", "{}"), &actions, &offered), None);
     assert_eq!(
         router::read_pick("data: {\"type\":\"response.output_text.done\",\"text\":\"none\"}\n", &actions, &offered),
