@@ -222,6 +222,12 @@ fn dictionary_words_get_your_spelling_back_in_slot_text() {
     );
 }
 
+/// This system's own shell running `line`: cmd on Windows, sh elsewhere.
+fn shell(line: &str) -> Vec<String> {
+    let (program, flag) = if cfg!(windows) { ("cmd", "/c") } else { ("sh", "-c") };
+    vec![program.into(), flag.into(), line.into()]
+}
+
 #[test]
 fn a_program_gets_what_you_said_and_its_output_is_the_result() {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -229,11 +235,11 @@ fn a_program_gets_what_you_said_and_its_output_is_the_result() {
     values.values.insert("text".into(), "fix the login bug".into());
     values.values.insert("said".into(), "new thread fix the login bug".into());
     let cancel = Arc::new(AtomicBool::new(false));
-    let argv: Vec<String> = ["cmd", "/c", "echo %LIKH_TEXT%"].map(String::from).to_vec();
+    let argv = shell(if cfg!(windows) { "echo %LIKH_TEXT%" } else { "echo \"$LIKH_TEXT\"" });
     let out = steps::program(&argv, &values, dir.path(), Duration::from_secs(10), &cancel).expect("ran");
     assert_eq!(out, "fix the login bug");
 
-    let failing: Vec<String> = ["cmd", "/c", "echo nope 1>&2 && exit 3"].map(String::from).to_vec();
+    let failing = shell("echo nope 1>&2 && exit 3");
     let error = steps::program(&failing, &values, dir.path(), Duration::from_secs(10), &cancel).expect_err("fails");
     assert_eq!(error, "nope");
 }
@@ -242,7 +248,12 @@ fn a_program_gets_what_you_said_and_its_output_is_the_result() {
 fn a_program_that_runs_too_long_is_stopped() {
     let dir = tempfile::tempdir().expect("temp dir");
     let cancel = Arc::new(AtomicBool::new(false));
-    let argv: Vec<String> = ["ping", "-n", "30", "127.0.0.1"].map(String::from).to_vec();
+    // The waiting program itself, not a shell around it: stopping it by its own PID must end the wait.
+    let argv: Vec<String> = if cfg!(windows) {
+        vec!["ping".into(), "-n".into(), "30".into(), "127.0.0.1".into()]
+    } else {
+        vec!["sleep".into(), "30".into()]
+    };
     let started = std::time::Instant::now();
     let error =
         steps::program(&argv, &Values::default(), dir.path(), Duration::from_secs(1), &cancel).expect_err("stopped");
