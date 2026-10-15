@@ -67,6 +67,21 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Full check (CI runs this; run it only when asked): `bun run check`
 - Release (only with my go): bump `version` in `app/Cargo.toml` and `RELEASE` in `site/app/page.tsx`, then push the tag `v<version>`. `release.yml` builds the installer, signs it with the `LIKH_UPDATE_SIGNING_KEY` secret (`scripts/sign-release.mjs`) and publishes a prerelease; installed copies find it within a day. A local installer: `scripts/build-installer.ps1` (Inno Setup 6)
 
+## Cloud sessions
+
+A cloud session (Claude Code on the web, Codex Cloud) is a Linux VM with a fresh clone, not my Windows machine. `scripts/cloud.mjs` gets it ready: the SessionStart hook in `.claude/settings.json` runs it (Codex Cloud: `CLOUD=1 node scripts/cloud.mjs` as the setup script). It fetches my global skills and rules, apt-installs the libraries the crate links on Linux (GTK, appindicator, ALSA, libxdo), then runs `bun run setup`. It does nothing on my machine. No env vars or secrets needed.
+
+Works here:
+- `bun run setup`, `bun run doctor`, and all of `bun run check`: fmt, clippy, `cargo check`, every unit and view test (iced_test renders without a window), the site's lint, typecheck and build. Linux needs iced's X11 backend to compile, hence the Linux-only `iced` line in `app/Cargo.toml`; Windows and macOS builds don't see it.
+- The CLI without the app: `likh status`, `likh actions check`, `likh actions test "<phrase>"`.
+- The site: `bun run dev:site`, checked with headless Playwright (pass the Chromium under `$PLAYWRIGHT_BROWSERS_PATH` as `executablePath`).
+- Shipping tooling, docs and site changes: `ship-likh` has the cloud way to open and merge the PR.
+
+Needs my Windows machine:
+- Running the app. On Linux `likh run` dies at the tray (GTK is never initialised), so there's no `likh ctl`, no faked dictation end to end, and no `verify-likh` evidence. Anything that changes what the app does is proved there.
+- The mic, the hotkeys and mouse buttons, the pill, paste into real apps, media pause, start with Windows, the credential store (Groq key), idle cost and benchmarks: all Win32, and every `scripts/*.ps1`.
+- Releases: the installer build for `RELEASE` in `site/app/page.tsx`, the tag and watching `release.yml`. A cloud agent can land app code, then says first thing in its report that the release is still owed (`ship-likh`).
+
 ## Proving a change works
 
 - Done means you saw it work, not that it compiles. Run the app and look at it.
