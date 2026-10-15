@@ -1,0 +1,14 @@
+#:schema ./actions.schema.json
+# Select some text, hold the action key and say "make this formal"
+# (or friendly, shorter, bullet points). The rewrite replaces the selection.
+name = "Make this"
+description = "Rewrite the selected text the way the user says: formal, friendly, shorter, as bullet points"
+say = ["make this {style}", "rewrite this as {style}"]
+input = ["selection"]
+output = "replace"
+
+[[do]]
+ask = """
+Rewrite this text to be {style}. Keep its meaning and its language.
+
+{selection}"""

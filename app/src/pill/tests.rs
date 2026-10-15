@@ -241,6 +241,25 @@ fn brand_board_pill() {
         ("problem", Show::Problem { text: "No sound from Microphone Array. Is it muted?".into(), fix: Fix::PickMic }),
         ("note", Show::Note("No voice heard".into())),
         ("mic-silent", Show::MicSilent { device: "Microphone Array".into() }),
+        ("action-listening", Show::Spark(Box::new(Show::Listening))),
+        ("action-hands-free", Show::Spark(Box::new(Show::HandsFree))),
+        ("action-thinking", Show::Spark(Box::new(Show::Thinking))),
+        ("action-running", Show::Running("New T3 thread".into())),
+        ("action-finished", Show::Finished("Thread started".into())),
+        (
+            "action-confirm",
+            Show::Confirm {
+                question: "Run Deploy preview?".into(),
+                keys: "Ctrl+Shift+Space".into(),
+                left: Duration::from_millis(3_100),
+                after: Duration::from_secs(5),
+            },
+        ),
+        (
+            "action-review",
+            Show::Problem { text: "deploy.toml isn't approved yet, so it won't run.".into(), fix: Fix::Review },
+        ),
+        ("action-no-match", Show::Note("No action for \u{201c}open spotfy\u{201d}".into())),
     ];
     for (name, show) in states {
         let mut look = Look::default();
@@ -253,4 +272,61 @@ fn brand_board_pill() {
             let _ = pixmap.save_png(out.join(format!("{name}.png")));
         }
     }
+}
+
+#[test]
+fn an_actions_recording_carries_the_spark_on_the_left_and_is_24_wider() {
+    let mut look = Look::default();
+    look.set(Show::Spark(Box::new(Show::Listening)));
+    play(&mut look, 0.6);
+    assert_eq!((look.width.value.round(), look.height.value.round()), (100.0, 36.0));
+    let pixmap = look.draw(1.0).expect("pixmap");
+    let (cx, cy) = centre(36.0);
+    // The spark sits in its slot where a dictation's first bars would be, in the text colour.
+    let [r, g, b, _] = rgba_at(&pixmap, cx - 50.0 + SLOT_INSET + SLOT / 2.0, cy);
+    assert!(r > 200 && g > 200 && b > 200, "got {r},{g},{b}");
+    // Hands-free with the spark keeps its stop button on the right: 124 wide.
+    look.set(Show::Spark(Box::new(Show::HandsFree)));
+    play(&mut look, 0.6);
+    assert_eq!(look.width.value.round(), 124.0);
+    assert!(look.stop_button().is_some());
+    // The dictation shortcut's own recording has no spark.
+    look.set(Show::Listening);
+    play(&mut look, 0.6);
+    assert_eq!(look.width.value.round(), 76.0);
+}
+
+#[test]
+fn a_running_action_names_itself_and_its_result_leaves_after_two_seconds() {
+    let mut look = Look::default();
+    look.set(Show::Running("New T3 thread".into()));
+    assert!(play(&mut look, 1.0), "the running wave moves");
+    let width = look.width.value;
+    assert!(width > 100.0 && width < 220.0, "hugs its name, got {width}");
+    look.set(Show::Finished("Thread started".into()));
+    assert!(play(&mut look, 1.5));
+    assert!(!play(&mut look, 1.0), "gone and drawing nothing after about two seconds");
+    assert!(look.is_hidden());
+}
+
+#[test]
+fn a_confirm_counts_down_on_its_own_and_a_long_result_stays_on_one_line() {
+    let mut look = Look::default();
+    let after = Duration::from_secs(5);
+    look.set(Show::Confirm {
+        question: "Run Deploy preview?".into(),
+        keys: "Ctrl+Shift+Space".into(),
+        left: after,
+        after,
+    });
+    play(&mut look, 1.0);
+    match &look.show {
+        Show::Confirm { left, .. } => assert!(*left <= Duration::from_millis(4_050), "{left:?}"),
+        other => panic!("{other:?}"),
+    }
+    assert!(look.width.value <= ERROR_MAX_WIDTH, "fits the pill's widest");
+    look.set(Show::Finished("word ".repeat(80)));
+    assert_eq!(look.lines.len(), 1);
+    assert!(look.lines[0].ends_with('\u{2026}'));
+    assert!(look.width.target <= ERROR_MAX_WIDTH);
 }

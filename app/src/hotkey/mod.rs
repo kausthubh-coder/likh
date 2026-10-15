@@ -10,10 +10,15 @@
 //! A mouse button can start dictations too (`MouseTrigger`). That needs a
 //! low-level mouse hook, which wakes likh on every mouse move, so it is
 //! installed only while a button is picked; with none picked nothing runs.
+//!
+//! The action key (`ACTION_KEY`, and its own mouse button) works the same way
+//! but sends `Input::ActionHold`: what's said next runs an action (`actions/`).
+//! It's Windows only for now.
 
 use crate::dictation::Input;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 
 pub mod capture;
@@ -43,6 +48,31 @@ impl Default for Binding {
 /// Pastes the last dictation again, out of the box. Wispr Flow uses the same
 /// keys, so people coming from it already know them.
 pub const PASTE_LAST: Binding = Binding { ctrl: false, alt: true, shift: true, win: false, key: KeyName("Z") };
+
+/// Hold it and say an action, out of the box: the dictation shortcut plus Shift.
+pub const ACTION_KEY: Binding = Binding { ctrl: true, alt: false, shift: true, win: false, key: KeyName("Space") };
+
+/// The window in front: where an action's result goes, and what `{app}` and `{title}` say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Window {
+    /// Its handle, only for telling whether the window in front changed.
+    pub id: isize,
+    /// The program's file name, like `chrome.exe`.
+    pub app: String,
+    pub title: String,
+}
+
+/// The window in front now. None where likh can't tell (macOS for now).
+pub fn foreground() -> Option<Window> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::foreground()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
 
 /// A mouse button that works like the shortcut: hold to talk, or tap for hands-free.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -207,20 +237,75 @@ impl TryFrom<String> for Binding {
 /// Starts listening for `binding` (and `mouse`, and `paste_last`) on its own
 /// thread. Err says why the shortcut couldn't start (on Windows, usually that
 /// another app already owns it); a paste-last shortcut that can't is only logged.
-pub fn spawn(
-    dictation: Sender<Input>,
-    binding: Binding,
-    paste_last: Option<Binding>,
-    mouse: MouseTrigger,
-) -> Result<(), String> {
+/// The keys and buttons `spawn` starts listening for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Triggers {
+    pub shortcut: Binding,
+    pub paste_last: Option<Binding>,
+    pub mouse: MouseTrigger,
+    pub action_key: Option<Binding>,
+    pub action_mouse: MouseTrigger,
+}
+
+impl Triggers {
+    pub fn from(settings: &crate::settings::Settings) -> Self {
+        Self {
+            shortcut: settings.shortcut,
+            paste_last: settings.paste_last,
+            mouse: settings.mouse,
+            action_key: settings.action_key,
+            action_mouse: settings.action_mouse,
+        }
+    }
+}
+
+pub fn spawn(dictation: Sender<Input>, triggers: Triggers) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        windows::spawn(dictation, binding, paste_last, mouse)
+        windows::spawn(dictation, triggers)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = paste_last;
-        other::spawn(dictation, binding, mouse)
+        other::spawn(dictation, triggers.shortcut, triggers.mouse)
+    }
+}
+
+/// Another app already had the action key's keys when likh started, so it does nothing until changed.
+static ACTION_KEY_TAKEN: AtomicBool = AtomicBool::new(false);
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows registers the action key"))]
+fn note_action_key(taken: bool) {
+    ACTION_KEY_TAKEN.store(taken, Ordering::SeqCst);
+}
+
+/// The action key's keys belong to another app (the Actions tab says so).
+pub fn action_key_taken() -> bool {
+    ACTION_KEY_TAKEN.load(Ordering::SeqCst)
+}
+
+/// Swaps the action key, or turns it off with None. On error the old one stays.
+pub fn set_action_key(binding: Option<Binding>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::set_action_key(binding)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = binding;
+        Err("Actions aren't available on macOS yet.".into())
+    }
+}
+
+/// Swaps the mouse button that starts actions, or turns it off.
+pub fn set_action_mouse(mouse: MouseTrigger) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::set_action_mouse(mouse)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = mouse;
+        Err("Actions aren't available on macOS yet.".into())
     }
 }
 
@@ -270,8 +355,24 @@ pub fn pause(paused: bool) {
     let _ = paused;
 }
 
-/// Esc belongs to likh only while a recording can be cancelled.
+/// Who wants Esc right now: a recording that can be cancelled, an action that can be stopped.
+static ESCAPE_FOR_DICTATION: AtomicBool = AtomicBool::new(false);
+static ESCAPE_FOR_ACTION: AtomicBool = AtomicBool::new(false);
+
+/// Esc belongs to likh only while a recording can be cancelled (or an action stopped).
 pub fn watch_escape(on: bool) {
+    ESCAPE_FOR_DICTATION.store(on, Ordering::SeqCst);
+    apply_escape();
+}
+
+/// Esc belongs to likh while an action runs or waits to be confirmed.
+pub fn watch_escape_for_action(on: bool) {
+    ESCAPE_FOR_ACTION.store(on, Ordering::SeqCst);
+    apply_escape();
+}
+
+fn apply_escape() {
+    let on = ESCAPE_FOR_DICTATION.load(Ordering::SeqCst) || ESCAPE_FOR_ACTION.load(Ordering::SeqCst);
     #[cfg(target_os = "windows")]
     windows::watch_escape(on);
     #[cfg(not(target_os = "windows"))]

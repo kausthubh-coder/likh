@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+mod actions;
 mod autostart;
 mod cleanup;
 mod codex_auth;
@@ -53,11 +54,24 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Drive the running app: status, start, stop, cancel, paste-last, copy-last, diagnostics or quit. Prints JSON.
+    /// Drive the running app: status, start, stop, action-start, action-stop, cancel, paste-last, copy-last, diagnostics or quit. Prints JSON.
     Ctl {
         #[arg(value_parser = ctl::COMMANDS)]
         command: String,
     },
+    /// Check your actions, or see what a phrase would run, without speaking or running anything.
+    Actions {
+        #[command(subcommand)]
+        command: ActionsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ActionsCommand {
+    /// Every action file in the folder, and what's wrong with each, with line numbers.
+    Check,
+    /// Which action this phrase runs, its slots and its steps. Runs nothing.
+    Test { phrase: String },
 }
 
 fn main() -> ExitCode {
@@ -80,6 +94,28 @@ fn main() -> ExitCode {
                 println!("likh {} · {} · {}", env!("CARGO_PKG_VERSION"), copy.title, copy.detail);
             }
             ExitCode::SUCCESS
+        }
+        Command::Actions { command } => {
+            let Some(dir) = actions::folder() else {
+                eprintln!("likh: there is no local data folder");
+                return ExitCode::FAILURE;
+            };
+            match command {
+                ActionsCommand::Check => match actions::check(&dir) {
+                    Ok(report) => {
+                        print!("{report}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(report) => {
+                        print!("{report}");
+                        ExitCode::FAILURE
+                    }
+                },
+                ActionsCommand::Test { phrase } => {
+                    print!("{}", actions::test(&dir, &phrase));
+                    ExitCode::SUCCESS
+                }
+            }
         }
         Command::Ctl { command } => match ctl::send(&command) {
             Ok(answer) => {
@@ -118,8 +154,12 @@ fn run(skip_onboarding: bool) -> ExitCode {
         diagnostics::warn("autostart", format!("couldn't move murmur's start-with-Windows entry over: {reason}"));
     }
     let settings = Arc::new(RwLock::new(settings::Settings::load()));
-    let (shortcut, paste_last, mouse) =
-        settings.read().map(|s| (s.shortcut, s.paste_last, s.mouse)).unwrap_or_default();
+    let triggers = hotkey::Triggers::from(&settings.read().map(|s| s.clone()).unwrap_or_default());
+    let shortcut = triggers.shortcut;
+    // The starters and README are there to read before the first action.
+    if let Some(Err(reason)) = actions::folder().map(|dir| actions::prepare(&dir)) {
+        diagnostics::warn("actions", format!("couldn't set up the actions folder: {reason}"));
+    }
     // One inbox for the dictation: the shortcut, the pill's stop button and `likh ctl` all send to it.
     let (dictation, inputs) = mpsc::channel();
     // One inbox for the tray's thread: `likh ctl open`, update news, a dictation landing, the pill's Pick mic.
@@ -134,7 +174,7 @@ fn run(skip_onboarding: bool) -> ExitCode {
     if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui, updates.clone()) {
         diagnostics::warn("ctl", format!("`likh ctl` won't work this time: {error}"));
     }
-    match hotkey::spawn(dictation, shortcut, paste_last, mouse) {
+    match hotkey::spawn(dictation, triggers) {
         Ok(()) => {
             diagnostics::info("hotkey", format!("likh is running. Hold {shortcut} to talk; `likh ctl quit` stops it."))
         }

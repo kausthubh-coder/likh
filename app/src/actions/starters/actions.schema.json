@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "likh action",
+  "description": "One likh action: hold the action key, say one of its phrases, and likh carries out its steps. See README.md next to this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "say", "do"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "description": "What the pill and the Actions tab call it." },
+    "description": { "type": "string", "description": "What it does, for ChatGPT when no phrase matched. Defaults to the name." },
+    "say": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Phrases that run it. {name} is a slot: a list's name if [lists.name] exists, otherwise it catches the rest of what was said and must come last."
+    },
+    "lists": {
+      "type": "object",
+      "description": "Named lists for slots: [lists.site] github = \"https://github.com\". The spoken name maps to its value.",
+      "additionalProperties": { "type": "object", "additionalProperties": { "type": "string" } }
+    },
+    "input": {
+      "type": "array",
+      "items": { "enum": ["selection", "clipboard", "app", "title"] },
+      "description": "What else it reads, as {selection}, {clipboard}, {app}, {title}. The selection costs a Ctrl+C."
+    },
+    "output": {
+      "enum": ["paste", "replace", "notify", "none"],
+      "default": "notify",
+      "description": "What happens to the last result: paste it, paste it over the selection, show it in the pill, or nothing."
+    },
+    "confirm": { "type": "boolean", "default": false, "description": "Ask in the pill before running." },
+    "router": { "type": "boolean", "default": true, "description": "ChatGPT may pick it when no phrase matched." },
+    "enabled": { "type": "boolean", "default": true },
+    "timeout": { "type": "integer", "minimum": 1, "maximum": 600, "default": 30, "description": "Seconds a run step may take." },
+    "do": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The steps, in order. Each [[do]] has exactly one key.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "maxProperties": 1,
+        "properties": {
+          "paste": { "type": "string", "description": "Paste this text. Slots are filled in." },
+          "keys": { "type": "string", "description": "Chords split by spaces, keys by +: \"ctrl+shift+t enter\", \"play_pause\"." },
+          "open": { "type": "string", "description": "A link, file or app. Spoken slots are URL-encoded; list values go in as written." },
+          "wait": { "type": "integer", "minimum": 0, "maximum": 10000, "description": "Milliseconds." },
+          "ask": { "type": "string", "description": "A prompt for ChatGPT; its answer becomes {result}." },
+          "run": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" },
+            "description": "A program and its arguments, no shell and no slots. It reads LIKH_TEXT and the rest from the environment or stdin; what it prints becomes {result}."
+          }
+        }
+      }
+    }
+  }
+}

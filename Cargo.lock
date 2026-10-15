@@ -2210,7 +2210,7 @@ dependencies = [
 
 [[package]]
 name = "likh"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "ab_glyph",
  "arboard",
@@ -2233,6 +2233,7 @@ dependencies = [
  "sysinfo",
  "tempfile",
  "tiny-skia",
+ "toml 1.1.8+spec-1.1.0",
  "tray-icon",
  "ureq",
  "windows 0.62.2",

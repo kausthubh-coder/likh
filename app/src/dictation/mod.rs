@@ -43,6 +43,8 @@ pub const SILENT_AFTER: Duration = Duration::from_secs(2);
 pub enum Input {
     /// The shortcut went down (or `likh ctl start`).
     Hold,
+    /// The action key went down (or `likh ctl action-start`): what's said next runs an action.
+    ActionHold,
     /// The shortcut came up, at this moment. Stamped where the key is seen:
     /// opening the mic takes 300 to 600ms, and a release that waited behind it
     /// would turn every tap into a hold.
@@ -87,8 +89,22 @@ pub enum Effect {
     Undo,
     /// Paste the last dictation's text again, or say there's none yet.
     PasteLast,
+    /// Hand what was said to the action runner.
+    Act {
+        said: String,
+    },
     Sound(Cue),
     Pill(Show),
+}
+
+/// What the recording is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Kind {
+    /// Typed at the cursor.
+    #[default]
+    Dictate,
+    /// Run as an action (`actions/`).
+    Action,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -122,6 +138,7 @@ pub struct Dictation {
     warned_silent: bool,
     /// The mic went away mid-recording; the paste says so.
     lost_mic: Option<String>,
+    kind: Kind,
 }
 
 impl Default for Dictation {
@@ -133,6 +150,7 @@ impl Default for Dictation {
             counting_quiet: false,
             warned_silent: false,
             lost_mic: None,
+            kind: Kind::Dictate,
         }
     }
 }
@@ -142,11 +160,38 @@ impl Dictation {
         self.phase
     }
 
+    /// What the current (or last) recording is for.
+    pub fn kind(&self) -> Kind {
+        self.kind
+    }
+
     pub fn handle(&mut self, input: Input, now: Instant, choices: Choices) -> Vec<Effect> {
+        let effects = self.decide(input, now, choices);
+        if self.kind == Kind::Dictate {
+            return effects;
+        }
+        // An action's recording looks like a dictation's, with the spark on the left.
+        effects
+            .into_iter()
+            .map(|effect| match effect {
+                Effect::Pill(
+                    show @ (Show::Listening
+                    | Show::HandsFree
+                    | Show::QuietStop { .. }
+                    | Show::Thinking
+                    | Show::Warning { .. }),
+                ) => Effect::Pill(Show::Spark(Box::new(show))),
+                other => other,
+            })
+            .collect()
+    }
+
+    fn decide(&mut self, input: Input, now: Instant, choices: Choices) -> Vec<Effect> {
         let held = self.started.map_or(Duration::ZERO, |started| now.saturating_duration_since(started));
         let recording = matches!(self.phase, Phase::Recording | Phase::HandsFree);
         match (self.phase, input) {
-            (Phase::Idle, Input::Hold) => {
+            (Phase::Idle, input @ (Input::Hold | Input::ActionHold)) => {
+                self.kind = if input == Input::ActionHold { Kind::Action } else { Kind::Dictate };
                 self.started = Some(now);
                 self.warned_at = None;
                 self.counting_quiet = false;
@@ -167,7 +212,8 @@ impl Dictation {
                 Mode::Hold | Mode::Tap => self.stop(Effect::Discard, Show::Cancelled),
             },
             (Phase::Recording, Input::Release(_)) => self.transcribe(),
-            (Phase::HandsFree, Input::Hold) => self.transcribe(),
+            // Either key finishes a hands-free recording, whichever started it.
+            (Phase::HandsFree, Input::Hold | Input::ActionHold) => self.transcribe(),
             // Only between dictations: mid-recording it would paste into the sentence being spoken.
             (Phase::Idle, Input::PasteLast) => vec![Effect::PasteLast],
             (_, Input::Stop) if recording => self.transcribe(),
@@ -227,6 +273,8 @@ impl Dictation {
                 self.started = None;
                 match result {
                     Ok(text) if text.is_empty() => vec![Effect::Pill(Show::Cancelled)],
+                    // The runner takes it from here, and its pill states with it.
+                    Ok(said) if self.kind == Kind::Action => vec![Effect::Act { said }],
                     // The pill steps aside as the text lands; the text is the feedback.
                     Ok(text) => {
                         let action = match choices.commands {
@@ -362,6 +410,8 @@ pub struct Status {
     pub phase: Phase,
     pub transcriber: &'static str,
     pub dictations: u64,
+    /// Actions finished since likh started.
+    pub actions: u64,
     pub last: Option<Last>,
     /// What the last dictation pasted, for paste last and the tray's copy.
     /// Never printed: `likh ctl status` leaves it out.
@@ -386,13 +436,21 @@ pub fn spawn(
     // Paste last still works after a restart, from history when it's kept.
     let last_text = crate::history::file()
         .filter(|_| history)
-        .and_then(|file| crate::history::recent(&file, 1).pop())
+        .and_then(|file| crate::history::last_pasted(&file))
         .map(|entry| entry.text);
-    let status = Arc::new(Mutex::new(Status { phase: Phase::Idle, transcriber, dictations: 0, last: None, last_text }));
+    let status = Arc::new(Mutex::new(Status {
+        phase: Phase::Idle,
+        transcriber,
+        dictations: 0,
+        actions: 0,
+        last: None,
+        last_text,
+    }));
+    let runner = crate::actions::runner::Runner::new(pill.clone(), status.clone(), ui.clone());
     let thread_status = status.clone();
     let spawned = std::thread::Builder::new()
         .name("likh-dictation".into())
-        .spawn(move || run(inputs, sender, pill, fake, thread_status, settings, updates, ui));
+        .spawn(move || run(inputs, sender, pill, runner, fake, thread_status, settings, updates, ui));
     if let Err(error) = spawned {
         diagnostics::error("dictation", format!("could not start dictation: {error}"));
     }
@@ -410,6 +468,8 @@ struct Running {
     pieces: Vec<std::thread::JoinHandle<Result<String, Failure>>>,
     /// How much audio those pieces hold.
     pieces_seconds: f32,
+    /// The window in front when the action key went down: an action's result goes there.
+    window: Option<crate::hotkey::Window>,
 }
 
 impl Running {
@@ -430,6 +490,7 @@ fn run(
     rx: Receiver<Input>,
     tx: Sender<Input>,
     pill: Pill,
+    runner: crate::actions::runner::Runner,
     fake: Option<String>,
     status: Arc<Mutex<Status>>,
     settings: Arc<RwLock<Settings>>,
@@ -454,6 +515,19 @@ fn run(
                 Err(_) => return,
             }
         };
+        // The action key and Esc reach a running action first: they confirm, report it busy, or stop it.
+        match &input {
+            Input::ActionHold if runner.confirm() => continue,
+            Input::ActionHold if dictation.phase() == Phase::Idle => {
+                if let Some(name) = runner.busy() {
+                    pill.show(Show::Note(format!("Busy: {name}")));
+                    continue;
+                }
+                running.window = crate::hotkey::foreground();
+            }
+            Input::Cancel if !listening && runner.cancel() => continue,
+            _ => {}
+        }
         let failed = match &input {
             Input::Transcribed(Err(failure)) => Some(failure.message()),
             Input::MicFailed { reason, .. } => Some(reason.clone()),
@@ -556,10 +630,14 @@ fn run(
                         continue;
                     }
                     let words = chosen.dictionary.clone();
-                    let pass = crate::cleanup::Pass {
-                        words: if chosen.fix_names { words.clone() } else { Vec::new() },
-                        tidy: chosen.cleanup,
-                        commands: if chosen.commands { chosen.command_groups.phrases() } else { Vec::new() },
+                    // An action's words are matched as heard: a cleanup would change the very words that pick it.
+                    let pass = match dictation.kind() {
+                        crate::dictation::Kind::Action => crate::cleanup::Pass::default(),
+                        crate::dictation::Kind::Dictate => crate::cleanup::Pass {
+                            words: if chosen.fix_names { words.clone() } else { Vec::new() },
+                            tidy: chosen.cleanup,
+                            commands: if chosen.commands { chosen.command_groups.phrases() } else { Vec::new() },
+                        },
                     };
                     std::thread::spawn(move || {
                         // A short dictation is one upload, as it always was. A long one's
@@ -617,7 +695,8 @@ fn run(
                         .end(last.error.clone().map_or(Ok(()), Err));
                     if restore.is_some() && chosen.history {
                         let at = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-                        let entry = crate::history::Entry { at, text: text.clone(), seconds };
+                        let entry =
+                            crate::history::Entry { at, text: text.clone(), seconds, action: None, pasted: true };
                         if let Some(file) = crate::history::file()
                             && let Err(reason) = crate::history::append(&file, &entry)
                         {
@@ -662,6 +741,11 @@ fn run(
                         },
                         None => pill.show(Show::Note("Nothing to paste yet".into())),
                     }
+                }
+                Effect::Act { said } => {
+                    let seconds = released.take().map_or(0.0, |(_, seconds)| seconds);
+                    let job = crate::actions::runner::Job { said, window: running.window.take(), seconds };
+                    runner.start(job, chosen.clone());
                 }
                 Effect::Pill(show) => pill.show(show),
             }

@@ -48,6 +48,7 @@ fn app(marker: Option<PathBuf>) -> App {
             phase: crate::dictation::Phase::Idle,
             transcriber: "echo",
             dictations: 0,
+            actions: 0,
             last: None,
             last_text: None,
         })),

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Custom actions plan</title>
+<style>
+  :root { --page: #f7f6f3; --ink: #1d1c1a; --muted: #5a5753; --rule: #dcd8d1; --code: #eeebe5; --peach: oklch(0.49 0.12 45); --font: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif; --mono: "Geist Mono", ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --page: oklch(0.155 0.012 275); --ink: oklch(0.945 0.006 275); --muted: oklch(0.74 0.012 275); --rule: oklch(1 0 0 / 0.12); --code: oklch(0.19 0.014 275); --peach: oklch(0.78 0.11 45); } }
+  * { box-sizing: border-box; }
+  html, body { background: var(--page); }
+  body { margin: 0; color: var(--ink); font: 400 17px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
+  h1 { font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 { font-size: 22px; line-height: 1.3; margin: 44px 0 8px; }
+  p, li { max-width: 62ch; }
+  p { margin: 0 0 12px; }
+  .lede { color: var(--muted); }
+  ol.ask { padding-left: 22px; margin: 16px 0 0; }
+  ol.ask li { margin-bottom: 6px; }
+  code { font: 500 0.86em var(--mono); }
+  pre { margin: 12px 0 0; background: var(--code); border-radius: 10px; padding: 14px 16px; font: 500 13px/20px var(--mono); overflow-x: auto; }
+  pre .c { color: var(--muted); }
+  pre .s { color: var(--peach); }
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-top: 16px; border-top: 2px solid var(--ink); }
+  .flow div { padding: 10px 12px 0 0; font-size: 15px; line-height: 1.4; }
+  .flow b { display: block; font-size: 15px; }
+  .flow span { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 15px; line-height: 1.4; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 600; }
+  td:first-child { white-space: nowrap; font-weight: 500; }
+  details { margin-top: 14px; border-top: 1px solid var(--rule); }
+  summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
+  details > :not(summary) { margin-left: 0; }
+  details ul, details ol { padding-left: 20px; }
+  details li { margin-bottom: 6px; }
+  @media (max-width: 640px) { .flow { grid-template-columns: 1fr 1fr; row-gap: 12px; } }
+  @media print { details { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Custom actions, ready to build</h1>
+  <p class="lede">Hold Ctrl+Shift+Space or a mouse button, say what to do, and likh does it. Your phrases match instantly; ChatGPT picks only when none match.</p>
+  <ol class="ask">
+    <li>Say go and I build it in this worktree, then open the PR.</li>
+    <li>You stopped before eight answers; I used my picks (under "Defaults I filled in"). Change any.</li>
+  </ol>
+
+  <h2>One action, five stages</h2>
+  <div class="flow">
+    <div><b>Trigger</b><span>key, mouse button or <code>likh ctl</code></span></div>
+    <div><b>Hear</b><span>raw transcript, no cleanup</span></div>
+    <div><b>Match</b><span>your phrases, then ChatGPT</span></div>
+    <div><b>Run steps</b><span>paste, keys, open, wait, ask, run</span></div>
+    <div><b>Result</b><span>paste, replace, pill, nothing</span></div>
+  </div>
+
+  <h2>Three ways to start one</h2>
+  <table>
+    <tr><th>Trigger</th><th>How</th></tr>
+    <tr><td>Action key</td><td>Ctrl+Shift+Space by default, changed on the Actions tab. Same hold, tap and silence-stop rules as dictation.</td></tr>
+    <tr><td>Mouse button</td><td>Middle, back or forward, picked on the Actions tab beside the key. Each button does one job, so back can dictate while forward runs actions. Same hook as today, installed only while a button is picked.</td></tr>
+    <tr><td><code>likh ctl</code></td><td><code>action-start</code>, <code>action-stop</code>: for a Stream Deck, a script, or an agent testing.</td></tr>
+  </table>
+
+  <h2>An action is one small file</h2>
+  <p>In <code>LIKH_HOME/actions/</code>, one TOML file each, with a schema and a README for agents. <code>likh actions check</code> and <code>likh actions test "…"</code> work without likh running.</p>
+<pre><span class="c"># actions/make-this-formal.toml</span>
+name = <span class="s">"Make this formal"</span>
+description = <span class="s">"Rewrite the selected text in a given tone"</span>
+say = [<span class="s">"make this {style}"</span>, <span class="s">"rewrite this as {style}"</span>]
+input = [<span class="s">"selection"</span>]
+output = <span class="s">"replace"</span>
+
+[[do]]
+ask = <span class="s">"Rewrite this in a {style} tone. Keep its meaning and language.\n\n{selection}"</span></pre>
+
+  <h2>Decided</h2>
+  <details>
+    <summary>Everything we settled, in one table (17 rows)</summary>
+    <table>
+      <tr><td>Scope</td><td>Custom actions only. Styles per app dropped.</td></tr>
+      <tr><td>Trigger</td><td>Its own key (and now mouse button). Dictation's inline commands stay as they are.</td></tr>
+      <tr><td>Matching</td><td>Exact phrases first, normalized. <code>{text}</code> only at the end; named lists in the file; alternates are more <code>say</code> entries. No match: ChatGPT picks from actions' names and descriptions; unsure means nothing runs.</td></tr>
+      <tr><td>Fallback scope</td><td>Every action unless <code>router = false</code>; a <code>run</code> step it picked always asks first.</td></tr>
+      <tr><td>Cleanup</td><td>None on action speech. Dictionary names fixed in slot text locally.</td></tr>
+      <tr><td>Files</td><td>One TOML per action, reread on each press (no watcher), duplicate phrases are a load error.</td></tr>
+      <tr><td>Steps</td><td><code>paste</code>, <code>keys</code>, <code>open</code> (URL-encoded slots), <code>wait</code>, <code>ask</code> (ChatGPT prompt), <code>run</code> (argv, no shell, context as env vars and JSON on stdin, stdout is the result, 30 s timeout, killed by PID).</td></tr>
+      <tr><td>Input</td><td>Declared per action: what you said, selection (Ctrl+C, clipboard restored), clipboard, app, window title.</td></tr>
+      <tr><td>Output</td><td>paste, replace, notify, none. If the window in front changed, it goes to the clipboard instead.</td></tr>
+      <tr><td>Trust</td><td>A script runs only after you approve it in the panel; a changed one needs approval again, with a diff. No <code>likh ctl</code> approve.</td></tr>
+      <tr><td>Confirm</td><td>In the pill: the action key again to run, Esc or 5 s to cancel. Peach ring.</td></tr>
+      <tr><td>Concurrency</td><td>One action at a time; dictation still works.</td></tr>
+      <tr><td>History</td><td>Logged; paste and replace results count for paste last.</td></tr>
+      <tr><td>Pill</td><td>Spark glyph on the left; states as in the pill mockup. No-match shows what was heard.</td></tr>
+      <tr><td>Panel</td><td>Seventh tab, Actions: action key and mouse button, list with a switch each, errors with file and line, Review and Approve, a form for simple actions.</td></tr>
+      <tr><td>Ships with</td><td>README, schema, "make this {style}", "new thread {text}" (T3 draft link), a disabled run-tests example.</td></tr>
+      <tr><td>Platform</td><td>Windows. Not offered on macOS yet.</td></tr>
+    </table>
+  </details>
+
+  <h2>Defaults I filled in</h2>
+  <ul><li>No-match shows what was heard; the confirm ring is peach.</li><li>Review shows a diff; each action has a switch; the key lives on the Actions tab.</li><li>The fallback sees every action unless opted out.</li><li><code>check</code> and <code>test</code> work offline; a focus change sends results to the clipboard.</li></ul>
+
+  <h2>How I'll prove it works</h2>
+  <details>
+    <summary>Test plan: 6 layers, each reported with real output in the PR</summary>
+    <ol>
+      <li>Unit tests: matching (slots, lists, normalization, collisions), loading and <code>check</code> errors with line numbers, each step, trust hashes and diffs, router parsing, the mouse button's job mapping, pill and tab views through the iced simulator.</li>
+      <li>End to end with fakes: each starter action from a TTS WAV through <code>likh ctl action-start/stop</code>, with <code>LIKH_TRANSCRIBER=echo:</code> and <code>LIKH_PASTE=&lt;file&gt;</code>, asserting exactly what was pasted, replaced or opened.</li>
+      <li>Live, ignored by default: does the Codex endpoint accept a tool? If not, the router asks for JSON in plain text, and the PR says which shipped. One <code>ask</code> round trip.</li>
+      <li>The running app through <code>verify-likh</code>: every pill state and tab view screenshotted against the mockups; approving a changed script by hand.</li>
+      <li>Idle cost with <code>measure-idle.ps1</code> before and after: zero frames and no polling while idle.</li>
+      <li><code>cargo clippy -D warnings</code>, <code>cargo fmt</code>, then <code>bun run check</code> once.</li>
+    </ol>
+    <p>I won't switch a mouse button on in your running likh (AGENTS.md). Mouse triggering is covered by tests and a likh I start myself with its own <code>LIKH_HOME</code>, and only if you OK the hook while it runs.</p>
+  </details>
+  <details>
+    <summary>Where the code goes (1 new folder, 9 touched)</summary>
+    <ul>
+      <li>New <code>app/src/actions/</code>: file format, matcher, steps, runner, trust, router, the Actions tab view, <code>tests.rs</code>, and the bundled README, schema and starters.</li>
+      <li><code>hotkey/</code>: any number of shortcuts (today it assumes two), and a job per mouse button.</li>
+      <li><code>dictation/</code>: the action path after transcription. <code>pill/</code>: the new states. <code>panel/</code>: the seventh tab. <code>ctl/</code>: <code>action-start</code>, <code>action-stop</code>. <code>main.rs</code>: <code>likh actions check|test</code>. <code>settings/</code>: action key and mouse button. <code>history/</code>: action entries. <code>paste/</code>: copy the selection.</li>
+      <li>Docs: <code>BRAND.md</code> (seven tabs, pill states, spark), <code>AGENTS.md</code> map row, <code>docs/plan.md</code>, <code>verify-likh</code>'s feature list.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Not in this PR (4 items)</summary>
+    <ul>
+      <li>A hotkey or mouse button bound straight to one action, with no speaking.</li>
+      <li>macOS.</li>
+      <li>The focus check for ordinary dictation.</li>
+      <li>Shared action packs.</li>
+    </ul>
+  </details>
+</main>
+<script>addEventListener("beforeprint", () => document.querySelectorAll("details").forEach(d => d.open = true));</script>
+</body>
+</html>

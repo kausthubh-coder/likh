@@ -52,6 +52,12 @@ pub enum Pick {
         allow(dead_code, reason = "only the Windows pill has a Pick mic button; macOS (alpha) has no pill window yet")
     )]
     Microphone,
+    /// The pill's Review or Details on an action: open the likh window at the Actions tab.
+    #[cfg_attr(
+        not(target_os = "windows"),
+        allow(dead_code, reason = "only the Windows pill has action buttons; macOS (alpha) has no pill window yet")
+    )]
+    Actions,
 }
 
 #[derive(Debug, Clone)]
@@ -164,12 +170,13 @@ impl App {
                     self.open_panel()
                 }
             }
-            Message::Tray(Pick::Microphone) => {
+            Message::Tray(pick @ (Pick::Microphone | Pick::Actions)) => {
+                let tab = if pick == Pick::Actions { panel::Tab::Actions } else { panel::Tab::Dictation };
                 let opened = self.open_panel();
                 match &mut self.panel {
                     Some((id, panel)) => {
                         let id = *id;
-                        let to_tab = panel.update(panel::Message::Tab(panel::Tab::Dictation));
+                        let to_tab = panel.update(panel::Message::Tab(tab));
                         Task::batch([opened, to_tab.map(move |message| Message::Panel(id, message))])
                     }
                     None => opened,

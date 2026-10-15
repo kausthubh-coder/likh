@@ -38,6 +38,12 @@ const BAR_GAP: f32 = 3.0;
 const BAR_INSET: f32 = 15.0;
 const SLOT: f32 = 24.0;
 const SLOT_INSET: f32 = 6.0;
+/// An action's recording: the spark's slot on the left pushes the bars right by this much.
+const SPARK_SHIFT: f32 = SLOT;
+/// Text after the spark's slot starts here, from the pill's left edge.
+const AFTER_SLOT: f32 = SLOT_INSET + SLOT + 8.0;
+/// An action's result stays this long.
+const FINISHED_SECONDS: f32 = 2.0;
 const ERROR_TEXT: f32 = 13.0;
 const ERROR_LINE: f32 = 18.0;
 const ERROR_MAX_WIDTH: f32 = 360.0;
@@ -95,6 +101,21 @@ pub enum Show {
     },
     Done,
     Cancelled,
+    /// This state, for the action key: the spark sits on the left (`actions/`).
+    Spark(Box<Show>),
+    /// An action is running: the spark, its name, and a small travelling wave.
+    Running(String),
+    /// An action finished and says so (its `notify` output): a check, and its words for a moment.
+    Finished(String),
+    /// An action waits to be confirmed: the spark with a ring that empties over
+    /// `after`, the question, and the keys that answer it.
+    Confirm {
+        question: String,
+        /// The action key, as `Ctrl+Shift+Space`.
+        keys: String,
+        left: Duration,
+        after: Duration,
+    },
 }
 
 /// What a problem's button opens.
@@ -104,6 +125,10 @@ pub enum Fix {
     PickMic,
     /// Windows' microphone privacy page.
     MicAccess,
+    /// likh's Actions tab, to approve an action's scripts.
+    Review,
+    /// likh's Actions tab, where the failed action shows what went wrong.
+    Details,
 }
 
 impl Fix {
@@ -111,13 +136,15 @@ impl Fix {
         match self {
             Fix::PickMic => "Pick mic",
             Fix::MicAccess => "Open settings",
+            Fix::Review => "Review",
+            Fix::Details => "Details",
         }
     }
 
     /// A Windows settings page, or None when the fix is in likh's own window.
     pub fn url(self) -> Option<&'static str> {
         match self {
-            Fix::PickMic => None,
+            Fix::PickMic | Fix::Review | Fix::Details => None,
             Fix::MicAccess => Some("ms-settings:privacy-microphone"),
         }
     }
@@ -258,6 +285,8 @@ pub struct Look {
     still: bool,
     /// The pointer is over the pill: a message waits while it's being read.
     hovered: bool,
+    /// The action key's spark is on the left.
+    spark: bool,
 }
 
 impl Default for Look {
@@ -274,6 +303,7 @@ impl Default for Look {
             lines: Vec::new(),
             still: false,
             hovered: false,
+            spark: false,
         }
     }
 }
@@ -288,6 +318,11 @@ impl Look {
     }
 
     pub fn set(&mut self, show: Show) {
+        let (spark, show) = match show {
+            Show::Spark(inner) => (true, *inner),
+            show => (matches!(show, Show::Running(_) | Show::Finished(_) | Show::Confirm { .. }), show),
+        };
+        self.spark = spark;
         if self.is_hidden() && show != Show::Hidden {
             // Every appearance grows out of the resting sliver.
             self.width = Spring::new(spring::FAST, 40.0);
@@ -306,8 +341,14 @@ impl Look {
                     ((widest + around).min(ERROR_MAX_WIDTH), if self.lines.len() > 1 { 52.0 } else { 36.0 })
                 }
             }
-            (Show::Listening | Show::Thinking, _) => (76.0, 36.0),
-            (Show::Warning { .. } | Show::HandsFree | Show::QuietStop { .. }, _) => (100.0, 36.0),
+            (Show::Listening | Show::Thinking, _) => (76.0 + self.shift(), 36.0),
+            (Show::Warning { .. } | Show::HandsFree | Show::QuietStop { .. }, _) => (100.0 + self.shift(), 36.0),
+            (Show::Running(name), _) => (AFTER_SLOT + text_width(name, ERROR_TEXT) + 8.0 + RUNNING_BARS + 16.0, 36.0),
+            (Show::Finished(words), _) => {
+                self.lines = vec![one_line(words, ERROR_MAX_WIDTH - AFTER_SLOT - 16.0)];
+                (AFTER_SLOT + text_width(&self.lines[0], ERROR_TEXT) + 16.0, 36.0)
+            }
+            (Show::Confirm { question, keys, .. }, _) => (confirm_layout(question, keys).1, 36.0),
             _ => (40.0, 8.0),
         };
         self.width.target = width;
@@ -322,9 +363,15 @@ impl Look {
             Show::Done | Show::Cancelled => Some(SLIVER_SECONDS),
             Show::Error(_) | Show::Problem { .. } => Some(ERROR_SECONDS),
             Show::Note(_) => Some(NOTE_SECONDS),
+            Show::Finished(_) => Some(FINISHED_SECONDS),
             _ => None,
         };
         self.show = show;
+    }
+
+    /// How far the spark pushes the bars right.
+    fn shift(&self) -> f32 {
+        if self.spark { SPARK_SHIFT } else { 0.0 }
     }
 
     /// The pointer moved onto the pill (or off it). A message stays while it's hovered.
@@ -389,7 +436,7 @@ impl Look {
     /// Advances by `dt` seconds. Returns false once nothing moves, so the window can stop drawing.
     pub fn step(&mut self, dt: f32) -> bool {
         self.clock += dt;
-        if let Show::QuietStop { left, .. } = &mut self.show {
+        if let Show::QuietStop { left, .. } | Show::Confirm { left, .. } = &mut self.show {
             *left = left.saturating_sub(Duration::from_secs_f32(dt));
         }
         let sized = self.width.step(dt) & self.height.step(dt);
@@ -427,6 +474,9 @@ impl Look {
                 Show::Thinking if self.still => 0.3,
                 // A slow travelling wave, left to right (1.2s loop).
                 Show::Thinking => 0.15 + 0.35 * (1.0 + (self.clock * 5.2 - i as f32 * 0.7).sin()) / 2.0,
+                // Three small bars after the action's name, on the thinking wave's rhythm.
+                Show::Running(_) if i < 3 && self.still => 0.3,
+                Show::Running(_) if i < 3 => 0.15 + 0.35 * (1.0 + (self.clock * 5.2 - i as f32 * 0.7).sin()) / 2.0,
                 _ => 0.0,
             };
             // Attack 40ms, release 140ms (BRAND.md, Level bars).
@@ -437,7 +487,8 @@ impl Look {
             }
         }
 
-        let animated = self.show.voiced() || self.show == Show::Thinking;
+        let animated =
+            self.show.voiced() || matches!(self.show, Show::Thinking | Show::Running(_) | Show::Confirm { .. });
         !sized || self.alpha != target_alpha || animated || self.linger.is_some() || self.bars.iter().any(|b| *b > 0.0)
     }
 
@@ -481,9 +532,23 @@ impl Look {
         let mut clip = Mask::new(pixmap.width(), pixmap.height())?;
         clip.fill_path(&body, FillRule::Winding, true, at);
         let cy = y + h / 2.0;
-        match self.show.message() {
-            Some((_, alarm, _)) => self.draw_message(&mut pixmap, &clip, x, cy, alarm, scale),
-            None => {
+        match (&self.show, self.show.message()) {
+            (_, Some((_, alarm, _))) => self.draw_message(&mut pixmap, &clip, x, cy, alarm, scale),
+            (Show::Running(_) | Show::Finished(_) | Show::Confirm { .. }, None) => {
+                self.draw_action(&mut pixmap, &clip, x, cy, h, scale);
+            }
+            (_, None) => {
+                if self.spark && h > 16.0 {
+                    let sx = x + SLOT_INSET + SLOT / 2.0;
+                    fill(
+                        &mut pixmap,
+                        PathBuilder::from_circle(sx, cy, SLOT / 2.0),
+                        to_skia(p.elevated, 1.0),
+                        at,
+                        Some(&clip),
+                    );
+                    draw_spark(&mut pixmap, &clip, sx, cy, at);
+                }
                 let color = if self.show == Show::Thinking { p.text_muted } else { p.accent };
                 // Still and thinking: a gentle opacity pulse on the same 1.2s loop, nothing travels.
                 let pulse = if self.still && self.show == Show::Thinking {
@@ -493,7 +558,7 @@ impl Look {
                 };
                 for (i, level) in self.bars.iter().enumerate() {
                     let bar_h = (4.0 + level * 16.0).min(h - 8.0).max(0.0);
-                    let bar_x = x + BAR_INSET + i as f32 * (BAR_WIDTH + BAR_GAP);
+                    let bar_x = x + self.shift() + BAR_INSET + i as f32 * (BAR_WIDTH + BAR_GAP);
                     let bar = capsule(bar_x, cy - bar_h / 2.0, BAR_WIDTH, bar_h.max(BAR_WIDTH));
                     if bar_h > 0.0 && h > 16.0 {
                         fill(&mut pixmap, bar, to_skia(color, pulse), at, Some(&clip));
@@ -548,6 +613,77 @@ impl Look {
             }
         }
         Some(pixmap)
+    }
+
+    /// An action's own states: the spark (or a check once it finished) in its
+    /// slot on the left, then its words. A running action adds three small
+    /// waving bars, a waiting one its ring and the keys that answer it.
+    fn draw_action(&self, pixmap: &mut Pixmap, clip: &Mask, x: f32, cy: f32, h: f32, scale: f32) {
+        let p = palette();
+        let at = Transform::from_scale(scale, scale);
+        if h < 30.0 {
+            return;
+        }
+        let (sx, r) = (x + SLOT_INSET + SLOT / 2.0, SLOT / 2.0);
+        fill(pixmap, PathBuilder::from_circle(sx, cy, r), to_skia(p.elevated, 1.0), at, Some(clip));
+        let baseline = cy + 4.5;
+        let text_x = x + AFTER_SLOT;
+        match &self.show {
+            Show::Running(name) => {
+                draw_spark(pixmap, clip, sx, cy, at);
+                draw_text(pixmap, name, ERROR_TEXT, text_x, baseline, to_skia(p.text, 1.0), scale);
+                let bars_x = text_x + text_width(name, ERROR_TEXT) + 8.0;
+                for (i, level) in self.bars.iter().take(3).enumerate() {
+                    let bar_h = 4.0 + level * 8.0;
+                    let bar = capsule(bars_x + i as f32 * (BAR_WIDTH + 3.0), cy - bar_h / 2.0, BAR_WIDTH, bar_h);
+                    fill(pixmap, bar, to_skia(p.text_muted, 1.0), at, Some(clip));
+                }
+            }
+            Show::Finished(_) => {
+                let mut check = PathBuilder::new();
+                check.move_to(sx - 3.4, cy + 0.2);
+                check.line_to(sx - 1.0, cy + 2.6);
+                check.line_to(sx + 3.6, cy - 2.6);
+                stroke(pixmap, check.finish(), to_skia(p.success, 1.0), 1.8, at);
+                if let Some(line) = self.lines.first() {
+                    draw_text(pixmap, line, ERROR_TEXT, text_x, baseline, to_skia(p.text, 1.0), scale);
+                }
+            }
+            Show::Confirm { question, keys, left, after } => {
+                draw_spark(pixmap, clip, sx, cy, at);
+                // Peach, like stopping after quiet: running it is the normal answer.
+                let share = (left.as_secs_f32() / after.as_secs_f32().max(0.001)).clamp(0.0, 1.0);
+                stroke(pixmap, arc(sx, cy, r - 1.5, share), to_skia(p.accent, 1.0), 2.0, at);
+                for part in confirm_layout(question, keys).0 {
+                    let px = x + part.x;
+                    match part.kind {
+                        Part::Words | Part::Quiet => {
+                            let ink = if part.kind == Part::Words { p.text } else { p.text_muted };
+                            draw_text(pixmap, &part.text, ERROR_TEXT, px, baseline, to_skia(ink, 1.0), scale);
+                        }
+                        Part::Cap => {
+                            fill(
+                                pixmap,
+                                rounded_rect(px, cy - 10.0, part.width, 20.0, 5.0),
+                                to_skia(p.elevated, 1.0),
+                                at,
+                                Some(clip),
+                            );
+                            draw_text(
+                                pixmap,
+                                &part.text,
+                                CAP_TEXT,
+                                px + CAP_PAD,
+                                cy + 4.0,
+                                to_skia(p.text, 1.0),
+                                scale,
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// A failure gets the red alert icon; news gets three grey bars lying flat,
@@ -739,4 +875,64 @@ fn draw_text(pixmap: &mut Pixmap, text: &str, size: f32, x: f32, baseline: f32, 
             }
         });
     }
+}
+
+/// Room for the running wave's three bars after an action's name.
+const RUNNING_BARS: f32 = 3.0 * BAR_WIDTH + 2.0 * 3.0;
+const CAP_TEXT: f32 = 12.0;
+const CAP_PAD: f32 = 6.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Part {
+    Words,
+    Quiet,
+    Cap,
+}
+
+/// One piece of the confirm pill's line, placed from the pill's left edge.
+struct Placed {
+    kind: Part,
+    text: String,
+    x: f32,
+    width: f32,
+}
+
+/// The confirm pill's line: "Run Deploy preview?", the action key's cap, "or", Esc's cap.
+/// Returns the pieces and the pill's whole width.
+fn confirm_layout(question: &str, keys: &str) -> (Vec<Placed>, f32) {
+    let mut parts = Vec::new();
+    let mut x = AFTER_SLOT;
+    for (kind, text) in [(Part::Words, question), (Part::Cap, keys), (Part::Quiet, "or"), (Part::Cap, "Esc")] {
+        let width = match kind {
+            Part::Cap => text_width(text, CAP_TEXT) + 2.0 * CAP_PAD,
+            Part::Words | Part::Quiet => text_width(text, ERROR_TEXT),
+        };
+        parts.push(Placed { kind, text: text.to_owned(), x, width });
+        x += width + if kind == Part::Words { 8.0 } else { 6.0 };
+    }
+    (parts, x - 6.0 + 8.0)
+}
+
+/// `text` on one line of at most `max` wide, cut with an ellipsis if it must be.
+fn one_line(text: &str, max: f32) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text_width(&flat, ERROR_TEXT) <= max {
+        return flat;
+    }
+    let mut cut = flat;
+    while text_width(&format!("{cut}\u{2026}"), ERROR_TEXT) > max && cut.pop().is_some() {}
+    format!("{}\u{2026}", cut.trim_end())
+}
+
+/// The action key's mark: a four-point spark, 9.4px across, centred on (cx, cy).
+fn draw_spark(pixmap: &mut Pixmap, clip: &Mask, cx: f32, cy: f32, at: Transform) {
+    let (r, k) = (4.7, 1.0);
+    let mut b = PathBuilder::new();
+    b.move_to(cx, cy - r);
+    b.quad_to(cx + k, cy - k, cx + r, cy);
+    b.quad_to(cx + k, cy + k, cx, cy + r);
+    b.quad_to(cx - k, cy + k, cx - r, cy);
+    b.quad_to(cx - k, cy - k, cx, cy - r);
+    b.close();
+    fill(pixmap, b.finish(), to_skia(palette().text, 1.0), at, Some(clip));
 }

@@ -28,6 +28,7 @@ Each file has an H1 and one paragraph, then four H2s in this order: `Sub-feature
 ## Features
 
 - [Dictation](./dictation.md): hold Ctrl+Space, talk, let go; silence stop; spoken commands; pause media; the pill; `likh ctl`; idle cost.
+- [Actions](./actions.md): the action key; phrases, slots and the ChatGPT fallback; steps; approving scripts; the Actions tab; `likh actions check|test`.
 - [Onboarding](./onboarding.md): the five first-run steps, picking an engine (ChatGPT, Groq, Windows) and its states, the mic and the practice dictation.
 - [Settings](./settings.md): the likh window from the tray: General, Transcription, Commands, History, About.
 - [Updates](./updates.md): finding, verifying and installing a newer release; the release workflow.

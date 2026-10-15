@@ -6,9 +6,9 @@ import { FlockMark } from "./flock-mark";
 const REPO = "https://github.com/kausthubh-coder/likh";
 /** The published build. Bump with each release; the page reads everything else from here. */
 const RELEASE = {
-  version: "0.1.0-alpha.9",
-  windows: `${REPO}/releases/download/v0.1.0-alpha.9/likh-setup-windows-x64.exe`,
-  size: "5.0 MB",
+  version: "0.1.0-alpha.10",
+  windows: `${REPO}/releases/download/v0.1.0-alpha.10/likh-setup-windows-x64.exe`,
+  size: "5.1 MB",
 };
 
 /** Measured on the release build, idle, Windows 11 (docs/plan.md, Measured so far). */

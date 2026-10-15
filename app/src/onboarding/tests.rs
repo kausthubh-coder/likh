@@ -127,6 +127,7 @@ fn in_app() -> (Onboarding, Arc<Mutex<Status>>) {
         phase: Phase::Idle,
         transcriber: "echo",
         dictations: 0,
+        actions: 0,
         last: None,
         last_text: None,
     }));
@@ -295,6 +296,7 @@ fn brand_board_onboarding() {
             phase: Phase::Idle,
             transcriber: "codex",
             dictations: 0,
+            actions: 0,
             last: None,
             last_text: None,
         }))

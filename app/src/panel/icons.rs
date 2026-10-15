@@ -14,6 +14,8 @@ pub enum Shape {
     Mic,
     Wave,
     Code,
+    /// A four-point spark: your actions.
+    Spark,
     /// An open book: the dictionary.
     Book,
     Clock,
@@ -120,6 +122,15 @@ impl<M> canvas::Program<M> for Icon {
                 }
                 b.move_to(at(8.0, 4.0));
                 b.line_to(at(8.0, 13.5));
+            }),
+            // The pill's action mark, outlined like the other tabs.
+            Shape::Spark => Path::new(|b| {
+                b.move_to(at(8.0, 1.5));
+                b.quadratic_curve_to(at(9.3, 6.7), at(14.5, 8.0));
+                b.quadratic_curve_to(at(9.3, 9.3), at(8.0, 14.5));
+                b.quadratic_curve_to(at(6.7, 9.3), at(1.5, 8.0));
+                b.quadratic_curve_to(at(6.7, 6.7), at(8.0, 1.5));
+                b.close();
             }),
             Shape::Clock => Path::new(|b| {
                 b.circle(at(8.0, 8.0), 6.0 * unit);

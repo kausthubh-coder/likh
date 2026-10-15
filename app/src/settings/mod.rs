@@ -91,6 +91,10 @@ pub struct Settings {
     pub paste_last: Option<Binding>,
     /// A mouse button that works like the shortcut (hold, or tap for hands-free).
     pub mouse: MouseTrigger,
+    /// Hold it and say an action (`actions/`): `hotkey::ACTION_KEY` unless changed; None is off.
+    pub action_key: Option<Binding>,
+    /// A mouse button that works like the action key. Never the same button as `mouse`.
+    pub action_mouse: MouseTrigger,
     pub mode: Mode,
     /// Which service turns speech into text.
     pub engine: Engine,
@@ -127,6 +131,8 @@ impl Default for Settings {
             shortcut: Binding::default(),
             paste_last: Some(crate::hotkey::PASTE_LAST),
             mouse: MouseTrigger::default(),
+            action_key: Some(crate::hotkey::ACTION_KEY),
+            action_mouse: MouseTrigger::default(),
             mode: Mode::default(),
             engine: Engine::default(),
             microphone: None,
