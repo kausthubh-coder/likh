@@ -16,12 +16,15 @@ fn panel() -> Fixture {
         phase: Phase::Idle,
         transcriber: "echo",
         dictations: 0,
+        actions: 0,
         last: None,
         last_text: None,
     }));
     let files = Files {
         settings: Some(dir.path().join("settings.json")),
         history: Some(dir.path().join("history.jsonl")),
+        actions: Some(dir.path().join("actions")),
+        approved: Some(dir.path().join("approved")),
         mics: two_mics,
     };
     let panel = Panel::new(window::Id::unique(), settings.clone(), status, Updates::new(None), files);
@@ -154,7 +157,8 @@ fn history_lists_newest_first_and_copies_on_click() {
     let mut f = panel();
     let file = f.dir.path().join("history.jsonl");
     for (at, text) in [(1, "First thing I said."), (2, "Second thing I said.")] {
-        history::append(&file, &Entry { at, text: text.into(), seconds: 1.5 }).expect("append");
+        history::append(&file, &Entry { at, text: text.into(), seconds: 1.5, action: None, pasted: true })
+            .expect("append");
     }
     press(&mut f.panel, "History");
     assert!(shows(&f.panel, "2 dictations, newest first. Click one to copy it."));
@@ -166,7 +170,8 @@ fn clearing_history_asks_once_then_clears() {
     let _ui = test_ui::lock();
     let mut f = panel();
     let file = f.dir.path().join("history.jsonl");
-    history::append(&file, &Entry { at: 1, text: "Gone soon.".into(), seconds: 1.0 }).expect("append");
+    history::append(&file, &Entry { at: 1, text: "Gone soon.".into(), seconds: 1.0, action: None, pasted: true })
+        .expect("append");
     press(&mut f.panel, "History");
     press(&mut f.panel, "Clear");
     assert!(shows(&f.panel, "Click again to clear"));
@@ -231,7 +236,8 @@ fn brand_board_panel() {
         (3_600 * 3, "Thanks for the notes. Also, remind me to send the deck to Priya tomorrow at nine."),
         (240, "Eggs, oat milk, coffee beans, the good bread, and something for dinner on Sunday."),
     ] {
-        history::append(&file, &Entry { at: now - ago, text: text.into(), seconds: 3.4 }).expect("append");
+        history::append(&file, &Entry { at: now - ago, text: text.into(), seconds: 3.4, action: None, pasted: true })
+            .expect("append");
     }
     // A made-up account: the board is public and must never show a real one.
     f.panel.codex = CodexStatus::Connected(crate::codex_auth::Account {
@@ -284,6 +290,24 @@ fn brand_board_panel() {
     f.panel.testing = true;
     f.panel.mic_levels = [0.2, 0.5, 0.8, 0.6, 0.9, 0.4, 0.7];
     snap(&out, "dictation-microphone", &f.panel);
+    f.panel.testing = false;
+    // Actions: the list, Review on the unapproved script, and the form.
+    seed_actions(&f);
+    let _ = f.panel.update(Message::Tab(Tab::Actions));
+    snap(&out, "actions", &f.panel);
+    let _ = f.panel.update(Message::Action(actions::Message::Review("deploy-preview".into())));
+    snap(&out, "actions-review", &f.panel);
+    let _ = f.panel.update(Message::Action(actions::Message::New));
+    for message in [
+        actions::Message::Name("Make this formal".into()),
+        actions::Message::Say("make this {style}".into()),
+        actions::Message::Kind(crate::actions::DraftKind::Ask),
+        actions::Message::Value("Rewrite this to be {style}: {selection}".into()),
+        actions::Message::Output(crate::actions::Output::Replace),
+    ] {
+        let _ = f.panel.update(Message::Action(message));
+    }
+    snap(&out, "actions-new", &f.panel);
 }
 
 /// Renders the window as it looks now to `<out>/<name>-tiny-skia.png`.
@@ -577,4 +601,96 @@ fn language_starts_on_auto_detect_and_saves_a_pinned_code() {
     assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).language.as_deref(), Some("hi"));
     let _ = f.panel.update(Message::Language(LanguageOption { code: None, label: "Auto-detect" }));
     assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).language, None);
+}
+
+/// An actions folder like a real one: two that run nothing, one script nobody approved yet, and a typo.
+fn seed_actions(f: &Fixture) {
+    let dir = f.dir.path().join("actions");
+    crate::actions::prepare(&dir).expect("prepare");
+    let files = [
+        (
+            "spotify.toml",
+            "name = \"Spotify search\"\nsay = [\"spotify {text}\"]\noutput = \"none\"\n[[do]]\nopen = \"spotify:search:{text}\"\n",
+        ),
+        (
+            "next-song.toml",
+            "name = \"Next song\"\nsay = [\"next song\"]\noutput = \"none\"\n[[do]]\nkeys = \"next_track\"\n",
+        ),
+        (
+            "deploy-preview.toml",
+            "name = \"Deploy preview\"\nsay = [\"deploy preview\"]\n[[do]]\nrun = [\"powershell\", \"-NoProfile\", \"-File\", \"deploy.ps1\"]\n",
+        ),
+        ("deploy.ps1", "vercel deploy --prebuilt\nWrite-Output \"Preview is up\"\n"),
+        ("run-tests.toml", "name = \"Run tests\"\nsay = [\"run tests\"]\n\n[[do]]\nrunn = [\"npm\", \"test\"]\n"),
+    ];
+    for (name, text) in files {
+        std::fs::write(dir.join(name), text).expect("write");
+    }
+}
+
+#[test]
+fn actions_lists_every_file_and_flags_the_broken_and_the_unapproved() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    seed_actions(&f);
+    let _ = f.panel.update(Message::Tab(Tab::Actions));
+    assert!(shows(&f.panel, "New T3 thread") && shows(&f.panel, "Spotify search"));
+    assert!(shows(&f.panel, "\u{201c}spotify {text}\u{201d}"));
+    assert!(shows(&f.panel, "Runs a program. Approve it to use it."));
+    assert!(shows(
+        &f.panel,
+        "run-tests.toml:5 unknown field `runn`, expected one of `paste`, `keys`, `open`, `wait`, `ask`, `run`"
+    ));
+    assert!(shows(&f.panel, "Ctrl+Shift+Space"));
+}
+
+#[test]
+fn approving_a_script_after_reading_it_lets_it_run() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    seed_actions(&f);
+    let _ = f.panel.update(Message::Tab(Tab::Actions));
+    press(&mut f.panel, "Review");
+    assert!(shows(&f.panel, "Deploy preview runs a program you haven't approved yet"));
+    assert!(shows(&f.panel, "+ vercel deploy --prebuilt"));
+    assert!(shows(&f.panel, "powershell -NoProfile -File deploy.ps1"));
+    press(&mut f.panel, "Approve");
+    assert!(shows(&f.panel, "Approved. It runs from now on, until its files change."));
+    assert!(!shows(&f.panel, "Review"), "nothing is left waiting");
+    let action = crate::actions::Catalog::load(&f.dir.path().join("actions")).find("deploy-preview").cloned();
+    let state = action.map(|a| crate::actions::trust::state_in(&f.dir.path().join("approved"), &a));
+    assert_eq!(state, Some(crate::actions::trust::Trust::Approved));
+}
+
+#[test]
+fn the_switch_turns_an_action_off_in_its_file() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    seed_actions(&f);
+    let _ = f.panel.update(Message::Tab(Tab::Actions));
+    press(&mut f.panel, "Next song");
+    let text = std::fs::read_to_string(f.dir.path().join("actions").join("next-song.toml")).expect("read");
+    assert!(text.contains("enabled = false"), "{text}");
+}
+
+#[test]
+fn new_action_writes_a_file_that_works_on_the_next_press() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let _ = f.panel.update(Message::Tab(Tab::Actions));
+    press(&mut f.panel, "New action");
+    for message in [
+        actions::Message::Name("Pause music".into()),
+        actions::Message::Say("pause the music".into()),
+        actions::Message::Kind(crate::actions::DraftKind::Keys),
+        actions::Message::Value("play_pause".into()),
+    ] {
+        let _ = f.panel.update(Message::Action(message));
+    }
+    assert!(shows(&f.panel, "saves pause-music.toml"));
+    press(&mut f.panel, "Save");
+    assert!(shows(&f.panel, "Saved pause-music.toml. Hold the action key and say it."));
+    let catalog = crate::actions::Catalog::load(&f.dir.path().join("actions"));
+    let found = crate::actions::matcher::find(&catalog.actions, "Pause the music.").expect("it matches");
+    assert_eq!(catalog.actions[found.action].name, "Pause music");
 }

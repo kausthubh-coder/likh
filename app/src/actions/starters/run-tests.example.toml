@@ -1,0 +1,16 @@
+#:schema ./actions.schema.json
+# An example that runs a program. Files ending in .example.toml are ignored:
+# rename this to run-tests.toml, point it at your project, then approve it on
+# likh's Actions tab. A program never runs until you approve it, and again
+# after any change.
+name = "Run tests"
+description = "Run the project's tests and say whether they passed"
+say = ["run the tests", "run tests"]
+output = "notify"
+timeout = 300
+
+[[do]]
+run = [
+  "powershell", "-NoProfile", "-Command",
+  "Set-Location $env:USERPROFILE\\code\\my-project; npm test *> $null; if ($LASTEXITCODE) { 'Tests failed' } else { 'Tests passed' }",
+]

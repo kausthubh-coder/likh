@@ -2,8 +2,8 @@
 //! pressing keys. One JSON line in each direction over a local socket (a
 //! named pipe on Windows), private to the signed-in user's name.
 //!
-//! `likh ctl start` / `stop` are the shortcut going down and up, `cancel`
-//! is Esc, `status` reports what likh is doing (and where updating stands),
+//! `likh ctl start` / `stop` are the shortcut going down and up,
+//! `action-start` / `action-stop` the same for the action key, `cancel` is Esc, `status` reports what likh is doing (and where updating stands),
 //! `update` checks for a newer likh now, `install-update` is "Restart to
 //! update", `quit` stops it.
 
@@ -19,8 +19,20 @@ use std::sync::{Arc, Mutex};
 #[cfg(test)]
 mod tests;
 
-pub const COMMANDS: [&str; 10] =
-    ["status", "start", "stop", "cancel", "paste-last", "copy-last", "quit", "open", "update", "install-update"];
+pub const COMMANDS: [&str; 12] = [
+    "status",
+    "start",
+    "stop",
+    "action-start",
+    "action-stop",
+    "cancel",
+    "paste-last",
+    "copy-last",
+    "quit",
+    "open",
+    "update",
+    "install-update",
+];
 
 fn name() -> std::io::Result<Name<'static>> {
     let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
@@ -119,6 +131,9 @@ pub fn answer(command: &str, status: &Status, update: &crate::update::State) -> 
         ),
         "start" => (ok, Some(Input::Hold)),
         "stop" => (ok, Some(Input::Stop)),
+        "action-start" => (ok, Some(Input::ActionHold)),
+        // Ends the recording either way; the action key's own release does the same.
+        "action-stop" => (ok, Some(Input::Stop)),
         "cancel" => (ok, Some(Input::Cancel)),
         "paste-last" => (ok, Some(Input::PasteLast)),
         "quit" | "open" | "copy-last" | "install-update" => (ok, None),

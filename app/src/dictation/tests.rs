@@ -501,3 +501,54 @@ fn a_silent_piece_is_never_sent() {
     let talk: Vec<f32> = (0..48_000).map(|i| 0.2 * (i as f32 * 0.17).sin()).collect();
     assert_eq!(transcribe_piece(&fake, &talk, &[], None), Ok("Thank you for watching.".into()));
 }
+
+fn spark(show: Show) -> Effect {
+    Effect::Pill(Show::Spark(Box::new(show)))
+}
+
+#[test]
+fn the_action_key_records_like_dictation_with_the_spark_and_hands_what_was_said_to_the_runner() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    assert_eq!(
+        d.handle(Input::ActionHold, t0, HOLD_OR_TAP),
+        vec![Effect::StartRecording, Effect::Sound(Cue::Start), spark(Show::Listening)]
+    );
+    assert_eq!(d.kind(), Kind::Action);
+    assert_eq!(
+        d.handle(Input::Release(after(t0, 1_800)), after(t0, 1_800), HOLD_OR_TAP),
+        vec![Effect::Transcribe, Effect::Sound(Cue::Stop), spark(Show::Thinking)]
+    );
+    // Never pasted, and spoken commands don't apply: "new line" here is just words for the action.
+    assert_eq!(
+        d.handle(Input::Transcribed(Ok("New thread, new line handling.".into())), after(t0, 2_600), HOLD_OR_TAP),
+        vec![Effect::Act { said: "New thread, new line handling.".into() }]
+    );
+    // The dictation shortcut dictates again, without the spark.
+    assert_eq!(d.handle(Input::Hold, after(t0, 5_000), HOLD_OR_TAP), STARTS.to_vec());
+    assert_eq!(d.kind(), Kind::Dictate);
+}
+
+#[test]
+fn a_tap_of_the_action_key_goes_hands_free_and_either_key_finishes_it() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::ActionHold, t0, HOLD_OR_TAP);
+    assert_eq!(d.handle(Input::Release(after(t0, 120)), after(t0, 120), HOLD_OR_TAP), vec![spark(Show::HandsFree)]);
+    assert_eq!(
+        d.handle(Input::Hold, after(t0, 4_000), HOLD_OR_TAP),
+        vec![Effect::Transcribe, Effect::Sound(Cue::Stop), spark(Show::Thinking)]
+    );
+}
+
+#[test]
+fn an_action_that_heard_nothing_says_so_like_a_dictation() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    d.handle(Input::ActionHold, t0, HOLD_OR_TAP);
+    d.handle(Input::Release(after(t0, 1_000)), after(t0, 1_000), HOLD_OR_TAP);
+    assert_eq!(
+        d.handle(Input::Transcribed(Err(Failure::NoVoice)), after(t0, 1_500), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::Note(Failure::NoVoice.message()))]
+    );
+}

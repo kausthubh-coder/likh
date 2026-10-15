@@ -18,8 +18,9 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 |---|---|
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
 | `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it. Up to 30 minutes: past 3, the audio goes up in pieces while you talk (cut in a pause by `microphone`) and the text is joined |
-| `app/src/hotkey/` | the shortcut (Ctrl+Space by default), paste last (Alt+Shift+Z by default; it waits for its keys to come up before pasting), an optional mouse button (a low-level hook, installed only while one is picked) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
-| `app/src/settings/` | what the user chose (shortcut, paste last, mouse button, mode, silence stop, microphone, engine, language, sounds, pause media, commands, dictionary, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
+| `app/src/hotkey/` | the shortcut (Ctrl+Space by default), the action key (Ctrl+Shift+Space), paste last (Alt+Shift+Z by default; it waits for its keys to come up before pasting), a mouse button for each recording key (a low-level hook, installed only while one is picked) and Esc: system hotkeys on Windows (`windows.rs`, which also reads the window in front), picking a new one (`capture.rs`) |
+| `app/src/actions/` | custom actions: hold the action key and say one. One TOML file per action in `LIKH_HOME/actions/` (format, starters and the README agents read in `starters/`), exact phrase matching (`matcher.rs`), ChatGPT picking one when nothing matched (`router.rs`), the steps (`steps.rs`: paste, keys, open, wait, ask, run), approval of anything that runs a program (`trust.rs`), one at a time (`runner.rs`). `likh actions check` and `likh actions test "<phrase>"` work without the app. `LIKH_ASK=<text>` fakes `ask`, `LIKH_ROUTER=<file stem>` fakes the router |
+| `app/src/settings/` | what the user chose (shortcut, paste last, mouse button, action key and its mouse button, mode, silence stop, microphone, engine, language, sounds, pause media, commands, dictionary, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
 | `app/src/history/` | past dictations, one JSON line each, on this computer only. The newest is what paste last pastes after a restart |
 | `app/src/commands/` | spoken commands in four groups: lines ("new line", "new bullet"), keys ("press enter", "press tab"), scratch ("scratch that"), punctuation by name (off by default) |
 | `app/src/dictionary/` | the user's own words (project names, people): Groq hears them as its prompt, and `cleanup/` puts misheard ones right |
@@ -27,12 +28,12 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/media/` | pauses music and videos while you talk and plays them again (Windows media controls; nothing on macOS) |
 | `app/src/sounds/` | the start, stop and error cues, synthesized |
 | `app/src/autostart/` | start with Windows (the Run key) |
-| `app/src/panel/` | the likh window from the tray: Dictation, Transcription, Commands, Dictionary, History, App; the shortcut's key caps and keyboard (`shortcut.rs`); its drawn icons (`icons.rs`) |
+| `app/src/panel/` | the likh window from the tray: Dictation, Transcription, Commands, Actions (`actions.rs`), Dictionary, History, App; the shortcut's key caps and keyboard (`shortcut.rs`); its drawn icons (`icons.rs`) |
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings from the picked mic (saved by Windows' id; Windows' default when none is picked or it's unplugged), the list of inputs, and whether Windows' privacy settings block the mic; `LIKH_AUDIO=file.wav` replays a file instead. `cargo test -p likh mic_pick_live -- --ignored` opens this machine's real inputs |
 | `app/src/silence/` | silence stop: is someone talking? A small voice detector (earshot) hears a voice, not loudness; `eval.rs` scores it in quiet and noisy rooms |
 | `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), each engine's glyph (`glyph.rs`), the languages a user can pin (`language.rs`; auto-detect by default); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
-| `app/src/paste/` | clipboard, Ctrl+V, clipboard back; `LIKH_PASTE=<file>` logs pastes and key presses there instead |
+| `app/src/paste/` | clipboard, Ctrl+V, clipboard back; an action's keys, links and the selection it reads (Ctrl+C); `LIKH_PASTE=<file>` logs pastes, key presses and opened links there instead (the selection is then `LIKH_SELECTION`) |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
 | `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |
 | `app/src/update/` | updates from GitHub Releases: check at launch and after dictations (once a day), download, verify the Ed25519 signature, run the installer silently on "Restart to update" (the foot of the settings sidebar, or the tray's update line). `LIKH_UPDATE_FEED=<url>` points it at a fake release list |
@@ -53,7 +54,7 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Every task in a new worktree starts with the `worktree-likh` skill. Ship only with `ship-likh`, when I say so.
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, this checkout's own `LIKH_HOME` and site port). Safe to rerun
 - Doctor: `bun run doctor`. Run it first when anything looks off.
-- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|cancel|paste-last|copy-last|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
+- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|action-start|action-stop|cancel|paste-last|copy-last|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
 - One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
 - Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
@@ -114,6 +115,7 @@ When I correct you for the same thing twice, add the rule here and make somethin
 
 - Never write to, copy out of, or print `~/.codex/auth.json` or any token. Tests build their own fake `auth.json` in a temp dir.
 - Never save a Groq key from a test or a run of yours: it would land in my credential store. Tests take the paths that don't save (a refused or rejected key).
+- Never approve an action's script for me, and never write to `LIKH_HOME/approved/` by hand: approval is the person's own check on what runs. Test actions run in this checkout's `LIKH_HOME` with `LIKH_PASTE`, so a `keys` or `open` step is logged, not done.
 - Don't switch on a mouse button in a running likh unless I ask: the hook blocks that button's normal click system-wide.
 - Never touch my nightly Studi profile or other apps' data.
 - Releases, tags and Vercel production deploys need my explicit go. A published release reaches every installed likh through the updater.

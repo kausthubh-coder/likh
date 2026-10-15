@@ -1,0 +1,10 @@
+#:schema ./actions.schema.json
+# Hold the action key and say "new thread fix the flaky login test".
+# T3 Code opens with that as a new thread's draft; nothing is sent until you press Send.
+name = "New T3 thread"
+description = "Start a new T3 Code thread with what the user said as its first message"
+say = ["new thread {text}", "new t3 thread {text}"]
+output = "none"
+
+[[do]]
+open = "t3code://new?prompt={text}"

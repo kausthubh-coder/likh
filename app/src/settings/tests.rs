@@ -68,6 +68,8 @@ fn what_you_save_is_what_you_load() {
         shortcut: crate::hotkey::Binding::new(true, true, false, false, KeyName("D")).expect("valid"),
         paste_last: None,
         mouse: MouseTrigger::Forward,
+        action_key: None,
+        action_mouse: MouseTrigger::Back,
         mode: Mode::Tap,
         engine: Engine::Groq,
         microphone: Some(crate::microphone::Choice {

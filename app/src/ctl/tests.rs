@@ -3,7 +3,7 @@ use crate::dictation::Phase;
 use crate::update::State;
 
 fn idle() -> Status {
-    Status { phase: Phase::Idle, transcriber: "echo", dictations: 0, last: None, last_text: None }
+    Status { phase: Phase::Idle, transcriber: "echo", dictations: 0, actions: 0, last: None, last_text: None }
 }
 
 #[test]
@@ -11,6 +11,12 @@ fn start_stop_and_cancel_drive_a_dictation() {
     assert_eq!(answer("start", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::Hold)));
     assert_eq!(answer("stop", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::Stop)));
     assert_eq!(answer("cancel", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::Cancel)));
+}
+
+#[test]
+fn action_start_and_stop_drive_the_action_key() {
+    assert_eq!(answer("action-start", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::ActionHold)));
+    assert_eq!(answer("action-stop", &idle(), &State::Idle), (json!({ "ok": true }), Some(Input::Stop)));
 }
 
 #[test]
@@ -54,6 +60,6 @@ fn an_unknown_command_lists_the_real_ones() {
     assert_eq!(reply["ok"], false);
     assert_eq!(
         reply["error"],
-        "unknown command \"paste\"; try one of status, start, stop, cancel, paste-last, copy-last, quit, open, update, install-update"
+        "unknown command \"paste\"; try one of status, start, stop, action-start, action-stop, cancel, paste-last, copy-last, quit, open, update, install-update"
     );
 }

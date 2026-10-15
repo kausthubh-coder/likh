@@ -1,7 +1,8 @@
-//! The likh window, opened from the tray. Six tabs, each with one job: how
+//! The likh window, opened from the tray. Seven tabs, each with one job: how
 //! you start and stop a dictation (Dictation), which engine transcribes
-//! (Transcription), the spoken commands (Commands), your own words
-//! (Dictionary), what you dictated (History), and startup, updates and links (App).
+//! (Transcription), the spoken commands (Commands), your own actions
+//! (Actions), your own words (Dictionary), what you dictated (History), and
+//! startup, updates and links (App).
 //!
 //! Every setting is one row in a panel: its name on the left, its control on
 //! the right. Every tab fits without scrolling except a long History.
@@ -10,6 +11,7 @@
 //! × or Esc. It draws only when something changes, plus the frames a moving
 //! key cap or the update spinner asks for.
 
+mod actions;
 mod icons;
 mod shortcut;
 
@@ -76,19 +78,22 @@ pub enum Tab {
     Dictation,
     Transcription,
     Commands,
+    Actions,
     Dictionary,
     History,
     App,
 }
 
 impl Tab {
-    const ALL: [Tab; 6] = [Tab::Dictation, Tab::Transcription, Tab::Commands, Tab::Dictionary, Tab::History, Tab::App];
+    const ALL: [Tab; 7] =
+        [Tab::Dictation, Tab::Transcription, Tab::Commands, Tab::Actions, Tab::Dictionary, Tab::History, Tab::App];
 
     fn name(self) -> &'static str {
         match self {
             Tab::Dictation => "Dictation",
             Tab::Transcription => "Transcription",
             Tab::Commands => "Commands",
+            Tab::Actions => "Actions",
             Tab::Dictionary => "Dictionary",
             Tab::History => "History",
             Tab::App => "App",
@@ -100,6 +105,7 @@ impl Tab {
             Tab::Dictation => Shape::Mic,
             Tab::Transcription => Shape::Wave,
             Tab::Commands => Shape::Code,
+            Tab::Actions => Shape::Spark,
             Tab::Dictionary => Shape::Book,
             Tab::History => Shape::Clock,
             Tab::App => Shape::Gear,
@@ -163,6 +169,8 @@ pub enum Message {
     Open(&'static str),
     Close,
     Drag,
+    /// The Actions tab (`actions.rs`).
+    Action(actions::Message),
 }
 
 /// The two shortcuts the Dictation tab can pick keys for.
@@ -170,6 +178,7 @@ pub enum Message {
 enum Picking {
     Shortcut,
     PasteLast,
+    ActionKey,
 }
 
 pub struct Panel {
@@ -206,6 +215,8 @@ pub struct Panel {
     testing: bool,
     /// The meter's levels, newest last.
     mic_levels: [f32; MIC_BARS],
+    /// The Actions tab: the folder as last read, and which view of it is open.
+    actions: actions::State,
 }
 
 /// The Test meter: the pill's seven bars, small.
@@ -242,6 +253,9 @@ impl std::fmt::Display for MicOption {
 pub struct Files {
     pub settings: Option<PathBuf>,
     pub history: Option<PathBuf>,
+    /// The actions folder, and where approvals of their scripts are kept.
+    pub actions: Option<PathBuf>,
+    pub approved: Option<PathBuf>,
     /// The mics connected now, and Windows' default among them.
     pub mics: fn() -> (Vec<Mic>, Option<Mic>),
 }
@@ -251,6 +265,8 @@ impl Files {
         Self {
             settings: crate::settings::folder().map(|dir| dir.join("settings.json")),
             history: history::file(),
+            actions: crate::actions::folder(),
+            approved: crate::actions::trust::store(),
             mics: || (microphone::inputs(), microphone::system_default()),
         }
     }
@@ -308,6 +324,7 @@ impl Panel {
             files,
             testing: false,
             mic_levels: [0.0; MIC_BARS],
+            actions: actions::State::default(),
         }
     }
 
@@ -361,6 +378,8 @@ impl Panel {
                     Tab::History => self.load_history(),
                     // Both engines show where they stand, so look at both. Fixing names needs Codex too.
                     Tab::Transcription | Tab::Dictionary => self.codex = onboarding::check_codex_now(),
+                    // Read the folder again: an agent may have changed it since.
+                    Tab::Actions => self.load_actions(),
                     Tab::Dictation | Tab::Commands | Tab::App => {}
                 }
                 // Each tab starts at its top.
@@ -429,6 +448,15 @@ impl Panel {
                         self.notice =
                             Some(("Those keys already do something in likh. Pick others.".into(), Tone::Danger));
                     }
+                    capture::Outcome::Chosen(binding) if self.picking == Picking::ActionKey => {
+                        match hotkey::set_action_key(Some(binding)) {
+                            Ok(()) => {
+                                self.change(|s| s.action_key = Some(binding));
+                                self.stop_capturing();
+                            }
+                            Err(reason) => self.notice = Some((reason, Tone::Danger)),
+                        }
+                    }
                     capture::Outcome::Chosen(binding) if self.picking == Picking::PasteLast => {
                         match hotkey::set_paste_last(Some(binding)) {
                             Ok(()) => {
@@ -459,7 +487,13 @@ impl Panel {
                 self.last_frame = self.wants_frames().then_some(now);
             }
             Message::Mouse(trigger) => {
-                self.change(|s| s.mouse = trigger);
+                // One button, one job: the hotkey thread takes it from actions too.
+                self.change(|s| {
+                    s.mouse = trigger;
+                    if trigger != MouseTrigger::Off && s.action_mouse == trigger {
+                        s.action_mouse = MouseTrigger::Off;
+                    }
+                });
                 if let Err(reason) = hotkey::set_mouse(trigger) {
                     self.notice = Some((format!("The mouse button won't work yet: {reason}"), Tone::Danger));
                 }
@@ -558,17 +592,20 @@ impl Panel {
             Message::Open(url) => crate::shared::open_url(url),
             Message::Close => return window::close(self.window),
             Message::Drag => return window::drag(self.window),
+            Message::Action(message) => return self.update_actions(message),
         }
         Task::none()
     }
 
-    /// The other shortcut already uses these keys.
+    /// Another of likh's shortcuts already uses these keys.
     fn taken(&self, binding: Binding) -> bool {
         let chosen = self.chosen();
-        match self.picking {
-            Picking::Shortcut => chosen.paste_last == Some(binding),
-            Picking::PasteLast => chosen.shortcut == binding,
-        }
+        let others = match self.picking {
+            Picking::Shortcut => [chosen.paste_last, chosen.action_key],
+            Picking::PasteLast => [Some(chosen.shortcut), chosen.action_key],
+            Picking::ActionKey => [Some(chosen.shortcut), chosen.paste_last],
+        };
+        others.contains(&Some(binding))
     }
 
     fn stop_capturing(&mut self) {
@@ -692,6 +729,7 @@ impl Panel {
             Tab::Dictation => self.dictation_tab(&p),
             Tab::Transcription => self.transcription(&p),
             Tab::Commands => self.commands(&p),
+            Tab::Actions => self.actions_tab(&p),
             Tab::Dictionary => self.dictionary(&p),
             Tab::History => self.history_list(&p),
             Tab::App => self.app(&p),
@@ -1278,6 +1316,10 @@ impl Panel {
             entry.text.clone()
         };
         let mut meta = format!("{} · {:.1} s", history::ago(entry.at, now), entry.seconds);
+        // An action's line says which action ran; its text is what was said, or what it pasted.
+        if let Some(action) = &entry.action {
+            meta.push_str(&format!(" · {action}"));
+        }
         if self.copied == Some(index) {
             meta.push_str(" · Copied");
         }
@@ -1325,6 +1367,10 @@ impl Panel {
         let dictation =
             self.dictation.lock().map(|s| s.clone()).unwrap_or_else(|poisoned| poisoned.into_inner().clone());
         let session = match (dictation.dictations, &dictation.last) {
+            (0, _) if dictation.actions == 1 => "No dictations since likh started, 1 action.".to_string(),
+            (0, _) if dictation.actions > 1 => {
+                format!("No dictations since likh started, {} actions.", dictation.actions)
+            }
             (0, _) => "No dictations since likh started.".to_string(),
             (n, Some(last)) if last.error.is_none() => {
                 format!("{n} since likh started. The last one pasted {} ms after you let go.", last.latency_ms)

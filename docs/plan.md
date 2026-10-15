@@ -27,7 +27,8 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 | 5 | Landing page with downloads, the release workflow | `v0.1.0` on GitHub Releases |
 | 6 | Silence stop, a mouse button, more spoken commands, pause media, Groq and Windows speech, all in settings | ✅ silence stop proven end to end (`e2e-dictate.ps1 -LetSilenceStop`). A real Groq key, Windows speech with Online speech recognition on, pausing something that plays, and a physical mouse button still need a person |
 | 7 | Dictionary, no voice heard, paste last, mic picker, language, cleanup (fillers, "actually 3", lists), dictations up to 30 minutes in pieces | 0.1.0-alpha.9 |
-| later | Snippets and custom commands, command mode, styles, stats | |
+| 8 | Custom actions: the action key (and its mouse button), one TOML file per action, phrases with slots and lists, a ChatGPT fallback that picks one, paste/keys/open/wait/ask/run steps, approving scripts, the Actions tab | |
+| later | Command mode, styles, stats | |
 
 ## Measured so far
 
@@ -94,9 +95,8 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - lists ("new bullet"), "press tab", "scratch that" after a sentence, punctuation by name
   - Groq as a free engine
 - **Updates (2026-10-12):** from GitHub Releases through the existing Inno installer, Ed25519-signed in `release.yml`, checked at launch and after dictations (never on a timer), applied when the user picks "Restart to update". Velopack would add delta updates but replaces the installer; not worth it at 5 MB. macOS only links to the release.
+- **Done in phase 8 (2026-10-15):** custom actions (`app/src/actions/`). A separate key, because every product that runs free-form commands reliably uses one (Wispr Flow, Dragon's Ctrl, Willow dropped its wake word for a key). Exact phrases first and ChatGPT only on a miss, because routing accuracy falls fast with more choices and exact matching is instant and free. Scripts need a person's approval, because an agent or a shared file can write them (Espanso's threat model).
 - **Next:**
-  - snippets and custom commands (a phrase types saved text, presses keys, or opens an app or link)
-  - filler and self-correction cleanup (with a small model through "Sign in with ChatGPT" or similar)
   - offline local model
 - **Later:**
   - command mode (voice-edit the selection)

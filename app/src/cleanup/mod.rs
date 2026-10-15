@@ -103,7 +103,12 @@ pub fn run(text: &str, pass: &Pass) -> String {
 }
 
 /// Sends one request to Codex's model endpoint and returns its event stream.
-fn ask(credentials: &codex_auth::Credentials, body: serde_json::Value, patience: Duration) -> Result<String, String> {
+/// Actions' `ask` step and the action router use it too.
+pub fn ask(
+    credentials: &codex_auth::Credentials,
+    body: serde_json::Value,
+    patience: Duration,
+) -> Result<String, String> {
     let mut request = agent(0.0, USER_AGENT)
         .post(ENDPOINT)
         .config()
@@ -158,11 +163,17 @@ pub fn request_body(text: &str, pass: &Pass) -> serde_json::Value {
     } else {
         format!("Dictionary:\n{}\n\nTranscript:\n{text}", pass.words.join("\n"))
     };
+    body(&instructions(pass), &input, None)
+}
+
+/// One request to `MODEL`: these instructions, one user message, and the
+/// tools it may call (none for cleanup and `ask`; the action router passes its own).
+pub fn body(instructions: &str, input: &str, tools: Option<serde_json::Value>) -> serde_json::Value {
     serde_json::json!({
         "model": MODEL,
-        "instructions": instructions(pass),
+        "instructions": instructions,
         "input": [{ "type": "message", "role": "user", "content": [{ "type": "input_text", "text": input }] }],
-        "tools": [],
+        "tools": tools.unwrap_or_else(|| serde_json::json!([])),
         "tool_choice": "auto",
         "parallel_tool_calls": false,
         "reasoning": { "effort": "low" },

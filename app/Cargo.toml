@@ -31,6 +31,8 @@ keyring = { version = "3", features = ["windows-native", "apple-native"] }
 ring = "0.17"
 semver = "1"
 earshot = "1.2"
+# Action files (`actions/`): one TOML file per action, with line numbers in its errors.
+toml = "1"
 
 [dev-dependencies]
 iced_test = "0.14"
