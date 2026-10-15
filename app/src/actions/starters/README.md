@@ -93,6 +93,23 @@ ChatGPT gets the name, description and phrases of every action with
 `router = true` (the default) and picks one, or none. Unsure means nothing
 runs. Matching a phrase never leaves the computer.
 
+ChatGPT also gets your dictionary (likh's Dictionary tab, while "Fix names"
+is on), so a misheard name still lands: "new thread in Krita" fills
+`{project}` with `krida` when `krida` is in both the dictionary and the
+list. A misheard word only ever becomes a dictionary word: "Open Excel"
+never opens `t3 code`, and without `vercel` in the dictionary it opens
+nothing. So put your list names in the dictionary, or add the mishearing
+itself as another name in the list (`lick = "..."` next to `likh`). A slot
+that catches the rest keeps your words, with only dictionary words put right.
+
+A phrase can match when another was meant. ChatGPT picks first when a
+longer phrase stalled on a list name ("new thread in Krita fix it" matches
+`new thread {text}`, but `new thread in {project} {text}` got further), or
+when an action that starts the same way has one of its list names in what
+you said ("new thread and lick fix it": "in" heard as "and"). If ChatGPT
+picks nothing, the phrase that matched runs. `likh actions test` shows when
+that happens.
+
 ## More examples
 
 ```toml

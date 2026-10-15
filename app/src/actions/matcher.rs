@@ -94,6 +94,13 @@ pub struct Found {
     /// Index into the actions searched.
     pub action: usize,
     pub slots: BTreeMap<String, String>,
+    /// Another action that was likely meant, so ChatGPT gets to pick first:
+    /// one whose phrase spelled out more of what was said, then stalled on a
+    /// list name ("new thread in Krita fix it" matches `new thread {text}`,
+    /// but `new thread in {project} {text}` got further), or one that starts
+    /// the same way and has a list name in what was said ("new thread and
+    /// lick fix it": "in" heard as "and", and "lick" is a project).
+    pub near_miss: Option<usize>,
 }
 
 /// The most specific match among the actions that are on: more spelled-out
@@ -101,17 +108,66 @@ pub struct Found {
 /// file that sorts first.
 pub fn find(actions: &[Action], said: &str) -> Option<Found> {
     let heard = split(said);
-    let mut best: Option<(usize, Found)> = None;
+    let mut best: Option<(usize, &[Token], Found)> = None;
     for (index, action) in actions.iter().enumerate().filter(|(_, action)| action.enabled) {
         for pattern in &action.patterns {
             if let Some((score, slots)) = match_at(pattern, &action.lists, &heard, said)
-                && best.as_ref().is_none_or(|(top, _)| score > *top)
+                && best.as_ref().is_none_or(|(top, _, _)| score > *top)
             {
-                best = Some((score, Found { action: index, slots }));
+                best = Some((score, pattern, Found { action: index, slots, near_miss: None }));
             }
         }
     }
-    best.map(|(_, found)| found)
+    let (_, winner, mut found) = best?;
+    let spelled = winner.iter().filter(|token| matches!(token, Token::Word(_))).count();
+    found.near_miss = actions
+        .iter()
+        .enumerate()
+        .filter(|(index, action)| action.enabled && *index != found.action)
+        .find(|(_, action)| {
+            action.patterns.iter().any(|pattern| {
+                stalls_on_list(pattern, &action.lists, &heard) > Some(spelled)
+                    || (pattern.first() == winner.first() && names_from_list(pattern, &action.lists, &heard))
+            })
+        })
+        .map(|(index, _)| index);
+    Some(found)
+}
+
+/// Whether one of the names in `pattern`'s lists was said, anywhere.
+fn names_from_list(pattern: &[Token], lists: &Lists, heard: &[Word]) -> bool {
+    pattern.iter().any(|token| {
+        let Token::List(name) = token else { return false };
+        lists.get(name).is_some_and(|list| {
+            list.iter().any(|(spoken, _)| {
+                !spoken.is_empty()
+                    && heard.windows(spoken.len()).any(|run| run.iter().zip(spoken).all(|(w, s)| w.norm == *s))
+            })
+        })
+    })
+}
+
+/// How many spelled-out words of `pattern` matched before it reached a list
+/// slot that none of the list's names fit. None when it never got there.
+fn stalls_on_list(pattern: &[Token], lists: &Lists, heard: &[Word]) -> Option<usize> {
+    for (at, token) in pattern.iter().enumerate() {
+        match token {
+            Token::Word(word) => {
+                if heard.get(at).is_none_or(|next| next.norm != *word) {
+                    return None;
+                }
+            }
+            Token::List(name) => {
+                let rest = heard.get(at..).unwrap_or_default();
+                let fits = lists.get(name)?.iter().any(|(spoken, _)| {
+                    rest.len() >= spoken.len() && rest.iter().zip(spoken).all(|(w, s)| w.norm == *s)
+                });
+                return (!fits).then_some(at);
+            }
+            Token::Free(_) => return None,
+        }
+    }
+    None
 }
 
 type Lists = BTreeMap<String, Vec<(Vec<String>, String)>>;

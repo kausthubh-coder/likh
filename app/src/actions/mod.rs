@@ -655,6 +655,13 @@ pub fn test(dir: &Path, said: &str) -> String {
         )),
         Some(found) => {
             let action = &catalog.actions[found.action];
+            if let Some(near) = found.near_miss.map(|index| &catalog.actions[index]) {
+                report.push_str(&format!(
+                    "{} ({}) nearly matched: likh would ask ChatGPT first, and run this if it picks nothing\n",
+                    near.name,
+                    file_name(&near.file)
+                ));
+            }
             report.push_str(&format!("matches {} ({})\n", action.name, file_name(&action.file)));
             for (slot, value) in &found.slots {
                 report.push_str(&format!("  {{{slot}}} = \"{value}\"\n"));
