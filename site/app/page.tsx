@@ -6,9 +6,9 @@ import { FlockMark } from "./flock-mark";
 const REPO = "https://github.com/kausthubh-coder/likh";
 /** The published build. Bump with each release; the page reads everything else from here. */
 const RELEASE = {
-  version: "0.1.0-alpha.8",
-  windows: `${REPO}/releases/download/v0.1.0-alpha.8/likh-setup-windows-x64.exe`,
-  size: "4.9 MB",
+  version: "0.1.0-alpha.9",
+  windows: `${REPO}/releases/download/v0.1.0-alpha.9/likh-setup-windows-x64.exe`,
+  size: "5.0 MB",
 };
 
 /** Measured on the release build, idle, Windows 11 (docs/plan.md, Measured so far). */
@@ -22,6 +22,9 @@ const STATS = [
 const FEATURES = [
   { title: "Hold or tap", line: "Hold to talk, or tap to go hands-free. It stops when you go quiet." },
   { title: "Voice commands", line: "“New line”, “new bullet”, “press enter”, “scratch that”." },
+  { title: "Clean up", line: "Drops the ums, keeps your “actually, 3”, and turns spoken lists into lists." },
+  { title: "Your own words", line: "Project names and people, spelled your way every time." },
+  { title: "Paste it again", line: "Alt + Shift + Z pastes your last dictation anywhere." },
   { title: "History", line: "Every dictation, kept on your computer. Click to copy." },
   { title: "Your shortcut", line: "Press the keys you want, or use a mouse button." },
   { title: "Two free engines", line: "Your ChatGPT plan, or a free Groq key." },
@@ -168,11 +171,13 @@ export default function Home() {
               at any time; if that happens, likh ships an update or stops working.
             </Question>
             <Question q="How long can I talk?">
-              Up to ten minutes at a time, the same as Codex. The pill counts down your last minute.
+              Up to 30 minutes at a time. Past three, likh sends what you&apos;ve said while you keep talking, so the wait
+              when you stop stays short. The pill counts down your last minute.
             </Question>
             <Question q="Where does my voice go?">
-              Straight to ChatGPT through your Codex sign-in, and nowhere else. History stays on your computer, and you can turn
-              it off or clear it.
+              Straight to ChatGPT through your Codex sign-in, or to Groq if you pick it, and nowhere else. Clean up and your
+              dictionary send the text, never the audio, to ChatGPT. History stays on your computer, and you can turn it off or
+              clear it.
             </Question>
           </div>
         </section>
