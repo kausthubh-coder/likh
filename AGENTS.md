@@ -17,12 +17,13 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | Where | What lives there |
 |---|---|
 | `app/src/<feature>/` | one feature: `mod.rs` with its logic and UI, `tests.rs` beside it |
-| `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it |
+| `app/src/dictation/` | one dictation, key-down to paste: the decision table and the thread that runs it. Up to 30 minutes: past 3, the audio goes up in pieces while you talk (cut in a pause by `microphone`) and the text is joined |
 | `app/src/hotkey/` | the shortcut (Ctrl+Space by default), paste last (Alt+Shift+Z by default; it waits for its keys to come up before pasting), an optional mouse button (a low-level hook, installed only while one is picked) and Esc: system hotkeys on Windows (`windows.rs`), picking a new one (`capture.rs`) |
 | `app/src/settings/` | what the user chose (shortcut, paste last, mouse button, mode, silence stop, microphone, engine, language, sounds, pause media, commands, dictionary, history, start with Windows), one JSON file. `LIKH_HOME` moves the whole folder |
 | `app/src/history/` | past dictations, one JSON line each, on this computer only. The newest is what paste last pastes after a restart |
 | `app/src/commands/` | spoken commands in four groups: lines ("new line", "new bullet"), keys ("press enter", "press tab"), scratch ("scratch that"), punctuation by name (off by default) |
-| `app/src/dictionary/` | the user's own words (project names, people): Groq hears them as its prompt; after any engine, a quick ChatGPT pass through Codex's sign-in puts misheard ones right (`gpt-6-luna` on `/backend-api/codex/responses`, gives up after 4 s and pastes what it heard) |
+| `app/src/dictionary/` | the user's own words (project names, people): Groq hears them as its prompt, and `cleanup/` puts misheard ones right |
+| `app/src/cleanup/` | one quick ChatGPT pass after any engine, through Codex's sign-in (`gpt-6-luna` on `/backend-api/codex/responses`): puts misheard dictionary words right, and with Clean up on (Transcription, off by default) drops "um"s, keeps the speaker's corrections and makes spoken lists into lists. Spoken commands must come through word for word, or likh pastes what it heard; so does a failure or a slow answer (4 s, more for long text) |
 | `app/src/media/` | pauses music and videos while you talk and plays them again (Windows media controls; nothing on macOS) |
 | `app/src/sounds/` | the start, stop and error cues, synthesized |
 | `app/src/autostart/` | start with Windows (the Run key) |

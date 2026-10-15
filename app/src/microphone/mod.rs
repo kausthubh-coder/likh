@@ -34,6 +34,10 @@ const SOUND_FLOOR: f32 = 0.000_1;
 const FLOOR_DB: f32 = -55.0;
 const CEILING_DB: f32 = -10.0;
 
+/// How far back from the end `Recording::cut` looks for a pause. People
+/// breathe every few seconds, so ten always finds one.
+const CUT_SEARCH: Duration = Duration::from_secs(10);
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     Opened { device: String },
@@ -222,6 +226,23 @@ impl Recording {
     /// The mic's name as Windows shows it ("Microphone Array"), for messages.
     pub fn device(&self) -> &str {
         &self.device
+    }
+
+    /// Once more than `longer_than` is waiting, hands it over (16 kHz mono) and
+    /// keeps recording: a long dictation goes up in pieces while you talk.
+    /// The cut falls at the quietest moment of the last `CUT_SEARCH`, so it
+    /// lands between words, not inside one.
+    pub fn cut(&self, longer_than: Duration) -> Option<Vec<f32>> {
+        let piece = {
+            let mut heard = self.heard.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let rate = heard.rate;
+            if rate == 0 || heard.samples.len() < (longer_than.as_secs_f32() * rate as f32) as usize {
+                return None;
+            }
+            let at = quietest_point(&heard.samples, rate, CUT_SEARCH);
+            (rate, heard.samples.drain(..at).collect::<Vec<_>>())
+        };
+        Some(resample(&piece.1, piece.0, crate::transcriber::SAMPLE_RATE))
     }
 
     /// Stops and returns what was heard, as 16 kHz mono.
@@ -471,6 +492,18 @@ impl Meter {
             }
         }
     }
+}
+
+/// Where to cut `samples` (at `rate`): the middle of the quietest 30ms window
+/// in the last `search` of them. Everything before the index goes; the rest stays.
+pub fn quietest_point(samples: &[f32], rate: u32, search: Duration) -> usize {
+    let window = window_for(rate).max(1);
+    let from = samples.len().saturating_sub((search.as_secs_f32() * rate as f32) as usize);
+    let loudness = |start: usize| samples[start..start + window].iter().map(|s| s * s).sum::<f32>();
+    (from..samples.len().saturating_sub(window).max(from))
+        .step_by(window)
+        .min_by(|a, b| loudness(*a).total_cmp(&loudness(*b)))
+        .map_or(samples.len(), |start| start + window / 2)
 }
 
 /// Maps an RMS amplitude (0–1) onto the bars' 0–1 range on a decibel scale,

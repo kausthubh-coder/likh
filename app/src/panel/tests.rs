@@ -127,6 +127,28 @@ fn switches_flip_and_save() {
 }
 
 #[test]
+fn clean_up_is_off_until_switched_on_and_says_what_it_needs() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Transcription");
+    // Never this machine's own sign-in: first none, then a made-up one.
+    f.panel.codex = CodexStatus::SignedOut;
+    assert!(shows(&f.panel, "Needs Codex signed in, whichever engine you pick."));
+    f.panel.codex = CodexStatus::Connected(crate::codex_auth::Account {
+        email_hint: Some("t\u{2022}\u{2022}\u{2022}@example.com".into()),
+        plan: Some("plus".into()),
+        expires_at: None,
+    });
+    assert!(shows(&f.panel, "Drops ums, keeps your corrections, makes lists. Adds about 1 s."));
+    let saved = || Settings::load_from(&f.dir.path().join("settings.json"));
+    assert!(!saved().cleanup);
+    press(&mut f.panel, "Clean up");
+    assert!(saved().cleanup);
+    press(&mut f.panel, "Clean up");
+    assert!(!saved().cleanup);
+}
+
+#[test]
 fn history_lists_newest_first_and_copies_on_click() {
     let _ui = test_ui::lock();
     let mut f = panel();

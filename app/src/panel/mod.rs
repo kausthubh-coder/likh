@@ -138,6 +138,7 @@ pub enum Message {
     AddWord,
     RemoveWord(usize),
     FixNames(bool),
+    Cleanup(bool),
     KeepHistory(bool),
     StartWithWindows(bool),
     Engine(Engine),
@@ -496,6 +497,7 @@ impl Panel {
                 }
             }),
             Message::FixNames(on) => self.change(|s| s.fix_names = on),
+            Message::Cleanup(on) => self.change(|s| s.cleanup = on),
             Message::KeepHistory(on) => {
                 self.change(|s| s.history = on);
                 self.load_history();
@@ -973,16 +975,26 @@ impl Panel {
             label(p, "Transcribe with"),
             column(Engine::ALL.iter().map(|engine| self.engine_panel(p, *engine, *engine == picked)))
                 .spacing(space::S3),
-            Space::new().height(space::S2),
+            // A caption for the cards, so it sits right under them.
             container(
                 text("Your audio goes to the one you pick, and nowhere else.").size(size::SMALL).color(p.text_subtle)
             )
             .padding([0.0, space::S4]),
-            Space::new().height(space::S3),
-            group(p, vec![self.language_line(p)]),
+            Space::new().height(space::S2),
+            group(p, vec![self.cleanup_line(p), self.language_line(p)]),
         ]
         .spacing(space::S2)
         .into()
+    }
+
+    /// Clean up: ChatGPT tidies each dictation after whichever engine heard it.
+    fn cleanup_line(&self, p: &Palette) -> Line<'_> {
+        let on = self.chosen().cleanup;
+        let what = match self.codex {
+            CodexStatus::Connected(_) => "Drops ums, keeps your corrections, makes lists. Adds about 1 s.",
+            _ => "Needs Codex signed in, whichever engine you pick.",
+        };
+        Line::plain(named(p, "Clean up", Some(what)), switch(on)).press(Message::Cleanup(!on))
     }
 
     /// Language: Auto-detect, or one pinned, with why you'd leave it on auto.

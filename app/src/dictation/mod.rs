@@ -19,10 +19,15 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[cfg(test)]
 mod tests;
 
-/// The Codex app stops recording here (595,000 ms); so do we (docs/codex.md).
-pub const LONGEST: Duration = Duration::from_millis(595_000);
-/// The pill starts counting down at 9:00.
-pub const WARN_AFTER: Duration = Duration::from_secs(540);
+/// A dictation stops by itself here. Wispr Flow's cap is 20 minutes; past that
+/// it's a recording, not a dictation.
+pub const LONGEST: Duration = Duration::from_secs(30 * 60);
+/// The pill counts down the last minute.
+pub const WARN_AFTER: Duration = Duration::from_secs(29 * 60);
+/// A long dictation goes up in pieces of about this much while you talk, so no
+/// upload comes near the Codex app's own 9m55s cap (docs/codex.md) and the
+/// wait after you stop is only the last piece's.
+pub const PIECE: Duration = Duration::from_secs(180);
 /// A press shorter than this is a tap: hands-free in "Hold or tap", dropped in "Hold only".
 pub const TAP: Duration = Duration::from_millis(300);
 /// Hands-free shows its quiet countdown only after this much quiet, so the
@@ -306,6 +311,41 @@ impl Ears {
     }
 }
 
+/// Transcribes one piece of a long dictation. A piece with no voice in it is
+/// skipped (silence can come back as made-up words), and a dropped connection
+/// or a busy server gets one more try a second later.
+fn transcribe_piece(
+    transcriber: &Transcriber,
+    samples: &[f32],
+    words: &[String],
+    language: Option<&str>,
+) -> Result<String, Failure> {
+    if crate::silence::Listener::new(crate::transcriber::SAMPLE_RATE).push(samples).is_none() {
+        return Ok(String::new());
+    }
+    match transcriber.transcribe(samples, words, language) {
+        Err(Failure::TooShort) => Ok(String::new()),
+        Err(failure) if failure.passing() => {
+            std::thread::sleep(Duration::from_secs(1));
+            transcriber.transcribe(samples, words, language)
+        }
+        heard => heard,
+    }
+}
+
+/// One dictation's text from its pieces, in order: every piece's words joined,
+/// or the first piece that failed. A gap in the middle would paste as if nothing were missing.
+pub fn join_pieces(pieces: Vec<Result<String, Failure>>) -> Result<String, Failure> {
+    let mut texts = Vec::new();
+    for piece in pieces {
+        let text = piece?;
+        if !text.trim().is_empty() {
+            texts.push(text.trim().to_owned());
+        }
+    }
+    Ok(texts.join(" "))
+}
+
 /// What the last dictation did, for `likh ctl status`. Never the text itself.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Last {
@@ -365,6 +405,10 @@ struct Running {
     transcriber: Option<Arc<Transcriber>>,
     /// Media this dictation is pausing (pausing takes a moment, so it runs on its own thread).
     paused: Option<std::thread::JoinHandle<crate::media::Paused>>,
+    /// A long dictation's pieces already on their way, oldest first.
+    pieces: Vec<std::thread::JoinHandle<Result<String, Failure>>>,
+    /// How much audio those pieces hold.
+    pieces_seconds: f32,
 }
 
 impl Running {
@@ -428,6 +472,17 @@ fn run(
             _ => (None, None),
         };
         let chosen = settings.read().map(|s| s.clone()).unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+        // Only a code likh knows reaches the engines; anything else is auto-detect.
+        let language = chosen.language.as_deref().and_then(crate::transcriber::language::find).map(|l| l.code);
+        // A long dictation sends what it has so far and keeps listening.
+        if matches!(input, Input::Tick)
+            && let (Some(recording), Some(transcriber)) = (running.recording.as_ref(), running.transcriber.clone())
+            && let Some(piece) = recording.cut(PIECE)
+        {
+            running.pieces_seconds += piece.len() as f32 / crate::transcriber::SAMPLE_RATE as f32;
+            let words = chosen.dictionary.clone();
+            running.pieces.push(std::thread::spawn(move || transcribe_piece(&transcriber, &piece, &words, language)));
+        }
         let choices = Choices {
             mode: chosen.mode,
             commands: chosen.commands.then_some(chosen.command_groups),
@@ -470,7 +525,9 @@ fn run(
                         device: r.device().to_string(),
                     });
                     let samples = recording.map(Recording::finish).unwrap_or_default();
-                    let seconds = samples.len() as f32 / crate::transcriber::SAMPLE_RATE as f32;
+                    let pieces = std::mem::take(&mut running.pieces);
+                    let seconds = std::mem::take(&mut running.pieces_seconds)
+                        + samples.len() as f32 / crate::transcriber::SAMPLE_RATE as f32;
                     released = Some((Instant::now(), seconds));
                     let transcriber = running
                         .transcriber
@@ -482,13 +539,25 @@ fn run(
                         let _ = tx.send(Input::Transcribed(Err(failure)));
                         continue;
                     }
-                    let (words, fix_names) = (chosen.dictionary.clone(), chosen.fix_names);
-                    // Only a code likh knows reaches the engines; anything else is auto-detect.
-                    let language = chosen.language.as_deref().and_then(crate::transcriber::language::find);
+                    let words = chosen.dictionary.clone();
+                    let pass = crate::cleanup::Pass {
+                        words: if chosen.fix_names { words.clone() } else { Vec::new() },
+                        tidy: chosen.cleanup,
+                        commands: if chosen.commands { chosen.command_groups.phrases() } else { Vec::new() },
+                    };
                     std::thread::spawn(move || {
-                        let heard = transcriber.transcribe(&samples, &words, language.map(|l| l.code));
-                        let heard =
-                            heard.map(|text| if fix_names { crate::dictionary::fix(&text, &words) } else { text });
+                        // A short dictation is one upload, as it always was. A long one's
+                        // last piece goes now, and joins the pieces sent while you talked.
+                        let last = if pieces.is_empty() {
+                            transcriber.transcribe(&samples, &words, language)
+                        } else {
+                            transcribe_piece(&transcriber, &samples, &words, language)
+                        };
+                        let mut heard: Vec<_> =
+                            pieces.into_iter().map(|piece| piece.join().unwrap_or(Err(Failure::Unreadable))).collect();
+                        heard.push(last);
+                        // One cleanup over the whole text, so it reads as one dictation.
+                        let heard = join_pieces(heard).map(|text| crate::cleanup::run(&text, &pass));
                         let _ = tx.send(Input::Transcribed(heard));
                     });
                 }
@@ -496,6 +565,9 @@ fn run(
                     running.resume_media();
                     running.recording = None;
                     running.transcriber = None;
+                    // Pieces already sent finish on their own; nobody reads them.
+                    running.pieces.clear();
+                    running.pieces_seconds = 0.0;
                 }
                 Effect::Sound(cue) if chosen.sounds => crate::sounds::play(cue),
                 Effect::Sound(_) => {}

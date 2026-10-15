@@ -15,17 +15,19 @@ likh does what the Codex desktop app does when you dictate into it. It reads the
 - **Response:** `{ "text": "..." }`
 - **Speed:** about 0.9 s for 7 s of speech in the prototype.
 
-## Fixing names: the dictionary
+## Fixing names and cleaning up: one pass
 
 `/transcribe` takes no word list, and ChatGPT's own dictation dictionary (`GET/POST /backend-api/dictation/custom_dictionary[/words]`, `DELETE …/words/{word_id}`, shown in Codex's Voice settings) doesn't change what it returns. The developer added "Critly", "Kriyan" and "Studi" there on 2026-10-13 and still got "currently" and "Korean", in likh and in ChatGPT itself.
 
-Codex fixes names the way likh now does: a second model call after the transcript, with the word list and the transcript (`dictation_cleanup` in the app's bundle). likh's version (`app/src/dictionary/`):
+Codex fixes names the way likh now does: a second model call after the transcript, with the word list and the transcript (`dictation_cleanup` in the app's bundle). likh's version (`app/src/cleanup/`) also does the cleanup in the same call when Clean up is on (fillers, self-corrections, spoken lists), so both together still cost one wait:
 
 - **Endpoint:** `POST https://chatgpt.com/backend-api/codex/responses`, the Codex CLI's own. Same bearer token, `ChatGPT-Account-Id` and `originator` as above, plus `OpenAI-Beta: responses=experimental` and `Accept: text/event-stream`.
 - **Body:** Responses API with `model: gpt-6-luna`, `reasoning.effort: low`, `service_tier: priority` (Codex's "Fast": 1.5x for this model at no extra usage), `store: false`, `stream: true`. The answer is the `response.output_text.done` event's `text`.
-- **Speed:** 1.0 to 1.3 s warm, 2.0 s for the first call (2026-10-13, `cargo test -p likh dictionary_live -- --ignored --nocapture`).
-- **Why Luna:** `cargo test -p likh dictionary_speed -- --ignored --nocapture` sends the same fix to each fast model in turn, 5 rounds. On 2026-10-13: `gpt-6-luna` median 1372 ms (1159 to 1585), `gpt-6-sol` 1408 ms (1314 to 1706), `gpt-5.6-luna` 1489 ms (1263 to 1811), `gpt-6.1-sol` 1785 ms (1650 to 2463). All four fixed the sentence every time. The first three overlap, so none is measurably faster; Luna is the cheapest of them. The answer is about 15 words, so the wait is the model starting, not its output speed.
-- **Never in the way:** on any failure, after 4 s, or when the answer is far longer or shorter than the transcript, likh pastes what it heard.
+- **Speed:** 1.0 to 1.3 s warm, 2.0 s for the first call (2026-10-13, `cargo test -p likh cleanup_live -- --ignored --nocapture`).
+- **Why Luna:** `cargo test -p likh cleanup_speed -- --ignored --nocapture` sends the same fix to each fast model in turn, 5 rounds. On 2026-10-13: `gpt-6-luna` median 1372 ms (1159 to 1585), `gpt-6-sol` 1408 ms (1314 to 1706), `gpt-5.6-luna` 1489 ms (1263 to 1811), `gpt-6.1-sol` 1785 ms (1650 to 2463). All four fixed the sentence every time. The first three overlap, so none is measurably faster; Luna is the cheapest of them. The answer is about 15 words, so the wait is the model starting, not its output speed.
+- **Cleanup speed:** 0.9 to 1.7 s, and 2.8 s once, for one-sentence dictations (2026-10-15, `cleanup_live_tidies_what_was_said`).
+- **Spoken commands:** the first cleanup prompt carried them out itself ("new paragraph" became a line break, "press enter" vanished, so Enter was never pressed). The prompt now says not to, and `keeps_commands` throws away any answer that lost or added one.
+- **Never in the way:** on any failure, after 4 s (plus 4 ms per character, for long dictations), or when the answer is far longer or shorter than the transcript, likh pastes what it heard.
 
 ## Rules likh follows
 
@@ -33,7 +35,7 @@ Codex fixes names the way likh now does: a second model call after the transcrip
   - When the access token's `exp` has passed, show "Your Codex sign-in expired. Open Codex once to refresh it."
   - Treat a 401 or 403 the same way: "ChatGPT turned down the sign-in. Sign in to Codex again."
 - **Token values never reach logs, metrics, screenshots or `likh status --json`.** Tests in `codex_auth/tests.rs` enforce it. The request credentials (`codex_auth::Credentials`) redact both values in `Debug`, enforced by a test.
-- **Recordings are capped at 9m55s**, the same as the Codex app (595,000 ms), with a warning at 9:00. The server's own cap is unknown. Its errors include `file_above_max_size`, `input_too_large`, `audio_too_short` and `rate_limit_exceeded`; map each to a sentence in the UI.
+- **No upload is longer than about 3 minutes.** A dictation can run 30 minutes (warning at 29:00): past 3 minutes, likh cuts the audio at the quietest moment of the last 10 s and uploads that piece while you keep talking, then joins the pieces' text in order. A piece with no voice is skipped; a dropped connection gets one retry; a piece that still fails fails the dictation rather than paste with a gap. The server's own cap is unknown. Its errors include `file_above_max_size`, `input_too_large`, `audio_too_short` and `rate_limit_exceeded`; map each to a sentence in the UI.
 - **The HTTP timeout scales with the recording length.** The prototype's fixed 25 s timeout would cut off long uploads.
 
 ## Limits worth knowing
@@ -45,7 +47,7 @@ Codex fixes names the way likh now does: a second model call after the transcrip
 | The handy-codex prototype | 120 s cap in our own `hands_free.rs`. That was the "random" stop |
 | Wispr Flow, for comparison | 20 minutes per session |
 
-**Later:** split long dictations at pauses into chunks well under the cap, upload each chunk while recording continues, and join the text. That removes the cap without relying on the streaming endpoint.
+likh splits long dictations at pauses into 3-minute pieces, uploads each while recording continues and joins the text (`dictation::PIECE`). That removes the cap without the streaming endpoint.
 
 ## Plan access and usage, checked 2026-10-12
 
