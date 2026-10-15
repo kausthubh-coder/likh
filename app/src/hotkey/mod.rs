@@ -296,7 +296,7 @@ mod other {
     pub fn spawn(dictation: Sender<Input>, binding: Binding, mouse: MouseTrigger) -> Result<(), String> {
         let _ = DICTATION.set(Mutex::new(dictation.clone()));
         if let Err(reason) = set_mouse(mouse) {
-            eprintln!("likh: the mouse button won't work: {reason}");
+            crate::diagnostics::warn("hotkey", format!("the mouse button won't work: {reason}"));
         }
         listen(dictation, String::from(binding), None)
     }
