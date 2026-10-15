@@ -26,7 +26,8 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 | 4 | Hands-free, Esc cancel, history, sounds, voice commands, start with Windows, a settings window, a changeable shortcut, 9m55s cap | ✅ hands-free is "Hold or tap" (tap once, tap again) instead of double-tap; silence stop, mic picker and paste-last are still to do |
 | 5 | Landing page with downloads, the release workflow | `v0.1.0` on GitHub Releases |
 | 6 | Silence stop, a mouse button, more spoken commands, pause media, Groq and Windows speech, all in settings | ✅ silence stop proven end to end (`e2e-dictate.ps1 -LetSilenceStop`). A real Groq key, Windows speech with Online speech recognition on, pausing something that plays, and a physical mouse button still need a person |
-| later | Chunked long dictation, dictionary, snippets, cleanup (fillers, "actually 3"), command mode, styles, stats | |
+| 7 | Dictionary, no voice heard, paste last, mic picker, language, cleanup (fillers, "actually 3", lists), dictations up to 30 minutes in pieces | 0.1.0-alpha.9 |
+| later | Snippets and custom commands, command mode, styles, stats | |
 
 ## Measured so far
 
@@ -94,9 +95,7 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - Groq as a free engine
 - **Updates (2026-10-12):** from GitHub Releases through the existing Inno installer, Ed25519-signed in `release.yml`, checked at launch and after dictations (never on a timer), applied when the user picks "Restart to update". Velopack would add delta updates but replaces the installer; not worth it at 5 MB. macOS only links to the release.
 - **Next:**
-  - chunking past 9m55s
-  - personal dictionary and fix-up rules
-  - snippets
+  - snippets and custom commands (a phrase types saved text, presses keys, or opens an app or link)
   - filler and self-correction cleanup (with a small model through "Sign in with ChatGPT" or similar)
   - offline local model
 - **Later:**

@@ -322,18 +322,20 @@ fn the_last_minute_counts_down_once_per_second_then_stops_at_the_cap() {
     for choices in [HOLD_OR_TAP, TAP_ONLY] {
         let mut d = Dictation::default();
         d.handle(Input::Hold, t0, choices);
-        assert_eq!(d.handle(Input::Tick, after(t0, 539_900), choices), vec![]);
+        // Past the Codex app's 9m55s, a dictation keeps going: its pieces go up as you talk.
+        assert_eq!(d.handle(Input::Tick, after(t0, 595_000), choices), vec![]);
+        assert_eq!(d.handle(Input::Tick, after(t0, 1_739_900), choices), vec![]);
         assert_eq!(
-            d.handle(Input::Tick, after(t0, 540_000), choices),
-            vec![Effect::Pill(Show::Warning { seconds_left: 55 })]
+            d.handle(Input::Tick, after(t0, 1_740_000), choices),
+            vec![Effect::Pill(Show::Warning { seconds_left: 60 })]
         );
         // A second tick in the same second changes nothing on screen.
-        assert_eq!(d.handle(Input::Tick, after(t0, 540_250), choices), vec![]);
+        assert_eq!(d.handle(Input::Tick, after(t0, 1_740_250), choices), vec![]);
         assert_eq!(
-            d.handle(Input::Tick, after(t0, 541_000), choices),
-            vec![Effect::Pill(Show::Warning { seconds_left: 54 })]
+            d.handle(Input::Tick, after(t0, 1_741_000), choices),
+            vec![Effect::Pill(Show::Warning { seconds_left: 59 })]
         );
-        assert_eq!(d.handle(Input::Tick, after(t0, 595_000), choices), transcribing());
+        assert_eq!(d.handle(Input::Tick, after(t0, 1_800_000), choices), transcribing());
     }
 }
 
@@ -385,10 +387,10 @@ fn the_last_minute_countdown_wins_over_the_quiet_one() {
     let mut d = Dictation::default();
     d.handle(Input::Hold, t0, quiet_stop);
     assert_eq!(
-        d.handle(Input::Tick, after(t0, 550_000), quiet_stop),
-        vec![Effect::Pill(Show::Warning { seconds_left: 45 })]
+        d.handle(Input::Tick, after(t0, 1_750_000), quiet_stop),
+        vec![Effect::Pill(Show::Warning { seconds_left: 50 })]
     );
-    assert_eq!(d.handle(Input::Quiet(Duration::from_secs(4)), after(t0, 550_000), quiet_stop), vec![]);
+    assert_eq!(d.handle(Input::Quiet(Duration::from_secs(4)), after(t0, 1_750_000), quiet_stop), vec![]);
 }
 
 #[test]
@@ -466,4 +468,36 @@ fn a_mic_unplugged_mid_sentence_pastes_what_it_heard_and_says_so() {
         d.handle(Input::Transcribed(Ok("Okay.".into())), after(t0, 11_500), HOLD_OR_TAP),
         vec![Effect::Pill(Show::Done), paste("Okay.")]
     );
+}
+
+#[test]
+fn a_long_dictations_pieces_join_in_order_and_skip_the_silent_ones() {
+    let pieces = vec![
+        Ok("First I went through the onboarding flow.".into()),
+        Ok(String::new()),
+        Ok(" Then I fixed the mic picker. ".into()),
+    ];
+    assert_eq!(
+        join_pieces(pieces),
+        Ok("First I went through the onboarding flow. Then I fixed the mic picker.".into())
+    );
+    // One piece is how every short dictation goes, and its failure is the dictation's.
+    assert_eq!(join_pieces(vec![Err(Failure::TooShort)]), Err(Failure::TooShort));
+}
+
+#[test]
+fn a_piece_that_failed_fails_the_whole_dictation_rather_than_paste_with_a_gap() {
+    let pieces = vec![Ok("The first three minutes.".into()), Err(Failure::Offline), Ok("The last part.".into())];
+    assert_eq!(join_pieces(pieces), Err(Failure::Offline));
+}
+
+#[test]
+fn a_silent_piece_is_never_sent() {
+    // Three seconds of a quiet room: the fake would answer, but it's never asked.
+    let room: Vec<f32> = (0..48_000).map(|i| 0.001 * (i as f32 * 1.3).sin()).collect();
+    let fake = Transcriber::Echo("Thank you for watching.".into());
+    assert_eq!(transcribe_piece(&fake, &room, &[], None), Ok(String::new()));
+    // The same length with a voice in it goes.
+    let talk: Vec<f32> = (0..48_000).map(|i| 0.2 * (i as f32 * 0.17).sin()).collect();
+    assert_eq!(transcribe_piece(&fake, &talk, &[], None), Ok("Thank you for watching.".into()));
 }

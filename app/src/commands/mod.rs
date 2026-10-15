@@ -53,6 +53,16 @@ pub struct Groups {
 
 impl Groups {
     pub const DEFAULT: Groups = Groups { lines: true, keys: true, scratch: true, punctuation: false };
+
+    /// Every phrase that does something with these groups on, for the cleanup
+    /// pass to leave alone.
+    pub fn phrases(&self) -> Vec<&'static str> {
+        Group::ALL
+            .iter()
+            .filter(|group| group.is_on(self))
+            .flat_map(|group| group.phrases().iter().map(|(phrase, _)| *phrase))
+            .collect()
+    }
 }
 
 impl Default for Groups {

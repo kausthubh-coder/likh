@@ -107,6 +107,56 @@ fn speech_then_silence(path: &std::path::Path, speech: f32, silence: f32) {
 }
 
 #[test]
+fn the_cut_lands_in_the_pause_between_words() {
+    // 16 kHz: a word, a 200ms breath at -60 dBFS, then the next word.
+    let mut samples: Vec<f32> = (0..16_000).map(|i| 0.2 * (i as f32 * 0.17).sin()).collect();
+    samples.extend((0..3_200).map(|i| 0.001 * (i as f32 * 1.3).sin()));
+    samples.extend((0..16_000).map(|i| 0.2 * (i as f32 * 0.17).sin()));
+    let at = quietest_point(&samples, 16_000, Duration::from_secs(10));
+    assert!((16_000..19_200).contains(&at), "cut at {at}");
+    // Only the last `search` is looked at: a pause before it doesn't count.
+    let late = quietest_point(&samples, 16_000, Duration::from_millis(500));
+    assert!(late >= samples.len() - 8_000, "cut at {late}");
+    assert_eq!(quietest_point(&[0.0; 10], 16_000, Duration::from_secs(10)), 10);
+}
+
+#[test]
+fn a_long_recording_hands_over_a_piece_and_keeps_the_rest() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("two-sentences.wav");
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 16_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(&path, spec).expect("create wav");
+    let voice = |i: usize| (0.2 * (i as f32 * 0.17).sin() * 32767.0) as i16;
+    let room = |i: usize| (0.001 * (i as f32 * 1.3).sin() * 32767.0) as i16;
+    // A second of talk, a breath, then 0.8 s more: 2 s in all.
+    for i in 0..16_000 {
+        writer.write_sample(voice(i)).expect("talk");
+    }
+    for i in 0..3_200 {
+        writer.write_sample(room(i)).expect("breath");
+    }
+    for i in 0..12_800 {
+        writer.write_sample(voice(i)).expect("talk");
+    }
+    writer.finalize().expect("finalize");
+
+    let recording = Recording::start_from(Some(path), None, |_| {}).expect("start");
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(recording.cut(Duration::from_millis(1_500)), None, "not long enough yet");
+    std::thread::sleep(Duration::from_millis(1_700));
+    let piece = recording.cut(Duration::from_millis(1_500)).expect("a piece");
+    // Cut in the breath, so the first sentence goes whole.
+    assert!((16_000..19_200).contains(&piece.len()), "{} samples", piece.len());
+    let rest = recording.finish();
+    assert!((piece.len() + rest.len()).abs_diff(32_000) <= 2, "{} + {}", piece.len(), rest.len());
+}
+
+#[test]
 fn quiet_is_counted_from_the_last_speech() {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("then-quiet.wav");

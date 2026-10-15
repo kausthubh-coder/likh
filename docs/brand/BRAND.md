@@ -105,7 +105,7 @@ The pill hugs what it shows. Seven bars (4px wide, 3px apart, 46px in all) sit 1
 | `stopping after quiet` | 100 x 36 | hands-free after 1 s of quiet: a peach ring around the stop button empties over the chosen quiet; the last 3 s show the seconds (`2`) instead of the square. Talking again clears it. Peach, not amber: this is the normal end |
 | `thinking` | 76 x 36 | travelling wave, bars turn `text-muted` |
 | `done` | back to resting | 250ms; the pasted text is the feedback, no checkmark toast |
-| `time running out` | 100 x 36 | from 9:00: bars + an amber ring that empties over the last minute, seconds left inside it (`55`) |
+| `time running out` | 100 x 36 | from 29:00: bars + an amber ring that empties over the last minute, seconds left inside it (`55`) |
 | `error` | 200 to 360 x 52 | red icon, one sentence (two lines at most). Stays 6 s, longer while the pointer is on it |
 | `problem` | 200 to 360 x 52 | an error with its fix: one pill-shaped button on the right (36 tall, inset 8) that opens it and dismisses the pill. "No sound from Microphone Array. Is it muted?" · Pick mic (opens likh at the Microphone row) |
 | `note` | hugs its words x 36 (52 for two lines) | nothing broke, nothing happened: three grey bars lying flat, one sentence, no sound. "No voice heard". Stays 3 s |

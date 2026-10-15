@@ -103,7 +103,7 @@ impl Transcriber {
 
     /// `samples` are 16 kHz mono in -1..1. Blocks until the service answers.
     /// `words` is the user's dictionary: Groq hears it as a prompt, ChatGPT has
-    /// nowhere to take it (`dictionary::fix` handles that one afterwards).
+    /// nowhere to take it (`cleanup::run` handles that one afterwards).
     /// `language` is a pinned ISO-639-1 code (`language::ALL`); None lets the engine detect it.
     pub fn transcribe(&self, samples: &[f32], words: &[String], language: Option<&str>) -> Result<String, Failure> {
         if samples.len() < (SAMPLE_RATE as f32 * SHORTEST.as_secs_f32()) as usize {
@@ -153,6 +153,20 @@ pub enum Failure {
 }
 
 impl Failure {
+    /// Worth one more try in a moment: the network or the service, not the sign-in or the audio.
+    pub fn passing(&self) -> bool {
+        matches!(
+            self,
+            Failure::Offline
+                | Failure::RateLimited
+                | Failure::Server(_)
+                | Failure::Unreadable
+                | Failure::GroqOffline
+                | Failure::GroqRateLimited
+                | Failure::GroqServer(_)
+        )
+    }
+
     pub fn message(&self) -> String {
         match self {
             Failure::TooShort => "That was too short to hear. Hold the keys while you talk.".into(),

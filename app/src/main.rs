@@ -1,6 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod autostart;
+mod cleanup;
 mod codex_auth;
 mod commands;
 mod ctl;

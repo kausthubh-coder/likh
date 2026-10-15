@@ -113,6 +113,8 @@ pub struct Settings {
     pub dictionary: Vec<String>,
     /// After transcribing, ChatGPT puts misheard dictionary words right.
     pub fix_names: bool,
+    /// After transcribing, ChatGPT drops "um"s and false starts and shapes spoken lists (`cleanup/`).
+    pub cleanup: bool,
     /// Start likh when you sign in to Windows.
     pub start_with_windows: bool,
     /// Look for a newer likh at launch and after dictations, once a day (`update/`).
@@ -139,6 +141,9 @@ impl Default for Settings {
             dictionary: Vec::new(),
             // Does nothing until there's a word in the dictionary.
             fix_names: true,
+            // Off until asked for: it adds about a second to every dictation,
+            // and instant is what likh is for.
+            cleanup: false,
             start_with_windows: false,
             auto_update: true,
         }

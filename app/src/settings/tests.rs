@@ -20,6 +20,8 @@ fn an_older_file_keeps_its_choices_and_gets_the_new_defaults() {
     assert_eq!(loaded.command_groups, Groups { lines: true, keys: true, scratch: true, punctuation: false });
     assert!(loaded.auto_update);
     assert!(loaded.dictionary.is_empty() && loaded.fix_names);
+    // An older file has no cleanup choice: it stays off, as it was.
+    assert!(!loaded.cleanup);
     assert_eq!(loaded.paste_last.map(String::from), Some("Alt+Shift+Z".into()));
 }
 
@@ -81,6 +83,7 @@ fn what_you_save_is_what_you_load() {
         command_groups: Groups { lines: false, keys: true, scratch: false, punctuation: true },
         dictionary: vec!["Critly".into(), "Kriyan".into()],
         fix_names: false,
+        cleanup: true,
         start_with_windows: true,
         auto_update: false,
     };
@@ -91,6 +94,7 @@ fn what_you_save_is_what_you_load() {
     assert!(file.contains("\"engine\": \"groq\""));
     assert!(file.contains("\"silence_stop\": \"10s\""));
     assert!(file.contains("\"mouse\": \"forward\""));
+    assert!(file.contains("\"cleanup\": true"));
     assert!(file.contains("\"dictionary\": [\n    \"Critly\",\n    \"Kriyan\"\n  ]"));
     // The Groq key lives in the credential store, never in this file.
     assert!(!file.contains("gsk_"));
