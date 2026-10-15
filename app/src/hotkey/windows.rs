@@ -74,7 +74,7 @@ pub fn spawn(
             let _ = THREAD.set(unsafe { GetCurrentThreadId() });
             MOUSE.store(mouse_code(mouse), Ordering::SeqCst);
             if let Some(Err(reason)) = paste_last.map(|keys| register(PASTE_LAST, keys)) {
-                eprintln!("likh: pasting the last dictation won't work: {reason}");
+                crate::diagnostics::warn("hotkey", format!("pasting the last dictation won't work: {reason}"));
             }
             let _ = ready_tx.send(register(SHORTCUT, binding));
             // Keep running even if another app owns the shortcut: a rebind can still fix it.
@@ -157,7 +157,7 @@ fn hook_mouse(hook: &mut Option<HHOOK>) {
                     // SAFETY: changes this thread's own priority, so a busy machine doesn't time the hook out.
                     let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST) };
                 }
-                Err(error) => eprintln!("likh: the mouse button won't work: {error}"),
+                Err(error) => crate::diagnostics::warn("hotkey", format!("the mouse button won't work: {error}")),
             }
         }
         (false, Some(installed)) => {

@@ -1,6 +1,6 @@
 # Settings
 
-The likh window, opened from the tray (`Open likh`, or a double click on the icon). It's borderless, 720 x 580, with six tabs down the left and the version and update button at their foot. Every setting is one row in a panel, and every tab fits without scrolling except a long History. Every change saves at once to `settings.json` in likh's data folder, and the next dictation uses it.
+The likh window, opened from the tray (`Open likh`, or a double click on the icon). It's borderless, 720 x 580, with seven tabs down the left and the version and update button at their foot. Every setting is one row in a panel, and every tab fits without scrolling except a long History and Diagnostics. Every change saves at once to `settings.json` in likh's data folder, and the next dictation uses it.
 
 ## Sub-features
 
@@ -14,6 +14,7 @@ The likh window, opened from the tray (`Open likh`, or a double click on the ico
 - `set-commands` Commands: one panel, the master switch first, then four groups (Lines and lists, Press a key, Take it back, Punctuation by name), each with its own switch and its phrases as capsules. Punctuation starts off. With the master switch off, the groups are hidden and a line says everything is typed as said.
 - `set-history` History: Keep history, then the dictations newest first in one panel; click to copy, and `Clear` asks once (for 3 s).
 - `set-app` App: startup and update switches, where updating stands (`Restart to update` once one is downloaded), this session's dictation count and latency, then Website, Source on GitHub and `Run setup again`.
+- `set-diagnostics` Diagnostics: likh's own Memory, CPU and Running for (read every 2 s only while the tab is open; CPU says `Measuring…` until the second read), a line summing up the trace (`N lines, the first … ago. N failed, N took over 2.0 s.`), `Refresh`, `Copy report` (JSON, no dictation text) and `Open logs folder`, then What failed, Slowest, Most often, and Warnings and errors. `likh ctl diagnostics` returns the same report as JSON. Prove it by running one dictation with the fakes, then `ctl diagnostics`: `report.busiest` lists `microphone`, `transcribe`, `paste`, `dictation`. An expired fake `CODEX_HOME` with no `LIKH_TRANSCRIBER` puts the sign-in message in `report.common_failures`.
 - `set-update` Sidebar foot, on every tab: the version, and next to it one button that checks for updates, spins while checking, and turns peach (`v… ready`) once there's one to restart into.
 
 ## How to get to it (user POV)
@@ -29,7 +30,7 @@ Preconditions:
 
 Logical coordinates in the 720 x 580 window:
 
-- **Tabs:** x 92; Dictation y 84, Transcription y 116, Commands y 149, Dictionary y 182, History y 215, App y 248.
+- **Tabs:** x 92; Dictation y 84, Transcription y 116, Commands y 149, Dictionary y 182, History y 215, App y 248, Diagnostics y 281.
 - **Update button:** (154, 542).
 - **Microphone** (Dictation): Test (413, 415), the list (560, 415). Test opens the mic (Windows shows its mic icon) until Stop or another tab.
 - **Engines** (Transcription): ChatGPT (400, 135), Groq (400, 266).

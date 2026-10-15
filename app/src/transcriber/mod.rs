@@ -110,20 +110,25 @@ impl Transcriber {
             return Err(Failure::TooShort);
         }
         let seconds = samples.len() as f32 / SAMPLE_RATE as f32;
-        match self {
+        let span = crate::diagnostics::Span::start("transcribe")
+            .with("engine", self.name())
+            .with("audio_seconds", crate::diagnostics::seconds(seconds));
+        let heard = match self {
             Transcriber::Echo(text) => Ok(text.clone()),
             Transcriber::Codex => {
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-                let home = codex_auth::codex_home().ok_or(Failure::SignIn(CodexStatus::NotInstalled))?;
-                let credentials = codex_auth::credentials(&home, now).map_err(Failure::SignIn)?;
-                post(&credentials, &wav(samples), seconds, language)
+                codex_auth::codex_home()
+                    .ok_or(Failure::SignIn(CodexStatus::NotInstalled))
+                    .and_then(|home| codex_auth::credentials(&home, now).map_err(Failure::SignIn))
+                    .and_then(|credentials| post(&credentials, &wav(samples), seconds, language))
             }
-            Transcriber::Groq => {
-                let key = groq::saved_key().ok_or(Failure::GroqNoKey)?;
+            Transcriber::Groq => groq::saved_key().ok_or(Failure::GroqNoKey).and_then(|key| {
                 let prompt = crate::dictionary::whisper_prompt(words);
                 groq::transcribe(&key, &wav(samples), seconds, &groq::fields(prompt.as_deref(), language))
-            }
-        }
+            }),
+        };
+        span.end(heard.as_ref().map(|_| ()).map_err(Failure::message));
+        heard
     }
 }
 

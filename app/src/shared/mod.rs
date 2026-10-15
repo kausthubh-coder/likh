@@ -30,6 +30,6 @@ pub fn open_url(url: &str) {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let result = std::process::Command::new("xdg-open").arg(url).spawn();
     if let Err(error) = result {
-        eprintln!("could not open {url}: {error}");
+        crate::diagnostics::warn("app", format!("could not open {url}: {error}"));
     }
 }

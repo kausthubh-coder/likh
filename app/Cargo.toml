@@ -31,6 +31,7 @@ keyring = { version = "3", features = ["windows-native", "apple-native"] }
 ring = "0.17"
 semver = "1"
 earshot = "1.2"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 iced_test = "0.14"

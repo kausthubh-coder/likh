@@ -5,6 +5,7 @@
 //! carries the effects out.
 
 use crate::commands::{self, Action, Groups, Press};
+use crate::diagnostics::{self, Span};
 use crate::microphone::Recording;
 use crate::pill::{Fix, Pill, Show};
 use crate::settings::{Mode, Settings};
@@ -393,7 +394,7 @@ pub fn spawn(
         .name("likh-dictation".into())
         .spawn(move || run(inputs, sender, pill, fake, thread_status, settings, updates, ui));
     if let Err(error) = spawned {
-        eprintln!("likh: could not start dictation: {error}");
+        diagnostics::error("dictation", format!("could not start dictation: {error}"));
     }
     status
 }
@@ -458,6 +459,16 @@ fn run(
             Input::MicFailed { reason, .. } => Some(reason.clone()),
             _ => None,
         };
+        // A dictation that pastes is written at the paste; one that doesn't, here.
+        if let (Input::Transcribed(heard), Some((at, seconds))) = (&input, released) {
+            let span = Span::since("dictation", at).with("audio_seconds", diagnostics::seconds(seconds));
+            match heard {
+                Ok(text) if text.trim().is_empty() => span.with("result", "nothing heard").end(Ok(())),
+                Ok(_) => {}
+                Err(Failure::TooShort | Failure::NoVoice) => span.with("result", "nothing heard").end(Ok(())),
+                Err(failure) => span.end(Err(failure.message())),
+            }
+        }
         // Each tick also reports the quiet since the last speech, for silence
         // stop, and whether the mic has sent any sound at all.
         let (quiet, sound) = match (&input, running.recording.as_ref()) {
@@ -507,9 +518,14 @@ fn run(
                     }
                     let levels = pill.clone();
                     let mic = chosen.microphone.as_ref().map(|choice| choice.id.clone());
+                    let opening = Span::start("microphone");
                     match Recording::start(mic, move |level| levels.level(level)) {
-                        Ok(started) => running.recording = Some(started),
+                        Ok(started) => {
+                            opening.with("device", started.device()).end(Ok(()));
+                            running.recording = Some(started);
+                        }
                         Err(reason) => {
+                            opening.end(Err(reason.clone()));
                             let blocked = crate::microphone::blocked_by_windows();
                             let _ = tx.send(Input::MicFailed { reason, blocked });
                         }
@@ -573,18 +589,18 @@ fn run(
                 Effect::Sound(_) => {}
                 Effect::Undo => {
                     if let Err(reason) = crate::paste::undo() {
+                        diagnostics::error("paste", format!("couldn't undo: {reason}"));
                         pill.show(Show::Error(format!("likh couldn't undo. {reason}")));
                     }
                 }
                 Effect::Paste { text, then } => {
+                    let characters = text.chars().count();
+                    let pasting = Span::start("paste").with("characters", characters);
                     let pasted = crate::paste::paste(&text);
+                    pasting.end(pasted.as_ref().map(|_| ()).map_err(Clone::clone));
                     let (at, seconds) = released.take().unwrap_or((Instant::now(), 0.0));
-                    let mut last = Last {
-                        audio_seconds: seconds,
-                        latency_ms: at.elapsed().as_millis(),
-                        characters: text.chars().count(),
-                        error: None,
-                    };
+                    let mut last =
+                        Last { audio_seconds: seconds, latency_ms: at.elapsed().as_millis(), characters, error: None };
                     let restore = match pasted {
                         Ok(restore) => Some(restore),
                         Err(reason) => {
@@ -594,13 +610,18 @@ fn run(
                             None
                         }
                     };
+                    // Key-up to the paste: the wait the user feels.
+                    Span::since("dictation", at)
+                        .with("audio_seconds", diagnostics::seconds(seconds))
+                        .with("characters", characters)
+                        .end(last.error.clone().map_or(Ok(()), Err));
                     if restore.is_some() && chosen.history {
                         let at = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
                         let entry = crate::history::Entry { at, text: text.clone(), seconds };
                         if let Some(file) = crate::history::file()
                             && let Err(reason) = crate::history::append(&file, &entry)
                         {
-                            eprintln!("likh: couldn't save to history: {reason}");
+                            diagnostics::warn("history", format!("couldn't save to history: {reason}"));
                         }
                     }
                     {
@@ -622,6 +643,7 @@ fn run(
                         if let Some(key) = then
                             && let Err(reason) = crate::paste::press(key)
                         {
+                            diagnostics::error("paste", format!("couldn't press {}: {reason}", key.name()));
                             pill.show(Show::Error(format!("likh couldn't press {}. {reason}", key.name())));
                         }
                         restore.finish();
@@ -633,7 +655,10 @@ fn run(
                         // No pill: the text landing is the feedback, as with a dictation.
                         Some(text) => match crate::paste::paste(&text) {
                             Ok(restore) => restore.finish(),
-                            Err(reason) => pill.show(Show::Error(format!("likh couldn't paste. {reason}"))),
+                            Err(reason) => {
+                                diagnostics::error("paste", format!("couldn't paste the last dictation: {reason}"));
+                                pill.show(Show::Error(format!("likh couldn't paste. {reason}")));
+                            }
                         },
                         None => pill.show(Show::Note("Nothing to paste yet".into())),
                     }
