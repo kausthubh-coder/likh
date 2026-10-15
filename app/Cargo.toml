@@ -52,3 +52,9 @@ winreg = "0.56"
 # macOS (alpha) still uses handy-keys for the shortcut; Windows uses system hotkeys.
 [target.'cfg(not(windows))'.dependencies]
 handy-keys = "0.3"
+
+# Linux isn't a likh platform, but cloud agent sessions run on it: without a
+# windowing backend iced's software renderer (softbuffer) doesn't compile, and
+# then neither do check, clippy or the tests. Windows and macOS builds are unchanged.
+[target.'cfg(target_os = "linux")'.dependencies]
+iced = { version = "0.14", default-features = false, features = ["x11"] }
