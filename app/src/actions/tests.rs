@@ -153,6 +153,38 @@ open = "x:{text}"
     assert_eq!(found.slots["text"], "rain sounds");
 }
 
+const PROJECT_THREAD: &str = r#"
+name = "T3 thread in a project"
+say = ["new thread in {project} {text}"]
+output = "none"
+[lists.project]
+krida = "me/krida"
+[[do]]
+open = "t3code://new?repo={project}&prompt={text}"
+"#;
+
+#[test]
+fn a_misheard_list_name_is_a_near_miss_so_chatgpt_picks_first() {
+    let actions = [one(T3), one(PROJECT_THREAD)];
+    // "krida" heard as "Krita": `new thread {text}` matches, but the project phrase got further.
+    let found = matcher::find(&actions, "New thread in Krita fix the login.").expect("a match");
+    assert_eq!(actions[found.action].name, "New T3 thread");
+    assert_eq!(found.near_miss, Some(1));
+    // Heard right, the project phrase wins outright.
+    let found = matcher::find(&actions, "New thread in krida fix the login.").expect("a match");
+    assert_eq!((found.action, found.near_miss), (1, None));
+    // "in" heard as "and" breaks the phrase, but a project's name was said.
+    let found = matcher::find(&actions, "New thread and krida, the pill flickers.").expect("a match");
+    assert_eq!((found.action, found.near_miss), (0, Some(1)));
+    // Nothing else came close: the plain match runs without asking ChatGPT.
+    let found = matcher::find(&actions, "New thread fix the login.").expect("a match");
+    assert_eq!((found.action, found.near_miss), (0, None));
+    // A list name of an action that starts differently doesn't count.
+    let actions = [one(T3), one(SITES)];
+    let found = matcher::find(&actions, "New thread fix the github login.").expect("a match");
+    assert_eq!((found.action, found.near_miss), (0, None));
+}
+
 #[test]
 fn an_action_that_is_off_never_matches() {
     let off = T3.replace("output = \"none\"", "output = \"none\"\nenabled = false");
@@ -301,6 +333,7 @@ fn the_router_offers_each_action_as_a_tool_and_reads_back_the_one_picked() {
     assert_eq!(tools[1]["name"], "action_1");
     assert_eq!(tools[1]["parameters"]["properties"]["site"]["enum"], serde_json::json!(["github", "likh docs"]));
     assert_eq!(tools[0]["parameters"]["required"], serde_json::json!(["text"]));
+    assert_eq!(tools[1]["parameters"]["required"], serde_json::json!(["site", "site_heard"]));
 
     let call = |name: &str, arguments: &str| {
         let event = serde_json::json!({
@@ -309,18 +342,81 @@ fn the_router_offers_each_action_as_a_tool_and_reads_back_the_one_picked() {
         });
         format!("event: response.output_item.done\ndata: {event}\n\n")
     };
-    let picked = router::read_pick(&call("action_1", r#"{"site":"Likh docs"}"#), &actions, &offered).expect("picked");
+    let said = "Take me to the likh docs, please.";
+    let pick = |arguments: &str| router::read_pick(&call("action_1", arguments), &actions, &offered, said, &[]);
+    let picked = pick(r#"{"site":"Likh docs","site_heard":"likh docs"}"#).expect("picked");
     assert_eq!(picked.action, 1);
     assert_eq!(picked.slots["site"], "https://getlikh.vercel.app/docs?from=likh");
     // A name that isn't on the list, or a tool that wasn't offered, picks nothing.
-    assert_eq!(router::read_pick(&call("action_1", r#"{"site":"gitlab"}"#), &actions, &offered), None);
+    assert_eq!(pick(r#"{"site":"gitlab","site_heard":"likh docs"}"#), None);
+    assert_eq!(router::read_pick(&call("action_2", "{}"), &actions, &offered, said, &[]), None);
     // Leaving the list slot out picks nothing too: `open = "{site}"` would open an empty target (File Explorer).
-    assert_eq!(router::read_pick(&call("action_1", "{}"), &actions, &offered), None);
-    assert_eq!(router::read_pick(&call("action_2", "{}"), &actions, &offered), None);
+    assert_eq!(pick("{}"), None);
+    // So does a name with nothing said behind it.
+    assert_eq!(pick(r#"{"site":"github"}"#), None);
+    assert_eq!(pick(r#"{"site":"github","site_heard":"github"}"#), None);
+    // A word that was said but isn't the name maps to it only when it's a
+    // dictionary word: "Open Vercel" heard as "Open Excel" must not open anything.
+    let said = "Open Excel.";
+    let guessed = call("action_1", r#"{"site":"github","site_heard":"Excel"}"#);
+    assert_eq!(router::read_pick(&guessed, &actions, &offered, said, &[]), None);
+    let words = ["github".to_string()];
+    let picked = router::read_pick(&guessed, &actions, &offered, said, &words).expect("a dictionary word, misheard");
+    assert_eq!(picked.slots["site"], "https://github.com");
     assert_eq!(
-        router::read_pick("data: {\"type\":\"response.output_text.done\",\"text\":\"none\"}\n", &actions, &offered),
+        router::read_pick(
+            "data: {\"type\":\"response.output_text.done\",\"text\":\"none\"}\n",
+            &actions,
+            &offered,
+            said,
+            &[]
+        ),
         None
     );
+}
+
+#[test]
+fn the_router_hears_misheard_dictionary_words_and_may_only_put_those_right() {
+    let actions = [one(T3), one(PROJECT_THREAD)];
+    let offered = router::candidates(&actions);
+    let words = ["krida".to_string(), "critly".to_string()];
+    let said = "Open a T3 thread for Krita and see how Krita's workers are doing.";
+
+    let request = router::request(&actions, &offered, said, &words);
+    assert_eq!(request["input"][0]["content"][0]["text"], format!("Dictionary:\nkrida\ncritly\n\nCommand:\n{said}"));
+    assert!(request["instructions"].as_str().is_some_and(|role| role.contains("mishears")));
+    // No dictionary, no dictionary block.
+    let request = router::request(&actions, &offered, said, &[]);
+    assert_eq!(request["input"][0]["content"][0]["text"], format!("Command:\n{said}"));
+
+    let call = |arguments: serde_json::Value| {
+        let event = serde_json::json!({
+            "type": "response.output_item.done",
+            "item": { "type": "function_call", "name": "action_1", "arguments": arguments.to_string() },
+        });
+        format!("data: {event}\n")
+    };
+    let fixed = call(
+        serde_json::json!({ "project": "krida", "project_heard": "Krita", "text": "see how krida's workers are doing" }),
+    );
+    let picked = router::read_pick(&fixed, &actions, &offered, said, &words).expect("picked");
+    assert_eq!(picked.slots["project"], "me/krida");
+    assert_eq!(picked.slots["text"], "see how krida's workers are doing");
+    // Without the word in the dictionary, "krida's" wasn't said: the pick doesn't count.
+    assert_eq!(router::read_pick(&fixed, &actions, &offered, said, &[]), None);
+    // Nor does a prompt with words nobody said.
+    let rewritten = call(
+        serde_json::json!({ "project": "krida", "project_heard": "Krita", "text": "check the health of the krida workers" }),
+    );
+    assert_eq!(router::read_pick(&rewritten, &actions, &offered, said, &words), None);
+    // A project quoted from words nobody said doesn't count either.
+    let invented = call(serde_json::json!({ "project": "krida", "project_heard": "Korean", "text": "see how" }));
+    assert_eq!(router::read_pick(&invented, &actions, &offered, said, &words), None);
+    // The words heard as the project aren't also the prompt.
+    let said = "Open a new thread in Korean.";
+    let alone = call(serde_json::json!({ "project": "krida", "project_heard": "Korean", "text": "Korean" }));
+    let picked = router::read_pick(&alone, &actions, &offered, said, &words).expect("picked");
+    assert_eq!(picked.slots, BTreeMap::from([("project".into(), "me/krida".into())]));
 }
 
 #[test]
@@ -374,26 +470,45 @@ fn check_and_test_say_what_an_agent_needs_without_running_anything() {
     assert!(report.contains("1. open t3code://new"), "{report}");
     let report = test(dir.path(), "order a pizza");
     assert!(report.contains("no phrase matches"), "{report}");
+
+    let dir = folder(&[("t3.toml", T3), ("project.toml", PROJECT_THREAD)]);
+    let report = test(dir.path(), "new thread in Krita fix the login");
+    assert!(
+        report.starts_with(
+            "T3 thread in a project (project.toml) nearly matched: likh would ask ChatGPT first, and run this if it picks nothing\nmatches New T3 thread (t3.toml)"
+        ),
+        "{report}"
+    );
 }
 
 /// Run by hand: `cargo test -p likh router_live -- --ignored --nocapture`
 #[test]
 #[ignore = "calls ChatGPT with the Codex sign-in"]
 fn router_live_picks_the_action_you_meant_or_none() {
-    let actions = [one(T3), one(SPOTIFY), one(NEXT_SONG), one(SITES)];
-    let cases: [(&str, Option<&str>); 4] = [
+    let actions = [one(T3), one(SPOTIFY), one(NEXT_SONG), one(SITES), one(PROJECT_THREAD)];
+    let words = ["krida".to_string(), "critly".to_string()];
+    let cases: [(&str, Option<&str>); 6] = [
         ("put on some rainy day jazz in spotify", Some("Spotify search")),
         ("start a new T3 conversation about the flaky login test", Some("New T3 thread")),
         ("can you take me to github", Some("Open a site")),
         ("what's the weather tomorrow", None),
+        // "krida", as the transcriber heard it.
+        (
+            "Open a T3 thread for Krita and then see how much bandwidth the preview takes.",
+            Some("T3 thread in a project"),
+        ),
+        ("Open a new thread in Korean.", Some("T3 thread in a project")),
     ];
     for (said, expected) in cases {
         let started = std::time::Instant::now();
-        let picked = router::pick(&actions, said).expect("ChatGPT answered");
+        let picked = router::pick(&actions, said, &words).expect("ChatGPT answered");
         let name = picked.as_ref().map(|p| actions[p.action].name.as_str());
         let slots = picked.map(|p| p.slots).unwrap_or_default();
         println!("{said:?} -> {name:?} {slots:?} in {} ms", started.elapsed().as_millis());
         assert_eq!(name, expected, "{said}");
+        if let Some(project) = slots.get("project") {
+            assert_eq!(project, "me/krida", "{said}");
+        }
         // A slot gets the words it stands for, not the whole command.
         if let Some(text) = slots.get("text") {
             assert!(!text.to_lowercase().contains("spotify") && !text.to_lowercase().starts_with("start"), "{text}");

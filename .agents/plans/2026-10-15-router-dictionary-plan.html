@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Action key hears krida through your dictionary</title>
+<style>
+  :root { color-scheme: light dark; --page: #f7f6f3; --ink: #1d1c1a; --muted: #5a5753; --rule: #dcd8d1; --code: #eeebe5; --good: #2f6b3a; --bad: #9a3324; --font: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif; --mono: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --page: oklch(0.155 0.012 275); --ink: oklch(0.945 0.006 275); --muted: oklch(0.74 0.012 275); --rule: oklch(1 0 0 / 0.14); --code: oklch(0.2 0.014 275); --good: oklch(0.78 0.12 150); --bad: oklch(0.75 0.13 30); } }
+  * { box-sizing: border-box; }
+  html, body { background: var(--page); }
+  body { margin: 0; color: var(--ink); font: 400 17px/1.5 var(--font); }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; }
+  h1 { font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 22px; line-height: 1.3; margin: 44px 0 8px; text-wrap: balance; }
+  p, li { max-width: 62ch; text-wrap: pretty; }
+  p { margin: 0 0 12px; }
+  .lede { color: var(--muted); }
+  ol, ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  code { font: 500 0.86em var(--mono); }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 15px; line-height: 1.4; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 500; }
+  .bad { color: var(--bad); }
+  .good { color: var(--good); }
+  details { margin-top: 14px; border-top: 1px solid var(--rule); }
+  summary { cursor: pointer; font-weight: 500; padding: 12px 0; min-height: 44px; }
+  @media print { :root { color-scheme: light; } details { break-inside: avoid; } table { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Let ChatGPT hear krida on the action key</h1>
+  <p class="lede">The transcriber can't take your words, so likh fixes names afterwards. Action presses skip that fix, so your projects get lost.</p>
+  <ol>
+    <li>Say go and I build it in this worktree, then open a PR.</li>
+    <li>Change any of the four defaults below, by number.</li>
+  </ol>
+
+  <h2>Your last 8 action presses</h2>
+  <div class="wrap"><table>
+    <caption class="lede" style="text-align:left;caption-side:bottom;padding-top:8px">From your likh history today.</caption>
+    <thead><tr><th scope="col">Heard</th><th scope="col">Meant</th><th scope="col">Got</th></tr></thead>
+    <tbody>
+      <tr><td>Open a T3 thread for Krita and then…</td><td>krida</td><td class="bad">thread, no project</td></tr>
+      <tr><td>Create a new thread in D3 code for Parita.</td><td>krida?</td><td class="bad">thread, no project</td></tr>
+      <tr><td>Open Roussel.</td><td>unknown</td><td class="bad">File Explorer (fixed in #17)</td></tr>
+      <tr><td>Open a new thread in Korean. (2×)</td><td>krida</td><td>a project, unlogged which</td></tr>
+      <tr><td>Create a new thread in Critta and ask…</td><td>critly</td><td class="good">project action</td></tr>
+      <tr><td>New thread created. / New thread currently.</td><td>krida?</td><td class="bad">thread, no project</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Decisions, with my defaults</h2>
+  <ol>
+    <li><span style="font-weight:600">Send your dictionary to the router.</span> Only while "Fix names" is on, the switch dictation already uses.</li>
+    <li><span style="font-weight:600">Catch the near miss.</span> "New thread in Krita fix…" matches the plain "new thread {text}" today, so ChatGPT never sees it. When a longer phrase stalls on a list name, ask ChatGPT first; if it says none, run the plain match.</li>
+    <li><span style="font-weight:600">Fix names inside the prompt too.</span> "see how Krita's workers…" becomes "krida's". ChatGPT may only swap in dictionary words; any other change drops the pick.</li>
+    <li><span style="font-weight:600">Unsure means nothing.</span> "Korean" sounds like krida and kriyan. If ChatGPT can't tell, the pill says "No action for…".</li>
+  </ol>
+
+  <h2>Done when</h2>
+  <ul>
+    <li>Your history phrasings, 3 runs each, pick the right action and project at least 7 of 8 times. I measure today's score first.</li>
+    <li>"New thread fix the flaky test" still matches instantly, with no ChatGPT call.</li>
+    <li>"Remind me to buy milk" still runs nothing.</li>
+    <li><code>bun run check</code> passes.</li>
+  </ul>
+
+  <h2>Extra cost: near misses only</h2>
+  <p>Phrasings that reach ChatGPT today cost the same, plus five words of input. A near miss adds one router call, 0.8 to 2.5 s each in your log from today.</p>
+
+  <details>
+    <summary>Steps, in order (8)</summary>
+    <ol>
+      <li>An eval script runs your history phrasings 3 times each through likh with the real router and logged steps, and prints the score. Run it now for a baseline.</li>
+      <li><code>router::pick</code> takes the dictionary. The request adds a "Dictionary:" block, as cleanup does, and the role says these words are often misheard as common words or places.</li>
+      <li>A free-text slot passes only if each word was heard or is a dictionary word.</li>
+      <li><code>matcher::find</code> also reports a near miss. A phrase stalled on a list slot counts if it matched more spelled-out words than the winner.</li>
+      <li><code>runner</code> asks the router on a near miss and falls back to the exact match on none.</li>
+      <li><code>likh actions test</code> prints the near miss, so you can see it without speaking.</li>
+      <li>Unit tests for each rule, and misheard cases in the live router test.</li>
+      <li>Rerun the eval. Update the actions README and the AGENTS.md map.</li>
+    </ol>
+  </details>
+
+  <details>
+    <summary>Not doing, and why (3)</summary>
+    <ul>
+      <li>A word list for the transcriber: Codex's <code>/transcribe</code> takes none (<code>docs/codex.md</code>).</li>
+      <li>A cleanup pass on action presses: about 1.5 s on every press, and it can rewrite the trigger words. alpha.10 removed it for that reason.</li>
+      <li>Local sound-alike matching: it could catch Krita, never Cairo or Korean.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Risks (3)</summary>
+    <ul>
+      <li>A real "Korean" gets read as a project. The role says unsure means none, and the eval includes plain sentences that must stay none.</li>
+      <li>Krida and kriyan sound alike, and the pill doesn't show which project ran. Showing it is a separate change.</li>
+      <li>ChatGPT answers vary run to run, so the eval runs each phrase 3 times.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Files I expect to touch (7)</summary>
+    <ul>
+      <li><code>app/src/actions/router.rs</code>, <code>matcher.rs</code>, <code>runner.rs</code>, <code>mod.rs</code>, <code>tests.rs</code></li>
+      <li><code>app/src/actions/starters/README.md</code>, <code>AGENTS.md</code></li>
+    </ul>
+  </details>
+</main>
+</body>
+</html>

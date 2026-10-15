@@ -148,15 +148,19 @@ impl Runner {
             diagnostics::warn("actions", format!("couldn't set up the actions folder: {reason}"));
         }
         let catalog = Catalog::load(&dir);
-        let (index, slots, routed) = match matcher::find(&catalog.actions, &said) {
-            Some(found) => (found.action, found.slots, false),
-            None => match timed_route(&catalog, &said) {
-                Ok(Some(picked)) => (picked.action, picked.slots, true),
-                Ok(None) => {
+        let words: &[String] = if settings.fix_names { &settings.dictionary } else { &[] };
+        let exact = matcher::find(&catalog.actions, &said);
+        let (index, slots, routed) = match exact {
+            Some(found) if found.near_miss.is_none() => (found.action, found.slots, false),
+            exact => match (timed_route(&catalog, &said, words, exact.is_some()), exact) {
+                (Ok(Some(picked)), _) => (picked.action, picked.slots, true),
+                // A near miss ChatGPT couldn't place runs the phrase that did match.
+                (Ok(None) | Err(_), Some(found)) => (found.action, found.slots, false),
+                (Ok(None), None) => {
                     self.pill.show(Show::Note(format!("No action for \u{201c}{said}\u{201d}")));
                     return;
                 }
-                Err(reason) => {
+                (Err(reason), None) => {
                     diagnostics::warn("actions", format!("no phrase matched and ChatGPT couldn't pick: {reason}"));
                     self.pill.show(Show::Note(format!("No action for \u{201c}{said}\u{201d}")));
                     return;
@@ -340,10 +344,19 @@ impl Runner {
     }
 }
 
-/// ChatGPT picking an action, timed.
-fn timed_route(catalog: &Catalog, said: &str) -> Result<Option<router::Picked>, String> {
-    let span = Span::start("action_route").with("offered", router::candidates(&catalog.actions).len());
-    let picked = router::pick(&catalog.actions, said);
+/// ChatGPT picking an action, timed. `near_miss`: a phrase matched, but a
+/// longer one stalled on a list name.
+fn timed_route(
+    catalog: &Catalog,
+    said: &str,
+    words: &[String],
+    near_miss: bool,
+) -> Result<Option<router::Picked>, String> {
+    let span = Span::start("action_route")
+        .with("offered", router::candidates(&catalog.actions).len())
+        .with("dictionary", words.len())
+        .with("near_miss", near_miss);
+    let picked = router::pick(&catalog.actions, said, words);
     span.end(picked.as_ref().map(|_| ()).map_err(Clone::clone));
     picked
 }
