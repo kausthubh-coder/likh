@@ -65,6 +65,53 @@ pub fn clear(path: &Path) -> Result<(), String> {
     }
 }
 
+/// The typing speed "faster than typing" is measured against: a common average for adults.
+pub const TYPING_PER_MINUTE: f32 = 40.0;
+
+/// What the History tab sums up from every kept dictation.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Stats {
+    pub words: usize,
+    /// Today and the six days before it.
+    pub words_this_week: usize,
+    /// Words over the minutes recorded, pauses included; None before anything was recorded.
+    pub per_minute: Option<u32>,
+    /// Days in a row with a dictation, up to today. Today without one yet doesn't break it.
+    pub streak: u32,
+    /// Typing the same words at `TYPING_PER_MINUTE`, less the time spent talking.
+    pub minutes_saved: u32,
+}
+
+/// Sums up `entries`. `day_of` turns a Unix time into a day number on the user's calendar, and
+/// `today` is today's. Action presses are left out: their text can be what ChatGPT wrote.
+/// Words are counted by spaces, so Chinese or Japanese without spaces counts low.
+pub fn stats(entries: &[Entry], today: i32, day_of: impl Fn(u64) -> i32) -> Stats {
+    let dictations: Vec<&Entry> = entries.iter().filter(|entry| entry.action.is_none()).collect();
+    let words_in = |entry: &Entry| entry.text.split_whitespace().count();
+    let words: usize = dictations.iter().map(|entry| words_in(entry)).sum();
+    let words_this_week =
+        dictations.iter().filter(|entry| day_of(entry.at) > today - 7).map(|entry| words_in(entry)).sum();
+    let minutes: f32 = dictations.iter().map(|entry| entry.seconds.max(0.0)).sum::<f32>() / 60.0;
+    let per_minute = (minutes > 0.0).then(|| (words as f32 / minutes).round() as u32);
+    let minutes_saved = (words as f32 / TYPING_PER_MINUTE - minutes).max(0.0).round() as u32;
+
+    let days: std::collections::BTreeSet<i32> = dictations.iter().map(|entry| day_of(entry.at)).collect();
+    let mut day = if days.contains(&today) { today } else { today - 1 };
+    let mut streak = 0;
+    while days.contains(&day) {
+        streak += 1;
+        day -= 1;
+    }
+    Stats { words, words_this_week, per_minute, streak, minutes_saved }
+}
+
+/// The day `at` (Unix seconds) falls on in this computer's time zone, as a day number.
+pub fn local_day(at: u64) -> i32 {
+    use chrono::Datelike;
+    let utc = chrono::DateTime::from_timestamp(i64::try_from(at).unwrap_or(0), 0).unwrap_or_default();
+    utc.with_timezone(&chrono::Local).date_naive().num_days_from_ce()
+}
+
 /// "just now", "4 min ago", "2 h ago", "3 days ago".
 pub fn ago(at: u64, now: u64) -> String {
     match now.saturating_sub(at) {
