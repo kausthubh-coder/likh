@@ -167,6 +167,35 @@ fn history_lists_newest_first_and_copies_on_click() {
 }
 
 #[test]
+fn history_sums_up_every_kept_dictation_not_only_those_shown() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let file = f.dir.path().join("history.jsonl");
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let ten_words = "Send the notes to Priya before the call on Friday.";
+    for _ in 0..HISTORY_SHOWN + 50 {
+        history::append(&file, &Entry { at: now, text: ten_words.into(), seconds: 3.0, action: None, pasted: true })
+            .expect("append");
+    }
+    press(&mut f.panel, "History");
+    assert_eq!(f.panel.history.len(), HISTORY_SHOWN);
+    // 250 dictations of 10 words, 3 s each: 2,500 words in 12.5 minutes, all today.
+    for figure in ["2,500", "words", "in the last 7 days", "200", "words a minute", "1", "day in a row"] {
+        assert!(shows(&f.panel, figure), "no {figure:?} in History");
+    }
+    // Typing 2,500 words at 40 a minute takes 62.5 minutes; talking took 12.5.
+    assert!(shows(&f.panel, "About 50 min faster than typing it at 40 words a minute."));
+}
+
+#[test]
+fn counts_read_in_groups_of_three() {
+    assert_eq!(thousands(0), "0");
+    assert_eq!(thousands(999), "999");
+    assert_eq!(thousands(12_480), "12,480");
+    assert_eq!(thousands(1_000_000), "1,000,000");
+}
+
+#[test]
 fn clearing_history_asks_once_then_clears() {
     let _ui = test_ui::lock();
     let mut f = panel();
@@ -237,7 +266,7 @@ fn brand_board_panel() {
         (3_600 * 3, "Thanks for the notes. Also, remind me to send the deck to Priya tomorrow at nine."),
         (240, "Eggs, oat milk, coffee beans, the good bread, and something for dinner on Sunday."),
     ] {
-        history::append(&file, &Entry { at: now - ago, text: text.into(), seconds: 3.4, action: None, pasted: true })
+        history::append(&file, &Entry { at: now - ago, text: text.into(), seconds: 6.2, action: None, pasted: true })
             .expect("append");
     }
     // A made-up account: the board is public and must never show a real one.

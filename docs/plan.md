@@ -28,7 +28,7 @@ What we're building, in what order, and how we'll know it works. Decisions made 
 | 6 | Silence stop, a mouse button, more spoken commands, pause media, Groq and Windows speech, all in settings | ✅ silence stop proven end to end (`e2e-dictate.ps1 -LetSilenceStop`). A real Groq key, Windows speech with Online speech recognition on, pausing something that plays, and a physical mouse button still need a person |
 | 7 | Dictionary, no voice heard, paste last, mic picker, language, cleanup (fillers, "actually 3", lists), dictations up to 30 minutes in pieces | 0.1.0-alpha.9 |
 | 8 | Custom actions: the action key (and its mouse button), one TOML file per action, phrases with slots and lists, a ChatGPT fallback that picks one, paste/keys/open/wait/ask/run steps, approving scripts, the Actions tab | |
-| later | Command mode, styles, stats | |
+| later | Command mode, styles | |
 
 ## Measured so far
 
@@ -96,6 +96,7 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - Groq as a free engine
 - **Updates (2026-10-12):** from GitHub Releases through the existing Inno installer, Ed25519-signed in `release.yml`, checked at launch and after dictations (never on a timer), applied when the user picks "Restart to update". Velopack would add delta updates but replaces the installer; not worth it at 5 MB. macOS only links to the release.
 - **Done in phase 8 (2026-10-15):** custom actions (`app/src/actions/`). A separate key, because every product that runs free-form commands reliably uses one (Wispr Flow, Dragon's Ctrl, Willow dropped its wake word for a key). Exact phrases first and ChatGPT only on a miss, because routing accuracy falls fast with more choices and exact matching is instant and free. Scripts need a person's approval, because an agent or a shared file can write them (Espanso's threat model).
+- **Done 2026-10-15:** stats in History (words, words a minute, days in a row, time saved against typing at 40 a minute), summed from history.jsonl when the tab opens, so they cost nothing idle and Clear wipes them too.
 - **Next:**
   - offline local model
 - **Later:**
@@ -104,7 +105,6 @@ The two renderers look identical (`.agents/qa/renderer/`). **Implication:** the 
   - per-app styles
   - context from the text around the cursor
   - IDE file tagging
-  - words-per-minute and streak stats
   - whisper mode
 - **Skipped:**
   - accounts
