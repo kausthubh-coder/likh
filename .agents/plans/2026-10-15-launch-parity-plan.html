@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Five features and a Mac app before launch</title>
+<style>
+  :root { color-scheme: light dark; --page: #f7f6f3; --ink: #1d1c1a; --muted: #5a5753; --rule: #dcd8d1; --good: #2f6b3a; --bad: #9a3324; --font: "Geist", ui-sans-serif, system-ui, "Segoe UI", sans-serif; --mono: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --page: oklch(0.155 0.012 275); --ink: oklch(0.945 0.006 275); --muted: oklch(0.74 0.012 275); --rule: oklch(1 0 0 / 0.14); --good: oklch(0.78 0.12 150); --bad: oklch(0.75 0.13 30); } }
+  * { box-sizing: border-box; }
+  html, body { background: var(--page); }
+  body { margin: 0; color: var(--ink); font: 400 17px/1.5 var(--font); }
+  main { max-width: 820px; margin: 0 auto; padding: 48px 24px 64px; }
+  h1 { font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 22px; line-height: 1.3; margin: 44px 0 8px; text-wrap: balance; }
+  h3 { font-size: 17px; margin: 20px 0 6px; }
+  p, li { max-width: 62ch; text-wrap: pretty; }
+  p { margin: 0 0 12px; }
+  .lede { color: var(--muted); }
+  ol, ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  code { font: 500 0.86em var(--mono); }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 15px; line-height: 1.4; }
+  td { font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 500; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bad { color: var(--bad); }
+  .good { color: var(--good); }
+  b { font-weight: 600; }
+  details { margin-top: 14px; border-top: 1px solid var(--rule); }
+  summary { cursor: pointer; font-weight: 500; padding: 12px 0; min-height: 44px; }
+  @media print { :root { color-scheme: light; } details { break-inside: avoid; } table { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Five features and a Mac app before launch</h1>
+  <p class="lede">On Windows, likh matches Wispr Flow's core loop at 2.4 MB idle. The Mac build compiles in CI but has never run on a Mac.</p>
+  <ol>
+    <li><b>Mac testing.</b> I can't reach a Mac. I'll fake a dictation on GitHub's macOS machines; can you run the hands-on checklist on yours?</li>
+    <li><b>Signing.</b> Apple Developer ($99 a year) to notarize the Mac app; Azure Trusted Signing (about $10 a month) to drop Windows' "unknown publisher". Yes or no to each?</li>
+    <li><b>Voice editing key.</b> The action key (my default, it already reads the selection), or Ctrl+Space with text selected, like Aqua?</li>
+    <li><b>ChatGPT Free.</b> Untested, and the pitch rests on it. Can you sign Codex into a Free account once?</li>
+  </ol>
+
+  <h2>Five gaps every rival covers</h2>
+  <div class="wrap"><table>
+    <thead><tr><th scope="col">Feature</th><th scope="col">Who has it</th><th scope="col">likh today</th></tr></thead>
+    <tbody>
+      <tr><td>Edit the selection by voice</td><td>Wispr, Typeless, Aqua, VoiceInk</td><td class="bad">"Make this" action, Windows only</td></tr>
+      <tr><td>Tone per app</td><td>Wispr, Typeless, Superwhisper, Aqua, VoiceInk</td><td class="bad">one prompt for every app</td></tr>
+      <tr><td>Stats: words, WPM, streak</td><td>Wispr, Superwhisper, VoiceInk</td><td class="bad">a count since launch</td></tr>
+      <tr><td>Snippets</td><td>Wispr, Superwhisper, Aqua, Willow</td><td class="bad">only by writing an action file</td></tr>
+      <tr><td>Translate while dictating</td><td>Wispr, Typeless, Aqua</td><td class="bad">none</td></tr>
+    </tbody>
+  </table></div>
+  <p class="lede">Later: an offline model and text near the cursor as context. Skipped: whisper mode, meeting notes, mobile, teams.</p>
+
+  <h2>Where likh already wins</h2>
+  <ul>
+    <li><b>Idle:</b> 2.4 MB, 0 ms CPU. Reviewers put Wispr on Windows near 800 MB.</li>
+    <li><b>Price:</b> free. Rivals charge $8 to $15 a month past 1,000 to 2,000 words.</li>
+    <li><b>Custom actions</b> with steps and scripts. No rival has them.</li>
+  </ul>
+
+  <h2>Mac: compiled, never run</h2>
+  <p>Hold to talk, paste, the mic and the tray should work. Missing: the pill, a <code>.app</code> with permission prompts, most hotkeys, start at login, a DMG and signing.</p>
+  <p>Ctrl+Space also clashes with macOS's input-source switch.</p>
+
+  <h2>Order of work</h2>
+  <ol>
+    <li><b>Stats</b> in History; the video needs the numbers. Starting now.</li>
+    <li><b>Voice editing and translate</b>, on both systems.</li>
+    <li><b>Styles per app</b>: Email, Chat, Notes and Code, picked from the window in front.</li>
+    <li><b>Snippets</b> in the Dictionary tab.</li>
+    <li><b>Mac:</b> bundle, permissions step, pill, hotkeys, login item, DMG, a CI dictation.</li>
+    <li><b>Release:</b> <code>v0.1.0</code>, a Mac download, and actions on the site.</li>
+    <li><b>Launch kit:</b> Product Hunt listing, then video sketches for your review.</li>
+  </ol>
+  <p>One PR per step, each checked in the running app. The release waits for your Mac checklist and your go.</p>
+
+  <details>
+    <summary>Full matrix: 15 features across 7 products</summary>
+    <div class="wrap"><table>
+      <thead><tr><th scope="col">Feature</th><th scope="col">likh</th><th scope="col">Wispr Flow</th><th scope="col">Typeless</th><th scope="col">Aqua</th><th scope="col">Superwhisper</th><th scope="col">VoiceInk</th><th scope="col">Win+H</th></tr></thead>
+      <tbody>
+        <tr><td>Platforms</td><td>Win; Mac untested</td><td>Mac, Win, iOS, Android</td><td>Mac, Win, Linux, iOS, Android</td><td>Mac, Win, iOS, Android</td><td>Mac, Win, iOS</td><td>Mac, iOS</td><td>Win</td></tr>
+        <tr><td>Paid plan</td><td>free</td><td>$12 to $15 a month</td><td>$12 to $30 a month</td><td>$8 to $10 a month</td><td>$8.49 a month or $250 once</td><td>$25, paid once</td><td>free</td></tr>
+        <tr><td>Free tier</td><td>unlimited (your ChatGPT plan)</td><td>2,000 words a week</td><td>limited words</td><td>1,000 words, ever</td><td>local models only</td><td>none</td><td>unlimited</td></tr>
+        <tr><td>Hold and hands-free</td><td>yes, tap toggles</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td><td>toggle only</td></tr>
+        <tr><td>Mouse button</td><td>yes</td><td>yes</td><td>unverified</td><td>unverified</td><td>yes</td><td>unverified</td><td>no</td></tr>
+        <tr><td>Silence stop</td><td>yes (voice detector)</td><td>unverified</td><td>unverified</td><td>unverified</td><td>no</td><td>yes</td><td>yes</td></tr>
+        <tr><td>Fillers and corrections</td><td>yes, off by default</td><td>yes, 4 levels</td><td>yes</td><td>yes</td><td>Pro modes</td><td>own API key</td><td>Copilot+ only</td></tr>
+        <tr><td>Tone per app</td><td class="bad">no</td><td>4 categories</td><td>yes</td><td>instructions</td><td>modes</td><td>by app or URL</td><td>no</td></tr>
+        <tr><td>Edit selection by voice</td><td class="bad">action only</td><td>Command Mode</td><td>yes</td><td>Edit Mode, same key</td><td>partial</td><td>yes</td><td>partial</td></tr>
+        <tr><td>Context from screen</td><td class="bad">actions only</td><td>text near cursor</td><td>app, text</td><td>Deep Context</td><td>selection, app</td><td>selection, OCR</td><td>no</td></tr>
+        <tr><td>Dictionary</td><td>100 words, fixed after</td><td>auto-add</td><td>yes</td><td>up to 800 terms</td><td>yes, replacements</td><td>auto-learn</td><td>no</td></tr>
+        <tr><td>Snippets</td><td class="bad">via actions</td><td>yes</td><td>unverified</td><td>yes</td><td>yes</td><td>replacements</td><td>no</td></tr>
+        <tr><td>Stats</td><td class="bad">session count</td><td>WPM, streak, apps</td><td>WPM, time saved</td><td>unverified</td><td>words, WPM</td><td>time saved</td><td>no</td></tr>
+        <tr><td>Offline</td><td class="bad">no</td><td>no</td><td>no</td><td>no</td><td>yes</td><td>yes</td><td>partial</td></tr>
+        <tr><td>Longest dictation</td><td class="good">capped at 30 minutes</td><td>capped at 20 minutes</td><td>unverified</td><td>unverified</td><td>unverified</td><td>unverified</td><td>unverified</td></tr>
+      </tbody>
+    </table></div>
+  </details>
+
+  <details>
+    <summary>What the Mac build is missing, with file and line</summary>
+    <ul>
+      <li>Pill: no window opens on a Mac (<code>pill/mod.rs:233</code>, "the overlay comes later").</li>
+      <li>Shortcut change, paste last, action key: stubbed with errors (<code>hotkey/mod.rs:295, 308, 321, 346</code>). Esc is a no-op (<code>:378</code>).</li>
+      <li>Front window is always None (<code>hotkey/mod.rs:71</code>), so styles and actions' <code>{app}</code> can't work.</li>
+      <li>No <code>Info.plist</code>, so there's no <code>NSMicrophoneUsageDescription</code>, and nothing asks for Accessibility or Input Monitoring.</li>
+      <li>The mic privacy check is stubbed (<code>microphone/mod.rs:376</code>). Settings links use Windows' <code>ms-settings:</code> (<code>onboarding/mod.rs:37</code>).</li>
+      <li>Start at login errors (<code>autostart/mod.rs:47</code>), yet the panel still says "Start with Windows".</li>
+      <li>Updates only link to the release page (<code>update/mod.rs:40</code>). <code>release.yml</code> builds Windows only.</li>
+      <li>Media pause: macOS has no public API for it. The toggle stays hidden.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Launch notes from Wispr Flow's and Typeless's Product Hunt days</summary>
+    <ul>
+      <li>Wispr Flow's Mac launch reached #1 of the day and the week with 2,701 upvotes. Its tagline: "Speak naturally, write perfectly &amp; 3x faster in every app". Its Windows launch was also #1 of the day, with 784.</li>
+      <li>Typeless was #1 of the day with "AI voice dictation that's actually intelligent". Its comments asked about accuracy for non-native speakers.</li>
+      <li>Winners lead with a speed multiple, "works in every app", automatic cleanup, and privacy. Reviews of both ask for low RAM on Windows, offline use and less setup, which is likh's opening.</li>
+      <li>Clash: Wispr's Windows paste last is also Shift+Alt+Z. People switching from Wispr may have both installed.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Sources, read 2026-10-15</summary>
+    <ul>
+      <li>Wispr Flow: <a href="https://wisprflow.ai/pricing">pricing</a>, <a href="https://wisprflow.ai/whats-new">what's new</a>, <a href="https://docs.wisprflow.ai/articles/4816967992-how-to-use-command-mode">Command Mode</a>, <a href="https://docs.wisprflow.ai/articles/4678293671-feature-context-awareness">context</a></li>
+      <li>Typeless: <a href="https://www.typeless.com/pricing">pricing</a>, <a href="https://www.typeless.com/help/release-notes/macos/translation-mode">translation</a></li>
+      <li>Aqua: <a href="https://aquavoice.com/pricing">pricing</a>, <a href="https://aquavoice.com/guide/edit-mode">Edit Mode</a></li>
+      <li>Superwhisper: <a href="https://superwhisper.com/docs/billing/plans.md">plans</a>; VoiceInk: <a href="https://tryvoiceink.com/docs">docs</a>; Willow: <a href="https://willowvoice.com/pricing">pricing</a></li>
+      <li>Product Hunt: <a href="https://www.producthunt.com/products/wisprflow">Wispr Flow</a>, <a href="https://www.producthunt.com/products/typeless-2">Typeless</a></li>
+      <li>Some review claims come from competitors' blogs (getvoibe); the 800 MB figure is from reviews, not measured by us.</li>
+    </ul>
+  </details>
+</main>
+</body>
+</html>
