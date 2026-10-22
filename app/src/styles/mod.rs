@@ -19,9 +19,20 @@ pub enum Style {
     Code,
 }
 
-/// Programs, by file name, lowercase.
-const EMAIL_APPS: [&str; 5] = ["outlook.exe", "olk.exe", "thunderbird.exe", "hxoutlook.exe", "mailspring.exe"];
-const CHAT_APPS: [&str; 9] = [
+/// Programs, lowercase: Windows' file names, then macOS' bundle ids.
+const EMAIL_APPS: [&str; 10] = [
+    "outlook.exe",
+    "olk.exe",
+    "thunderbird.exe",
+    "hxoutlook.exe",
+    "mailspring.exe",
+    "com.apple.mail",
+    "com.microsoft.outlook",
+    "org.mozilla.thunderbird",
+    "com.readdle.smartemail-mac",
+    "com.superhuman.electron",
+];
+const CHAT_APPS: [&str; 18] = [
     "slack.exe",
     "discord.exe",
     "teams.exe",
@@ -31,10 +42,31 @@ const CHAT_APPS: [&str; 9] = [
     "signal.exe",
     "messenger.exe",
     "zoom.exe",
+    "com.tinyspeck.slackmacgap",
+    "com.hnc.discord",
+    "com.microsoft.teams2",
+    "net.whatsapp.whatsapp",
+    "ru.keepcoder.telegram",
+    "org.whispersystems.signal-desktop",
+    "com.apple.mobilesms",
+    "com.facebook.archon",
+    "us.zoom.xos",
 ];
-const NOTES_APPS: [&str; 6] =
-    ["notion.exe", "obsidian.exe", "onenote.exe", "evernote.exe", "winword.exe", "notepad.exe"];
-const CODE_APPS: [&str; 12] = [
+const NOTES_APPS: [&str; 12] = [
+    "notion.exe",
+    "obsidian.exe",
+    "onenote.exe",
+    "evernote.exe",
+    "winword.exe",
+    "notepad.exe",
+    "notion.id",
+    "md.obsidian",
+    "com.microsoft.onenote.mac",
+    "com.microsoft.word",
+    "com.apple.notes",
+    "com.apple.textedit",
+];
+const CODE_APPS: [&str; 22] = [
     "code.exe",
     "code - insiders.exe",
     "cursor.exe",
@@ -47,6 +79,16 @@ const CODE_APPS: [&str; 12] = [
     "rider64.exe",
     "sublime_text.exe",
     "t3 code.exe",
+    "com.microsoft.vscode",
+    "com.todesktop.230313mzl4w4u92",
+    "com.exafunction.windsurf",
+    "dev.zed.zed",
+    "com.sublimetext.4",
+    "com.apple.terminal",
+    "com.googlecode.iterm2",
+    "com.mitchellh.ghostty",
+    "dev.warp.warp-stable",
+    "com.apple.dt.xcode",
 ];
 /// Words a browser tab's title carries, lowercase, for the web apps people write in.
 const EMAIL_TITLES: [&str; 5] = ["gmail", "outlook", "proton mail", "fastmail", "superhuman"];
@@ -69,11 +111,13 @@ impl Style {
         let app = window.app.to_ascii_lowercase();
         let title = window.title.to_lowercase();
         let titled = |words: &[&str]| words.iter().any(|word| title.contains(word));
+        // JetBrains IDEs on macOS share one prefix.
+        let jetbrains = app.starts_with("com.jetbrains.");
         if EMAIL_APPS.contains(&app.as_str()) {
             Some(Style::Email)
         } else if CHAT_APPS.contains(&app.as_str()) {
             Some(Style::Chat)
-        } else if CODE_APPS.contains(&app.as_str()) || crate::editing::is_terminal(&app) {
+        } else if CODE_APPS.contains(&app.as_str()) || jetbrains || crate::editing::is_terminal(&app) {
             Some(Style::Code)
         } else if NOTES_APPS.contains(&app.as_str()) {
             Some(Style::Notes)

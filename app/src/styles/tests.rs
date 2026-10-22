@@ -38,3 +38,17 @@ fn any_other_app_gets_clean_up_as_it_is() {
     assert_eq!(Style::of(&window("chrome.exe", "Hacker News - Google Chrome")), None);
     assert_eq!(Style::of(&window("explorer.exe", "Downloads")), None);
 }
+
+#[test]
+fn mac_apps_get_their_style_by_bundle_id() {
+    for (app, name, style) in [
+        ("com.apple.mail", "Mail", Style::Email),
+        ("com.tinyspeck.slackmacgap", "Slack", Style::Chat),
+        ("com.microsoft.VSCode", "Code", Style::Code),
+        ("com.jetbrains.intellij", "IntelliJ IDEA", Style::Code),
+        ("com.apple.Terminal", "Terminal", Style::Code),
+        ("com.apple.Notes", "Notes", Style::Notes),
+    ] {
+        assert_eq!(Style::of(&window(app, name)), Some(style), "{app}");
+    }
+}

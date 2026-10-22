@@ -335,7 +335,7 @@ fn brand_board_onboarding() {
         }),
     ];
     for (name, mut app) in screens {
-        hotkey::pretend_taken(name.ends_with("-taken"), false);
+        let _taken = hotkey::pretend_taken(name.ends_with("-taken"), false);
         app.arrival = Spring::new(spring::DEFAULT, 1.0);
         app.progress = Spring::new(spring::DEFAULT, app.step.index() as f32);
         let settings = iced_test::core::Settings {
@@ -351,7 +351,6 @@ fn brand_board_onboarding() {
             let _ = snapshot.matches_image(&path);
         }
     }
-    hotkey::pretend_taken(false, false);
 }
 
 #[test]
@@ -451,14 +450,18 @@ fn a_shortcut_another_app_holds_leads_with_picking_new_keys() {
     let _ui = test_ui::lock();
     let (mut app, _) = in_app();
     to_the_shortcut_step(&mut app);
-    hotkey::pretend_taken(true, false);
-    let taken = shows(&app, "Another app has these keys")
-        && shows(&app, "Ctrl + Space belongs to another app, so likh can't hear it. Pick new keys.");
+    let _taken = hotkey::pretend_taken(true, false);
+    if cfg!(target_os = "macos") {
+        // macOS: the fix is the Accessibility permission, not other keys.
+        assert!(shows(&app, "Let likh hear its keys"));
+        assert!(shows(&app, "Turn likh on in System Settings, Privacy & Security, Accessibility."));
+        assert!(shows(&app, "Open settings") && shows(&app, "Skip"));
+        return;
+    }
+    assert!(shows(&app, "Another app has these keys"));
+    assert!(shows(&app, "Ctrl + Space belongs to another app, so likh can't hear it. Pick new keys."));
     press(&mut app, "Change shortcut");
-    let capturing = shows(&app, "Press your shortcut");
-    hotkey::pretend_taken(false, false);
-    assert!(taken, "the step says another app has the keys");
-    assert!(capturing, "Change shortcut listens for new keys right there");
+    assert!(shows(&app, "Press your shortcut"), "Change shortcut listens for new keys right there");
 }
 
 #[test]

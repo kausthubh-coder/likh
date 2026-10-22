@@ -325,9 +325,9 @@ fn brand_board_panel() {
     snap(&out, "dictation-microphone", &f.panel);
     f.panel.testing = false;
     // Another app has the shortcut: the line under the caps says so, in red.
-    hotkey::pretend_taken(true, false);
+    let taken = hotkey::pretend_taken(true, false);
     snap(&out, "dictation-taken", &f.panel);
-    hotkey::pretend_taken(false, false);
+    drop(taken);
     // Actions: the list, Review on the unapproved script, and the form.
     seed_actions(&f);
     open_command_key(&mut f.panel);
@@ -394,15 +394,18 @@ fn picking_an_engine_saves_it_and_both_keep_their_setup() {
 fn a_shortcut_another_app_holds_says_so_on_dictation_and_paste_last_on_history() {
     let _ui = test_ui::lock();
     let mut f = panel();
-    hotkey::pretend_taken(true, true);
-    let dictation = shows(&f.panel, "Another app has these keys.");
-    let tray = hold_to_talk(Binding::default());
+    let taken = hotkey::pretend_taken(true, true);
+    // macOS has no taken keys: there, no key works without the Accessibility permission.
+    let (line, tray_line) = if cfg!(target_os = "macos") {
+        ("likh needs Accessibility access.", "Allow Accessibility for likh to use Ctrl + Space")
+    } else {
+        ("Another app has these keys.", "Another app has Ctrl + Space. Open likh to change it.")
+    };
+    assert!(shows(&f.panel, line), "Dictation says why the shortcut does nothing");
+    assert_eq!(hold_to_talk(Binding::default()), tray_line);
     press(&mut f.panel, "History");
-    let history = shows(&f.panel, "Another app has these keys. Change them.");
-    hotkey::pretend_taken(false, false);
-    assert!(dictation, "Dictation says another app has the shortcut");
-    assert!(history, "History says another app has paste last");
-    assert_eq!(tray, "Another app has Ctrl + Space. Open likh to change it.");
+    assert!(shows(&f.panel, "Another app has these keys. Change them."), "History says another app has paste last");
+    drop(taken);
     assert_eq!(hold_to_talk(Binding::default()), "Hold Ctrl + Space to talk");
 }
 

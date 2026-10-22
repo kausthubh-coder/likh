@@ -200,7 +200,7 @@ fn a_mic_windows_blocks_offers_its_privacy_page() {
         d.handle(Input::MicFailed { reason: "Access is denied.".into(), blocked: true }, after(t0, 50), HOLD_OR_TAP),
         vec![
             Effect::Discard,
-            Effect::Pill(Show::Problem { text: "Windows is blocking likh from the mic.".into(), fix: Fix::MicAccess }),
+            Effect::Pill(Show::Problem { text: crate::microphone::BLOCKED.into(), fix: Fix::MicAccess }),
             Effect::Sound(Cue::Error)
         ]
     );

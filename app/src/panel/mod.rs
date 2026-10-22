@@ -634,7 +634,7 @@ impl Panel {
             }
             Message::StartWithWindows(on) => match crate::autostart::set(on) {
                 Ok(()) => self.change(|s| s.start_with_windows = on),
-                Err(reason) => self.notice = Some((format!("Windows didn't allow that: {reason}"), Tone::Danger)),
+                Err(reason) => self.notice = Some((format!("That didn't work: {reason}"), Tone::Danger)),
             },
             // Groq without a key would fail the next dictation: it switches once a key is saved.
             Message::Engine(Engine::Groq) if !self.groq.saved => {
@@ -812,7 +812,7 @@ impl Panel {
             _ => self.default_mic.as_ref(),
         };
         let what = if !connected {
-            let fallback = self.default_mic.as_ref().map_or("Windows' default", |mic| mic.name.as_str());
+            let fallback = self.default_mic.as_ref().map_or("the default mic", |mic| mic.name.as_str());
             Some(format!("Not connected. Using {fallback} until it's back."))
         } else if using.is_some_and(|mic| mic.bluetooth) {
             Some("Bluetooth headsets drop to call quality while you talk.".to_string())
@@ -1078,8 +1078,14 @@ impl Panel {
                 link(p, "Change", Message::ChangeShortcut),
             ),
             // Holding them would do nothing, so the fix is the first thing on the tab.
+            // macOS: no keys work until likh has Accessibility, and the fix is there, not new keys.
+            None if hotkey::shortcut_taken() && cfg!(target_os = "macos") => (
+                hotkey::why_unheard().into(),
+                Tone::Danger,
+                link(p, "Open settings", Message::Open(crate::shared::ACCESSIBILITY_SETTINGS)),
+            ),
             None if hotkey::shortcut_taken() => {
-                ("Another app has these keys.".into(), Tone::Danger, link(p, "Change", Message::ChangeShortcut))
+                (hotkey::why_unheard().into(), Tone::Danger, link(p, "Change", Message::ChangeShortcut))
             }
             None => ("Hold to talk, in any app.".into(), Tone::Neutral, link(p, "Change", Message::ChangeShortcut)),
         };
@@ -1620,7 +1626,7 @@ impl Panel {
             group(
                 p,
                 vec![
-                    Line::plain(named(p, "Start with Windows", None), switch(chosen.start_with_windows))
+                    Line::plain(named(p, crate::autostart::NAME_FOR_PEOPLE, None), switch(chosen.start_with_windows))
                         .press(Message::StartWithWindows(!chosen.start_with_windows)),
                     Line::plain(named(p, "Check for updates automatically", Some(what)), switch(chosen.auto_update))
                         .press(Message::AutoUpdate(!chosen.auto_update)),
@@ -2027,7 +2033,9 @@ fn fade_edge<'a>(bg: Color, height: f32, top: bool) -> Element<'a, Message> {
 
 /// The shortcut as people say it, for the tray menu and tooltip, or that another app has it.
 pub fn hold_to_talk(binding: Binding) -> String {
-    if hotkey::shortcut_taken() {
+    if hotkey::shortcut_taken() && cfg!(target_os = "macos") {
+        format!("Allow Accessibility for likh to use {binding}")
+    } else if hotkey::shortcut_taken() {
         format!("Another app has {binding}. Open likh to change it.")
     } else {
         format!("Hold {binding} to talk")

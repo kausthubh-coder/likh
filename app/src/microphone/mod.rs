@@ -357,7 +357,11 @@ pub fn short_name(device: &str) -> String {
 }
 
 /// What the pill says when `blocked_by_windows`.
-pub const BLOCKED: &str = "Windows is blocking likh from the mic.";
+pub const BLOCKED: &str = if cfg!(target_os = "macos") {
+    "macOS is blocking likh from the mic."
+} else {
+    "Windows is blocking likh from the mic."
+};
 
 /// Windows' privacy settings keep desktop apps off the mic: for everyone, for
 /// this user, or for apps installed outside the Store (likh is one).

@@ -151,7 +151,7 @@ impl Fix {
     pub fn url(self) -> Option<&'static str> {
         match self {
             Fix::PickMic | Fix::Review | Fix::Details | Fix::Retry | Fix::Shortcut => None,
-            Fix::MicAccess => Some("ms-settings:privacy-microphone"),
+            Fix::MicAccess => Some(crate::shared::MIC_SETTINGS),
         }
     }
 }

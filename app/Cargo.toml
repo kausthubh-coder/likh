@@ -55,6 +55,11 @@ winreg = "0.56"
 [target.'cfg(not(windows))'.dependencies]
 handy-keys = "0.3"
 
+# macOS: the app in front (NSWorkspace), for styles, commands' {app} and "scratch that".
+# Already in the tree through winit, so nothing new is built.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace", "NSRunningApplication"] }
+
 # Linux isn't a likh platform, but cloud agent sessions run on it: without a
 # windowing backend iced's software renderer (softbuffer) doesn't compile, and
 # then neither do check, clippy or the tests. Windows and macOS builds are unchanged.

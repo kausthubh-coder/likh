@@ -34,7 +34,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[cfg(test)]
 mod tests;
 
-const MIC_SETTINGS_URL: &str = "ms-settings:privacy-microphone";
 pub const WINDOW: Size = Size::new(560.0, 640.0);
 
 /// When the welcome text starts to arrive, in seconds after the window opens:
@@ -229,6 +228,8 @@ pub enum Message {
     ReplaceGroqKey,
     GetGroqKey,
     OpenMicSettings,
+    /// macOS: the Accessibility list, so likh can hear its keys.
+    OpenKeySettings,
     Finish,
     Frame(Instant),
     Mic(microphone::Event),
@@ -353,7 +354,8 @@ impl Onboarding {
                 return operation::focus(GROQ_KEY);
             }
             Message::GetGroqKey => crate::shared::open_url(groq::KEYS_URL),
-            Message::OpenMicSettings => crate::shared::open_url(MIC_SETTINGS_URL),
+            Message::OpenMicSettings => crate::shared::open_url(crate::shared::MIC_SETTINGS),
+            Message::OpenKeySettings => crate::shared::open_url(crate::shared::ACCESSIBILITY_SETTINGS),
             // Closing the window ends `likh onboarding`; inside the app, likh stays in the tray.
             Message::Finish => {
                 self.finished = true;
@@ -414,6 +416,17 @@ impl Onboarding {
             }
             Message::KeepShortcut => return self.stop_capturing(None),
             Message::Watch => {
+                // macOS: the Accessibility permission just came on, so the keys can start now.
+                #[cfg(target_os = "macos")]
+                if hotkey::shortcut_taken()
+                    && hotkey::accessibility_granted()
+                    && let Some(settings) = &self.settings
+                {
+                    let triggers = hotkey::Triggers::from(&settings.read().map(|s| s.clone()).unwrap_or_default());
+                    if let Err(reason) = hotkey::start_again(triggers) {
+                        crate::diagnostics::warn("hotkey", format!("still can't hear the keys: {reason}"));
+                    }
+                }
                 let phase =
                     self.dictation.as_ref().map(|d| d.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).phase);
                 self.practice.listening = matches!(phase, Some(Phase::Recording | Phase::HandsFree));
@@ -587,10 +600,10 @@ impl Onboarding {
             Space::new().height(space::S4),
         ]
         .spacing(space::S3);
-        let tray = if cfg!(target_os = "windows") {
-            "likh waits in your tray and starts with Windows."
+        let tray = if cfg!(target_os = "macos") {
+            "likh waits in your menu bar and opens at login."
         } else {
-            "likh waits in your menu bar."
+            "likh waits in your tray and starts with Windows."
         };
         Page {
             art: art.into(),
@@ -878,7 +891,7 @@ fn microphone_step<'a>(p: &Palette, mic: &Mic) -> Page<'a> {
         (Some(reason), _) => Page {
             art: level_bars(p.text_subtle, &[0.0; MIC_HISTORY]),
             title: "Can't hear a microphone",
-            body: "Plug one in, or allow microphone access in Windows Settings.".into(),
+            body: format!("Plug one in, or allow microphone access in {}.", crate::shared::SYSTEM_SETTINGS),
             note: Some((reason.trim_end_matches('.').to_string(), p.danger)),
             actions: vec![
                 Action::Secondary("Open settings", Message::OpenMicSettings),
@@ -970,6 +983,19 @@ fn shortcut<'a>(p: &Palette, binding: Binding, practice: &'a Practice, in_app: b
         };
     }
     // Holding the keys would do nothing at all, so the step leads with the fix.
+    // On macOS that's the Accessibility permission; likh listens again once it's on.
+    if hotkey::shortcut_taken() && cfg!(target_os = "macos") {
+        return Page {
+            art: art.into(),
+            title: "Let likh hear its keys",
+            body: "Turn likh on in System Settings, Privacy & Security, Accessibility.".into(),
+            note: Some(("likh starts listening the moment it's on.".to_string(), p.text_subtle)),
+            actions: vec![
+                Action::Secondary("Skip", Message::Next),
+                Action::Primary("Open settings", Message::OpenKeySettings),
+            ],
+        };
+    }
     if hotkey::shortcut_taken() {
         let note = practice.notice.clone().map_or_else(
             || ("Pick keys no other app uses, like Ctrl + Alt + Space.".to_string(), p.text_subtle),
