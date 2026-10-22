@@ -224,6 +224,8 @@ pub struct Panel {
     /// What's typed in the dictionary's field, not yet added.
     new_word: String,
     history: Vec<Entry>,
+    /// Summed from the whole history file, not only the entries shown.
+    stats: history::Stats,
     /// "Clear" was pressed once; the next press clears.
     confirm_clear: bool,
     copied: Option<usize>,
@@ -346,6 +348,7 @@ impl Panel {
             notice: None,
             new_word: String::new(),
             history: Vec::new(),
+            stats: history::Stats::default(),
             confirm_clear: false,
             copied: None,
             spin: 0.0,
@@ -394,8 +397,10 @@ impl Panel {
     }
 
     fn load_history(&mut self) {
-        self.history =
-            self.files.history.as_deref().map(|file| history::recent(file, HISTORY_SHOWN)).unwrap_or_default();
+        let all = self.files.history.as_deref().map(|file| history::recent(file, usize::MAX)).unwrap_or_default();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        self.stats = history::stats(&all, history::local_day(now), history::local_day);
+        self.history = all.into_iter().take(HISTORY_SHOWN).collect();
         self.copied = None;
         self.confirm_clear = false;
     }
@@ -1403,7 +1408,40 @@ impl Panel {
             .padding(Padding { right: space::S4, ..Padding::ZERO })
             .align_y(Alignment::Center);
         let rows = self.history.iter().enumerate().map(|(i, entry)| self.entry(p, i, entry, now)).collect();
-        column![keep, column![top, group(p, rows)].spacing(space::S2)].spacing(space::S4).into()
+        column![keep, self.stats_figures(p), column![top, group(p, rows)].spacing(space::S2)].spacing(space::S4).into()
+    }
+
+    /// Words, speed and streak across everything kept, and the time it saved over typing.
+    fn stats_figures(&self, p: &Palette) -> Element<'_, Message> {
+        let stats = self.stats;
+        let (ink, subtle) = (p.text, p.text_subtle);
+        let figure = |value: String, what: &'static str| -> Element<'_, Message> {
+            column![
+                text(value).size(size::TITLE).font(theme::UI_MEDIUM).color(ink),
+                text(what).size(size::CAPTION).color(subtle),
+            ]
+            .spacing(space::S1)
+            .width(Length::Fill)
+            .into()
+        };
+        let days = if stats.streak == 1 { "day in a row" } else { "days in a row" };
+        let figures = row![
+            figure(thousands(stats.words), "words"),
+            figure(thousands(stats.words_this_week), "in the last 7 days"),
+            figure(stats.per_minute.map_or("\u{2014}".into(), |n| n.to_string()), "words a minute"),
+            figure(stats.streak.to_string(), days),
+        ]
+        .spacing(space::S3);
+        let mut block = column![group(p, vec![Line::custom(figures.into())])].spacing(space::S2);
+        if stats.minutes_saved > 0 {
+            let saved = format!(
+                "About {} faster than typing it at {:.0} words a minute.",
+                running_for(u64::from(stats.minutes_saved) * 60),
+                history::TYPING_PER_MINUTE
+            );
+            block = block.push(hint(p, &saved));
+        }
+        block.into()
     }
 
     fn entry<'a>(&self, p: &Palette, index: usize, entry: &'a Entry, now: u64) -> Line<'a> {
@@ -1641,6 +1679,19 @@ fn duration(ms: f64) -> String {
 /// `history::ago` for a time in milliseconds.
 fn ago_ms(at_ms: u64, now: u64) -> String {
     history::ago(at_ms / 1000, now)
+}
+
+/// "12,480": digits in groups of three, the way people read counts.
+fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut grouped = String::new();
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+    grouped
 }
 
 /// "45 s", "12 min", "3 h 5 min".

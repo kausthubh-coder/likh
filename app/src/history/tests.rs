@@ -66,3 +66,58 @@ fn paste_last_after_a_restart_skips_actions_that_pasted_nothing() {
     assert!(text.lines().next().is_some_and(|first| !first.contains("pasted") && !first.contains("action")));
     assert_eq!(recent(&file, 2)[0].action.as_deref(), Some("New T3 thread"));
 }
+
+const DAY: u64 = 86_400;
+
+/// Day numbers on UTC's calendar, so the tests don't depend on this computer's time zone.
+fn utc_day(at: u64) -> i32 {
+    i32::try_from(at / DAY).expect("small day")
+}
+
+fn said(day: u64, words: &str, seconds: f32) -> Entry {
+    Entry { at: day * DAY + 3600, text: words.into(), seconds, action: None, pasted: true }
+}
+
+#[test]
+fn stats_add_up_words_speed_streak_and_time_saved() {
+    let today = 100;
+    let entries = vec![
+        // Three days in a row ending today, then a gap, then an older day.
+        said(100, "one two three four five six seven eight nine ten", 3.0),
+        said(99, "one two three four five six seven eight nine ten", 3.0),
+        said(98, "one two three four five six seven eight nine ten", 3.0),
+        said(90, "an older one two three four five six seven eight", 3.0),
+        // An action's text is what ChatGPT wrote, not what was said: it counts nowhere.
+        Entry { action: Some("Make this".into()), ..said(100, "a long rewrite that nobody dictated", 2.0) },
+    ];
+    let stats = stats(&entries, today, utc_day);
+    assert_eq!(stats.words, 40);
+    // Day 90 is ten days back, outside the last seven.
+    assert_eq!(stats.words_this_week, 30);
+    // 40 words in 12 seconds.
+    assert_eq!(stats.per_minute, Some(200));
+    assert_eq!(stats.streak, 3);
+    // 40 words take a minute to type at 40 a minute; talking took 12 s of it.
+    assert_eq!(stats.minutes_saved, 1);
+}
+
+#[test]
+fn a_streak_survives_today_until_today_ends() {
+    let entries = vec![said(99, "yesterday", 1.0), said(98, "the day before", 1.0)];
+    assert_eq!(stats(&entries, 100, utc_day).streak, 2);
+    // Two days without one breaks it.
+    assert_eq!(stats(&entries, 101, utc_day).streak, 0);
+}
+
+#[test]
+fn nothing_kept_means_no_speed_and_no_streak() {
+    let stats = stats(&[], 100, utc_day);
+    assert_eq!(stats, Stats { words: 0, words_this_week: 0, per_minute: None, streak: 0, minutes_saved: 0 });
+}
+
+#[test]
+fn local_days_follow_the_calendar() {
+    let now = 1_760_000_000;
+    assert_eq!(local_day(now + DAY) - local_day(now), 1);
+    assert_eq!(local_day(now + 7 * DAY) - local_day(now), 7);
+}

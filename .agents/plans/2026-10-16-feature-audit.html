@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>likh feature audit: talking is easy, the rest hides</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfaf8; --text: #1c1b1a; --muted: #57534e; --rule: #e2ded8; --cap: #f1eee9; --cap-edge: #cfc9c0;
+    --accent: #a8431c; --good: #2f6b3a; --mixed: #8a5a00; --bad: #a3321f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151417; --text: #ecebee; --muted: #b0adb5; --rule: #34323a; --cap: #222127; --cap-edge: #45434c;
+      --accent: #f2a07b; --good: #86cf96; --mixed: #e6bb62; --bad: #f29a86;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); color: var(--text); }
+  body { margin: 0; font: 400 1.0625rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 52rem; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+  h1 { font-size: 2.1rem; line-height: 1.15; letter-spacing: -0.01em; margin: 0 0 0.75rem; text-wrap: balance; }
+  h2 { font-size: 1.3rem; line-height: 1.3; margin: 3rem 0 0.6rem; text-wrap: balance; }
+  h3 { font-size: 1.0625rem; margin: 1.5rem 0 0.4rem; }
+  p, li { max-width: 62ch; text-wrap: pretty; }
+  p { margin: 0 0 0.75rem; }
+  .lede { margin-bottom: 0.5rem; }
+  .lede + .lede { color: var(--muted); }
+  ol, ul { padding-left: 1.4rem; }
+  li { margin-bottom: 0.4rem; }
+  .asks li::marker { color: var(--accent); font-weight: 600; }
+  code { font: 0.88em ui-monospace, "Cascadia Code", Consolas, monospace; }
+  kbd {
+    font: 500 0.88em ui-monospace, "Cascadia Code", Consolas, monospace; white-space: nowrap;
+    padding: 0.05em 0.4em; border: 1px solid var(--cap-edge); border-bottom-width: 2px;
+    border-radius: 5px; background: var(--cap);
+  }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.95rem; line-height: 1.4; }
+  th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.9rem 0.55rem 0; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 600; }
+  td.n, th.n { font-variant-numeric: tabular-nums; text-align: right; width: 1.5rem; padding-right: 1.25rem; }
+  td.n { font-weight: 600; color: var(--accent); }
+  td.when { white-space: nowrap; color: var(--muted); }
+  .problems td:nth-child(3) { min-width: 15rem; }
+  .problems td:nth-child(4) { min-width: 12rem; }
+  .features td:first-child { font-weight: 600; white-space: nowrap; }
+  .v { white-space: nowrap; }
+  .v::before { content: ""; display: inline-block; width: 0.55em; height: 0.55em; border-radius: 50%; margin-right: 0.4em; vertical-align: 0.05em; background: currentColor; }
+  .good { color: var(--good); } .mixed { color: var(--mixed); } .bad { color: var(--bad); }
+  dl.counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem 1.5rem; margin: 1rem 0 1.25rem; }
+  dl.counts div { border-top: 1px solid var(--rule); padding-top: 0.5rem; }
+  dl.counts dt { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  dl.counts dd { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  @media (max-width: 40rem) { dl.counts { grid-template-columns: repeat(2, minmax(0, 1fr)); } h1 { font-size: 1.9rem; } }
+  ol.asks, details > ol { padding-left: 1.2rem; }
+  details { border-top: 1px solid var(--rule); margin-top: 1rem; }
+  details:last-of-type { border-bottom: 1px solid var(--rule); }
+  summary { cursor: pointer; font-weight: 600; padding: 0.75rem 0; min-height: 44px; }
+  details > :not(summary) { margin-bottom: 1rem; }
+  blockquote { margin: 0.3rem 0 0.6rem; padding-left: 0.8rem; border-left: 1px solid var(--rule); color: var(--muted); }
+  ::selection { background: var(--accent); color: var(--bg); }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media print {
+    :root { color-scheme: light; --bg: #fff; --text: #111; --muted: #444; --rule: #ccc; --cap: #f3f3f3; --cap-edge: #999; --accent: #8a3313; --good: #225a2d; --mixed: #6f4800; --bad: #8a2716; }
+    table, dl, blockquote { break-inside: avoid; }
+    h2, h3 { break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+<main>
+<h1>Talking is easy; everything else hides</h1>
+<p class="lede">Hold <kbd>Ctrl</kbd> <kbd>Space</kbd>, talk, let go is intuitive, and the pill names a fix for most failures.</p>
+<p class="lede">Past that, a user meets 6 triggers, 8 tabs and 23 settings with almost no teaching, and the worst failures make no sound at all.</p>
+<ol class="asks">
+  <li>Fix problems 1, 2 and 4 first? They are a copy line, a reused flag and a default.</li>
+  <li>Want a plan for the merges below (8 tabs to 6)?</li>
+</ol>
+
+<h2>Five problems, worst first</h2>
+<p>Ranked by harm in the first 10 minutes, then the first week. Nine more are in the fold.</p>
+<div class="wrap">
+<table class="problems">
+  <thead><tr><th scope="col" class="n">#</th><th scope="col">When</th><th scope="col">What the user sees, and why it confuses</th><th scope="col">Smallest fix</th></tr></thead>
+  <tbody>
+    <tr><td class="n">1</td><td class="when">First use</td><td>Picks "ChatGPT", then reads "Codex isn't installed". Nothing said Codex was needed, or why a second app.</td><td>Restore BRAND.md's line: "likh transcribes with your ChatGPT plan through Codex."</td></tr>
+    <tr><td class="n">2</td><td class="when">First use</td><td>If another app holds the shortcut, "Try it" hears nothing and nothing says why. Only the trace knows.</td><td>Show the action key's "Another app has these keys" for the shortcut and paste last too.</td></tr>
+    <tr><td class="n">3</td><td class="when">First use</td><td>Onboarding teaches one key. <kbd>Esc</kbd>, paste last, commands and the action key are never mentioned.</td><td>Done step shows three caps: talk, <kbd>Esc</kbd>, <kbd>Alt+Shift+Z</kbd>.</td></tr>
+    <tr><td class="n">4</td><td class="when">Day two</td><td>After a reboot likh isn't running. Start with Windows is off, yet the site says "Starts with Windows".</td><td>Default it on, or a checked box on the Done step.</td></tr>
+    <tr><td class="n">5</td><td class="when">First week</td><td>Keys are set in three tabs. Two rows called "Mouse button" take the same button from each other silently.</td><td>One Keys panel in Dictation; say when a button moves.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<details>
+<summary>Problems 6 to 14, with fixes</summary>
+<ol start="6">
+  <li><b>Three ways to say "do something".</b> Commands (fixed phrases, talk key), Actions (your phrases, action key) and Clean up all act on what you say. Lists come three ways ("new bullet", Clean up, an action); corrections two ("scratch that", Clean up's "actually 3"). Fix: a line on each tab naming the other; merge later.</li>
+  <li><b>"Take it back" hides what it does.</b> A group's explanation shows only while it is off, and all three groups that ship on are on. The chips "scratch that", "undo that", "delete that" press <kbd>Ctrl+Z</kbd> in whatever app has focus, so dictating "Delete that." undoes something. Fix: always show the explanation; drop "delete that".</li>
+  <li><b>Clicking the Groq card switches engines without a key.</b> The next dictation fails with "Add your Groq key in likh's settings, under Transcription." Fix: switch only once a key is saved.</li>
+  <li><b>One ChatGPT call, two switches in two tabs.</b> Clean up and Fix misheard names each say they add about a second; together they still add one. Without Codex both do nothing and log nothing. Fix: one group in Transcription, greyed out without Codex.</li>
+  <li><b>A failed transcription loses the recording.</b> "Can't reach ChatGPT. Check your connection and try again." means say it all again, even after 20 minutes hands-free. Fix: keep the last failed audio; paste last retries it.</li>
+  <li><b>A stray tap leaves the mic open.</b> A press under 300 ms starts hands-free, and the quiet stop only counts after speech, so silence records until a tap, <kbd>Esc</kbd> or 30 minutes. Fix: end it after 10 s with no voice, as "No voice heard".</li>
+  <li><b>Starters assume the developer's tools.</b> "New T3 thread" opens <code>t3code://</code> for every user, and chips show raw <code>{style}</code>. Fix: ship it as <code>.example.toml</code>.</li>
+  <li><b>Diagnostics is a top-level tab</b> of step names ("cleanup", "transcribe") meant for bug reports. Fix: a link from App.</li>
+  <li><b>Mode names drift.</b> "Toggle" means "Tap to start, tap again to paste", and "Stop after quiet: Hands-free only" stays live in Hold, where hands-free can't happen. Fix: rename Toggle to Tap; hide the row in Hold.</li>
+</ol>
+</details>
+
+<h2>Every feature, one row</h2>
+<div class="wrap">
+<table class="features">
+  <thead><tr><th scope="col">Feature</th><th scope="col">Found via</th><th scope="col">To learn</th><th scope="col">When it fails</th><th scope="col">Verdict</th></tr></thead>
+  <tbody>
+    <tr><td>Hold to talk</td><td>Onboarding, tray, site</td><td>One key</td><td>Pill with a fix; silent if keys taken</td><td class="v good">Intuitive</td></tr>
+    <tr><td>Hands-free</td><td>Onboarding tip, Mode</td><td>Three modes, a short tap</td><td>Stray tap keeps mic open</td><td class="v mixed">Learnable</td></tr>
+    <tr><td>Esc cancels</td><td>Site only</td><td>One key</td><td>None</td><td class="v mixed">Learnable</td></tr>
+    <tr><td>Pill</td><td>Every dictation</td><td>Nothing</td><td>Text plus one fix button</td><td class="v good">Intuitive</td></tr>
+    <tr><td>Microphone</td><td>Dictation, pill "Pick mic"</td><td>A list, Test</td><td>"Using X until it's back"</td><td class="v good">Intuitive</td></tr>
+    <tr><td>Engine</td><td>Onboarding</td><td>ChatGPT, Codex, a Groq key</td><td>Clear text; Groq switches early</td><td class="v bad">Confusing</td></tr>
+    <tr><td>Clean up</td><td>Transcription, site</td><td>A switch; needs Codex</td><td>Silent fallback</td><td class="v mixed">Learnable</td></tr>
+    <tr><td>Dictionary</td><td>Its tab, site</td><td>Words, a switch</td><td>Silent without Codex</td><td class="v mixed">Learnable</td></tr>
+    <tr><td>Spoken commands</td><td>Commands tab, site</td><td>Four groups, 14 phrases</td><td>Typed as text; blind undo</td><td class="v mixed">Learnable</td></tr>
+    <tr><td>Actions</td><td>Actions tab only</td><td>A second key, slots, files, approval</td><td>Pill with Review or Details</td><td class="v bad">Confusing</td></tr>
+    <tr><td>Paste last</td><td>History tab, site</td><td>One key</td><td>Silent if keys taken</td><td class="v mixed">Learnable</td></tr>
+    <tr><td>Mouse buttons</td><td>Two tabs</td><td>Two rows, a hidden rule</td><td>Steals silently</td><td class="v bad">Confusing</td></tr>
+    <tr><td>Start with Windows</td><td>App tab</td><td>A switch, off</td><td>likh absent after reboot</td><td class="v bad">Confusing</td></tr>
+    <tr><td>Updates</td><td>Sidebar, App, tray</td><td>Three places</td><td>"Couldn't check"</td><td class="v mixed">Learnable</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Stop after quiet, history and stats, sounds, pause media, language and tray copy each read clearly.</p>
+
+<h2>Six triggers, eight tabs, 23 settings</h2>
+<dl class="counts">
+  <div><dt>6</dt><dd>triggers, each hold or tap</dd></div>
+  <div><dt>8</dt><dd>tabs</dd></div>
+  <div><dt>23</dt><dd>saved settings</dd></div>
+  <div><dt>12</dt><dd>concepts to hold</dd></div>
+</dl>
+<ul>
+  <li><b>Keys:</b> one panel for <kbd>Ctrl+Space</kbd>, <kbd>Ctrl+Shift+Space</kbd> and <kbd>Alt+Shift+Z</kbd>, each with its mouse pick. Three tabs become one.</li>
+  <li><b>Commands and Actions:</b> one tab, "While you dictate" and "With the action key". 8 tabs to 7.</li>
+  <li><b>Clean up and Fix names:</b> one group, since it is one call.</li>
+  <li><b>Diagnostics:</b> behind App. 7 tabs to 6.</li>
+</ul>
+<p>The parity plan lists Aqua's voice editing as "Edit Mode, same key" and Wispr Flow's as a built-in Command Mode. likh's equivalent needs a second key and an action file.</p>
+
+<details>
+<summary>Evidence: file and line for each problem, with the quoted strings</summary>
+<h3>1. Codex step</h3>
+<p>Onboarding's engine pick is named <code>"ChatGPT"</code> (<code>transcriber/mod.rs:52</code>); the headline then reads <code>onboarding/mod.rs:637-638</code>:</p>
+<blockquote>Codex isn't installed. Install Codex, sign in once, then come back.</blockquote>
+<p>BRAND.md:138 specifies the reason the code dropped: "likh transcribes with your ChatGPT plan through Codex. Install Codex, sign in once, then come back." Welcome never mentions it (<code>onboarding/mod.rs:561-562</code>: "Talk. It types." / "Hold a key, say it, let go."). The connect step has no Continue until an engine is ready (<code>:804-813</code>), and "Open likh" reopens setup until it finishes (<code>tray/mod.rs:167-168</code>).</p>
+<h3>2. Shortcut taken</h3>
+<p><code>main.rs:177-182</code> logs <code>"{reason} `likh ctl start` still works."</code> and moves on. Paste last is the same (<code>hotkey/windows.rs:87-89</code>). Only the action key records it (<code>hotkey/mod.rs:277-283</code>), shown at <code>panel/actions.rs:205-206</code>: "Another app has these keys. Change them." Meanwhile the Try it note says "Tip: tap {binding} once to talk hands-free." (<code>onboarding/mod.rs:951</code>), Dictation says "Hold to talk, in any app." (<code>panel/mod.rs:1029</code>), and the tray says "Hold Ctrl+Space to talk" (<code>tray/mod.rs:308</code>). The parity plan notes Wispr's Windows paste last is also Shift+Alt+Z.</p>
+<h3>3. One key taught</h3>
+<p>Done: "Hold {shortcut} in any app to talk. likh waits in your tray." (<code>onboarding/mod.rs:572</code>). "Esc cancels" appears only in the standalone onboarding (<code>:897</code>) and the site (<code>page.tsx:94</code>). The site's feature list has no actions (<code>page.tsx:21-31</code>). The tray menu has one key line (<code>tray/mod.rs:308-321</code>).</p>
+<h3>4. Start with Windows</h3>
+<p><code>settings/mod.rs:153</code>: <code>start_with_windows: false</code>. The installer only clears the Run key on uninstall (<code>installer/windows.iss:38</code>). The switch is on the App tab alone (<code>panel/mod.rs:1531</code>). The site: "Keeps itself current: Starts with Windows and updates when you say so." (<code>site/app/page.tsx:31</code>).</p>
+<h3>5. Keys in three tabs</h3>
+<p>Shortcut and "Mouse button" in Dictation (<code>panel/mod.rs:1057-1061</code>), "Action key" and a second "Mouse button" ("Works like the action key.") in Actions (<code>panel/actions.rs:229-235</code>), "Paste last dictation" in History (<code>panel/mod.rs:1380</code>). Each side clears the other's button with no notice (<code>panel/mod.rs:559-565</code>, <code>panel/actions.rs:101-107</code>).</p>
+<h3>6 to 14</h3>
+<ul>
+  <li>6: lists and corrections in Clean up's prompt (<code>cleanup/mod.rs:46-53</code>) next to "new bullet" and "scratch that" (<code>commands/mod.rs:109-112</code>).</li>
+  <li>7: explanation shown only when off (<code>panel/mod.rs:1301-1315</code>); result hidden when all phrases share one (<code>:1300</code>); undo is <code>paste::undo()</code> in the focused app (<code>dictation/mod.rs:667-672</code>). Screenshot <code>commands-tiny-skia.png</code> shows three bare chips.</li>
+  <li>8: the whole card is a button sending <code>Message::Engine</code> (<code>panel/mod.rs:1208-1209</code>), saved at once (<code>:612-615</code>); failure text <code>transcriber/mod.rs:194</code>.</li>
+  <li>9: "It does up to two jobs in the same call" (<code>cleanup/mod.rs:2-3</code>); "Adds about 1 s." (<code>panel/mod.rs:1134</code>) and "Adds about a second." (<code>:1352</code>); no Codex returns the text with no log (<code>cleanup/mod.rs:83-85</code>). The action router also drops the dictionary when Fix names is off (<code>actions/runner.rs:151</code>).</li>
+  <li>10: failure texts at <code>transcriber/mod.rs:189-198</code>; no retry or kept audio anywhere in <code>app/src</code> (searched for retry and saved audio).</li>
+  <li>11: taps under <code>TAP</code> (300 ms) go hands-free (<code>dictation/mod.rs:207-211</code>); <code>quiet_for</code> is None until someone speaks (<code>microphone/mod.rs:205-208</code>).</li>
+  <li>12: starters written for everyone (<code>actions/mod.rs:39-42</code>); <code>open = "t3code://new?prompt={text}"</code> in <code>starters/new-t3-thread.toml</code>.</li>
+  <li>13: span names shown raw (<code>panel/mod.rs:1616</code>); screenshot <code>diagnostics-tiny-skia.png</code>.</li>
+  <li>14: <code>"Toggle"</code> and "Tap to start, tap again to paste." (<code>settings/mod.rs:36,45</code>); Hold drops taps (<code>dictation/mod.rs:212</code>) while "Stop after quiet" stays (<code>panel/mod.rs:1072-1073</code>).</li>
+</ul>
+<h3>The counts</h3>
+<p>Triggers: shortcut, action key, paste last, Esc, two mouse slots. Settings: 20 fields in <code>settings/mod.rs:88-126</code>, with the 4 command groups counted apart, plus the Groq key and a switch per action. Concepts: pill, hold or tap, hands-free, silence stop, engine, Codex sign-in, Groq key, Clean up, dictionary, spoken commands, actions, paste last.</p>
+</details>
+
+<details>
+<summary>How I checked, and what I didn't</summary>
+<p>I read every feature folder's UI strings and decision code, the 14 rendered panel screenshots in <code>docs/brand/panel/</code>, onboarding, tray, pill, the starters, the site and BRAND.md. I ran nothing and launched no likh.</p>
+<p>Not checked: which real apps hold <kbd>Ctrl+Space</kbd> on a given machine, what a left click on the tray icon does, and anything on macOS. Problems 2, 10 and 11 are read from code, not reproduced.</p>
+</details>
+</main>
+<script>
+addEventListener("beforeprint", () => document.querySelectorAll("details").forEach((d) => { d.dataset.wasOpen = d.open; d.open = true; }));
+addEventListener("afterprint", () => document.querySelectorAll("details").forEach((d) => (d.open = d.dataset.wasOpen === "true")));
+</script>
+</body>
+</html>

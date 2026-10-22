@@ -34,6 +34,8 @@ earshot = "1.2"
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 # Action files (`actions/`): one TOML file per action, with line numbers in its errors.
 toml = "1"
+# History's stats count days on the user's own calendar (a streak breaks at their midnight, not UTC's).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 iced_test = "0.14"
