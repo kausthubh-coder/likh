@@ -89,7 +89,7 @@ fn changing_the_shortcut_flies_the_keys_in_then_stops_drawing() {
         repeat: false,
     };
     let _ = f.panel.update(Message::Key(bare));
-    assert!(shows(&f.panel, "Add Ctrl, Alt or Win, so typing never sets it off."));
+    assert!(shows(&f.panel, crate::hotkey::NEEDS_MODIFIER));
     assert!(shows(&f.panel, "Press your new shortcut."));
 
     // Cancel puts the old shortcut back.
@@ -102,7 +102,7 @@ fn changing_the_shortcut_flies_the_keys_in_then_stops_drawing() {
 fn a_saved_shortcut_pulses_once_and_then_stays_still() {
     let mut keys = Keys::at_rest(&Binding::default().parts());
     keys.listen();
-    keys.chosen(&["Ctrl", "Alt", "D"]);
+    keys.chosen(&["Ctrl", crate::hotkey::ALT, "D"]);
     assert!(keys.moving());
     keys.step(0.5);
     assert!(keys.moving(), "the pulse runs after the last key lands");
@@ -313,7 +313,7 @@ fn brand_board_panel() {
     snap(&out, "dictation-picking", &f.panel);
     f.panel.stop_capturing();
     f.panel.capturing = None;
-    f.panel.keys.chosen(&["Ctrl", "Alt", "D"]);
+    f.panel.keys.chosen(&["Ctrl", crate::hotkey::ALT, "D"]);
     f.panel.keys.step(2.0);
     f.panel.saved = true;
     f.settings.write().expect("settings").shortcut =
@@ -580,10 +580,11 @@ fn history_shows_paste_last_on_its_keys_and_can_turn_it_off() {
     let _ = f.panel.update(Message::Tab(Tab::History));
     assert!(shows(&f.panel, "Paste last dictation"));
     assert!(shows(&f.panel, "Missed a paste? Puts it in again. After a failed one, tries it again."));
-    assert!(shows(&f.panel, "Alt+Shift+Z") && shows(&f.panel, "Turn off"));
+    let keys = String::from(crate::hotkey::PASTE_LAST);
+    assert!(shows(&f.panel, &keys) && shows(&f.panel, "Turn off"));
     // With paste last off, the row offers it back on its usual keys.
     f.settings.write().expect("settings").paste_last = None;
-    assert!(shows(&f.panel, "Turn on") && !shows(&f.panel, "Alt+Shift+Z"));
+    assert!(shows(&f.panel, "Turn on") && !shows(&f.panel, &keys));
 }
 
 #[test]
@@ -604,7 +605,7 @@ fn picking_paste_last_keys_leaves_the_dictation_shortcut_alone_and_refuses_its_k
 
     // Esc backs out with the old keys.
     let _ = f.panel.update(Message::Key(key(keyboard::key::Code::Escape, keyboard::Modifiers::empty())));
-    assert!(shows(&f.panel, "Alt+Shift+Z"));
+    assert!(shows(&f.panel, &String::from(crate::hotkey::PASTE_LAST)));
 }
 
 #[test]

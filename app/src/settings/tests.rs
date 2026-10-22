@@ -22,7 +22,7 @@ fn an_older_file_keeps_its_choices_and_gets_the_new_defaults() {
     assert!(loaded.dictionary.is_empty() && loaded.fix_names);
     // An older file has no cleanup choice: it stays off, as it was.
     assert!(!loaded.cleanup);
-    assert_eq!(loaded.paste_last.map(String::from), Some("Alt+Shift+Z".into()));
+    assert_eq!(loaded.paste_last.map(String::from), Some(format!("{}+Shift+Z", crate::hotkey::ALT)));
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn what_you_save_is_what_you_load() {
     chosen.save_to(&path).expect("save");
     assert_eq!(Settings::load_from(&path), chosen);
     let file = std::fs::read_to_string(&path).expect("read");
-    assert!(file.contains("\"shortcut\": \"Ctrl+Alt+D\""));
+    assert!(file.contains(&format!("\"shortcut\": \"Ctrl+{}+D\"", crate::hotkey::ALT)));
     assert!(file.contains("\"engine\": \"groq\""));
     assert!(file.contains("\"silence_stop\": \"10s\""));
     assert!(file.contains("\"mouse\": \"forward\""));
