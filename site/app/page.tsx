@@ -6,11 +6,11 @@ import { FlockMark } from "./flock-mark";
 const REPO = "https://github.com/kausthubh-coder/likh";
 /** The published build. Bump with each release; the page reads everything else from here. */
 const RELEASE: { version: string; windows: string; size: string; mac: string | null } = {
-  version: "0.1.0-alpha.12",
-  windows: `${REPO}/releases/download/v0.1.0-alpha.12/likh-setup-windows-x64.exe`,
+  version: "0.1.0-alpha.13",
+  windows: `${REPO}/releases/download/v0.1.0-alpha.13/likh-setup-windows-x64.exe`,
   size: "5.1 MB",
   // The DMG's link, from the first release that has one (ship-likh sets it). Until then: build from source.
-  mac: `${REPO}/releases/download/v0.1.0-alpha.12/likh-macos.dmg`,
+  mac: `${REPO}/releases/download/v0.1.0-alpha.13/likh-macos.dmg`,
 };
 
 /** Measured on the release build, idle, Windows 11 (docs/plan.md, Measured so far). */
