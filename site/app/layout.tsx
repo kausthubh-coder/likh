@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "likh · Talk. It types.",
   description:
-    "Native dictation for Windows and macOS, transcribed by ChatGPT through your Codex sign-in. Hold a key, talk, let go.",
+    "Free dictation with any ChatGPT account. Native for Windows and macOS: hold a key, talk, let go.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

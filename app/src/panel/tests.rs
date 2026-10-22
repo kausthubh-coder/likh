@@ -143,7 +143,7 @@ fn clean_up_is_off_until_switched_on_and_says_what_it_needs() {
         plan: Some("plus".into()),
         expires_at: None,
     });
-    assert!(shows(&f.panel, "Drops ums, keeps your corrections, makes lists. Adds about 1 s."));
+    assert!(shows(&f.panel, "Drops ums, keeps corrections, makes lists. Can run out on Free."));
     let saved = || Settings::load_from(&f.dir.path().join("settings.json"));
     assert!(!saved().cleanup);
     press(&mut f.panel, "Clean up");
@@ -321,6 +321,10 @@ fn brand_board_panel() {
     f.panel.mic_levels = [0.2, 0.5, 0.8, 0.6, 0.9, 0.4, 0.7];
     snap(&out, "dictation-microphone", &f.panel);
     f.panel.testing = false;
+    // Another app has the shortcut: the line under the caps says so, in red.
+    hotkey::pretend_taken(true, false);
+    snap(&out, "dictation-taken", &f.panel);
+    hotkey::pretend_taken(false, false);
     // Actions: the list, Review on the unapproved script, and the form.
     seed_actions(&f);
     let _ = f.panel.update(Message::Tab(Tab::Actions));
@@ -367,12 +371,36 @@ fn picking_an_engine_saves_it_and_both_keep_their_setup() {
     press(&mut f.panel, "Transcription");
     // Before and after the pick, each engine shows what it needs, so nothing moves.
     let before = (shows(&f.panel, "Paste your key, gsk_\u{2026}"), shows(&f.panel, "Check again"));
+    // No key yet: Groq would fail the next dictation, so ChatGPT stays and the field asks for one.
     press(&mut f.panel, "Groq");
-    assert_eq!(f.settings.read().expect("settings").engine, Engine::Groq);
-    assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).engine, Engine::Groq);
+    assert_eq!(f.settings.read().expect("settings").engine, Engine::Codex);
+    assert!(shows(&f.panel, "Save a key to switch to Groq."));
     assert_eq!(before, (true, true));
     assert!(shows(&f.panel, "Paste your key, gsk_\u{2026}") && shows(&f.panel, "Check again"));
     assert!(shows(&f.panel, "Save key"));
+    // With a key saved, the click switches and saves.
+    f.panel.groq.saved = true;
+    press(&mut f.panel, "Groq");
+    assert_eq!(f.settings.read().expect("settings").engine, Engine::Groq);
+    assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).engine, Engine::Groq);
+    press(&mut f.panel, "ChatGPT");
+    assert_eq!(f.settings.read().expect("settings").engine, Engine::Codex);
+}
+
+#[test]
+fn a_shortcut_another_app_holds_says_so_on_dictation_and_paste_last_on_history() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    hotkey::pretend_taken(true, true);
+    let dictation = shows(&f.panel, "Another app has these keys.");
+    let tray = hold_to_talk(Binding::default());
+    press(&mut f.panel, "History");
+    let history = shows(&f.panel, "Another app has these keys. Change them.");
+    hotkey::pretend_taken(false, false);
+    assert!(dictation, "Dictation says another app has the shortcut");
+    assert!(history, "History says another app has paste last");
+    assert_eq!(tray, "Another app has Ctrl + Space. Open likh to change it.");
+    assert_eq!(hold_to_talk(Binding::default()), "Hold Ctrl + Space to talk");
 }
 
 #[test]
@@ -542,7 +570,7 @@ fn history_shows_paste_last_on_its_keys_and_can_turn_it_off() {
     let mut f = panel();
     let _ = f.panel.update(Message::Tab(Tab::History));
     assert!(shows(&f.panel, "Paste last dictation"));
-    assert!(shows(&f.panel, "Missed a paste? Puts it in again."));
+    assert!(shows(&f.panel, "Missed a paste? Puts it in again. After a failed one, tries it again."));
     assert!(shows(&f.panel, "Alt+Shift+Z") && shows(&f.panel, "Turn off"));
     // With paste last off, the row offers it back on its usual keys.
     f.settings.write().expect("settings").paste_last = None;

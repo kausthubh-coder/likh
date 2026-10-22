@@ -5,10 +5,13 @@
 //!
 //! `LIKH_TRANSCRIBER=echo:<text>` swaps in a fake that returns `<text>`, so
 //! tests and agents can drive whole dictations without touching any of them.
+//! `flaky:<text>` is the same fake, but the first transcription fails as if
+//! offline, so Retry can be proved without pulling a cable.
 
 use crate::codex_auth::{self, CodexStatus, Credentials};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub mod glyph;
@@ -19,6 +22,8 @@ pub mod language;
 mod tests;
 
 pub const SAMPLE_RATE: u32 = 16_000;
+/// `LIKH_TRANSCRIBER=flaky:<text>`: the fake's next transcription fails, once.
+static FLAKY: AtomicBool = AtomicBool::new(false);
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/transcribe";
 /// What the Codex desktop app sends (docs/codex.md, The request).
 pub const USER_AGENT: &str = "Codex Desktop/26.1007.2314.0 (Windows NT 10.0; x64)";
@@ -57,7 +62,7 @@ impl Engine {
     /// One line on what it costs and what it's like.
     pub fn explain(self) -> &'static str {
         match self {
-            Engine::Codex => "Your ChatGPT plan, through Codex. The most accurate.",
+            Engine::Codex => "Free with any ChatGPT account. The most accurate.",
             Engine::Groq => "Whisper on a free Groq key. The fastest.",
         }
     }
@@ -80,9 +85,14 @@ pub enum Transcriber {
 }
 
 impl Transcriber {
-    /// `LIKH_TRANSCRIBER=echo:<text>`, if set. It wins over the engine in settings.
+    /// `LIKH_TRANSCRIBER=echo:<text>` or `flaky:<text>`, if set. It wins over the engine in settings.
     pub fn fake_from_env() -> Option<String> {
-        std::env::var("LIKH_TRANSCRIBER").ok().and_then(|v| v.strip_prefix("echo:").map(str::to_owned))
+        let fake = std::env::var("LIKH_TRANSCRIBER").ok()?;
+        if let Some(text) = fake.strip_prefix("flaky:") {
+            FLAKY.store(true, Ordering::SeqCst);
+            return Some(text.to_owned());
+        }
+        fake.strip_prefix("echo:").map(str::to_owned)
     }
 
     pub fn new(engine: Engine, fake: Option<&str>) -> Self {
@@ -114,6 +124,7 @@ impl Transcriber {
             .with("engine", self.name())
             .with("audio_seconds", crate::diagnostics::seconds(seconds));
         let heard = match self {
+            Transcriber::Echo(_) if FLAKY.swap(false, Ordering::SeqCst) => Err(Failure::Offline),
             Transcriber::Echo(text) => Ok(text.clone()),
             Transcriber::Codex => {
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
@@ -170,6 +181,13 @@ impl Failure {
                 | Failure::GroqRateLimited
                 | Failure::GroqServer(_)
         )
+    }
+
+    /// The same audio could work another time: after the connection, the
+    /// service or the sign-in is back. A dictation that failed this way keeps its
+    /// audio for Retry. Not when the audio itself is the problem.
+    pub fn retryable(&self) -> bool {
+        !matches!(self, Failure::TooShort | Failure::NoVoice | Failure::MicSilent { .. } | Failure::TooLong)
     }
 
     pub fn message(&self) -> String {

@@ -150,7 +150,9 @@ impl Default for Settings {
             // Off until asked for: it adds about a second to every dictation,
             // and instant is what likh is for.
             cleanup: false,
-            start_with_windows: false,
+            // On out of the box (applied when setup finishes): a dictation app that's gone
+            // after a restart looks broken. Start at login on macOS comes with its app bundle.
+            start_with_windows: cfg!(target_os = "windows"),
             auto_update: true,
         }
     }

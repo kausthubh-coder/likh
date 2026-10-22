@@ -54,7 +54,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Drive the running app: status, start, stop, action-start, action-stop, cancel, paste-last, copy-last, diagnostics or quit. Prints JSON.
+    /// Drive the running app: status, start, stop, action-start, action-stop, cancel, paste-last, retry, copy-last, diagnostics or quit. Prints JSON.
     Ctl {
         #[arg(value_parser = ctl::COMMANDS)]
         command: String,
@@ -167,21 +167,30 @@ fn run(skip_onboarding: bool) -> ExitCode {
     let pill = pill::Pill::spawn(dictation.clone(), ui.clone());
     let fake = transcriber::Transcriber::fake_from_env();
     let updates = update::Updates::new(Some(ui.clone()));
-    let status = dictation::spawn(dictation.clone(), inputs, pill, fake, settings.clone(), updates.clone(), ui.clone());
+    let status =
+        dictation::spawn(dictation.clone(), inputs, pill.clone(), fake, settings.clone(), updates.clone(), ui.clone());
     if settings.read().is_ok_and(|s| s.auto_update) {
         updates.check_if_due();
     }
     if let Err(error) = ctl::serve(dictation.clone(), status.clone(), ui, updates.clone()) {
         diagnostics::warn("ctl", format!("`likh ctl` won't work this time: {error}"));
     }
+    let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
     match hotkey::spawn(dictation, triggers) {
         Ok(()) => {
             diagnostics::info("hotkey", format!("likh is running. Hold {shortcut} to talk; `likh ctl quit` stops it."))
         }
-        Err(reason) => diagnostics::error("hotkey", format!("{reason} `likh ctl start` still works.")),
+        Err(reason) => {
+            diagnostics::error("hotkey", format!("{reason} `likh ctl start` still works."));
+            // Holding the keys would do nothing and say nothing. Setup says so on its own
+            // shortcut step; any other launch says so now, with the way to fix it.
+            if first_run.is_none() {
+                let text = format!("Another app has {shortcut}, so likh can't hear it.");
+                pill.show(pill::Show::Problem { text, fix: pill::Fix::Shortcut });
+            }
+        }
     }
 
-    let first_run = onboarded_marker().filter(|marker| !skip_onboarding && !marker.exists());
     // The tray owns the main thread until "Quit likh".
     match tray::run(status, settings, first_run, ui_requests, updates) {
         Ok(()) => ExitCode::SUCCESS,

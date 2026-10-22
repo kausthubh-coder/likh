@@ -57,7 +57,16 @@ fn a_fresh_install_gets_the_defaults() {
     assert_eq!(settings.shortcut.to_string(), "Ctrl + Space");
     assert_eq!(settings.mode, Mode::HoldOrTap);
     assert!(settings.history && settings.sounds && settings.commands);
-    assert!(!settings.start_with_windows);
+    // On out of the box where likh can start with the system; macOS gets it with its app bundle.
+    assert_eq!(settings.start_with_windows, cfg!(target_os = "windows"));
+}
+
+#[test]
+fn someone_who_turned_start_with_windows_off_keeps_it_off() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("settings.json");
+    std::fs::write(&path, r#"{ "start_with_windows": false }"#).expect("write");
+    assert!(!Settings::load_from(&path).start_with_windows);
 }
 
 #[test]

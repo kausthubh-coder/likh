@@ -327,6 +327,7 @@ fn brand_board_onboarding() {
             app.practice.words = "Remind me to send the deck tomorrow at nine.".into();
             app
         }),
+        ("4-shortcut-taken", at(Step::Shortcut, connected())),
         ("5-done", {
             let mut app = at(Step::Done, connected());
             app.clock = 5.0;
@@ -334,6 +335,7 @@ fn brand_board_onboarding() {
         }),
     ];
     for (name, mut app) in screens {
+        hotkey::pretend_taken(name.ends_with("-taken"), false);
         app.arrival = Spring::new(spring::DEFAULT, 1.0);
         app.progress = Spring::new(spring::DEFAULT, app.step.index() as f32);
         let settings = iced_test::core::Settings {
@@ -349,6 +351,7 @@ fn brand_board_onboarding() {
             let _ = snapshot.matches_image(&path);
         }
     }
+    hotkey::pretend_taken(false, false);
 }
 
 #[test]
@@ -393,4 +396,79 @@ fn a_saved_groq_key_lets_you_continue() {
     assert!(shows(&app, "Groq is ready"));
     press(&mut app, "Continue");
     assert_eq!(app.step(), Step::Microphone);
+}
+
+#[test]
+fn welcome_says_dictation_is_free_with_any_chatgpt_account() {
+    let _ui = test_ui::lock();
+    let app = Onboarding::new(CodexStatus::NotInstalled);
+    assert!(shows(&app, "Free dictation with any ChatGPT account. Hold a key, say it, let go."));
+}
+
+#[test]
+fn without_codex_the_connect_step_says_why_it_needs_it() {
+    let _ui = test_ui::lock();
+    let mut app = Onboarding::new(CodexStatus::NotInstalled);
+    press(&mut app, "Get started");
+    assert!(shows(&app, "likh uses your ChatGPT account through Codex, free on any plan. Install it, sign in once."));
+}
+
+#[test]
+fn connected_says_plainly_that_clean_up_can_run_out_on_free() {
+    let _ui = test_ui::lock();
+    let mut app = Onboarding::new(connected());
+    press(&mut app, "Get started");
+    assert!(shows(&app, "Dictation is free on every plan. Clean up, a bonus, can run out on Free."));
+}
+
+#[test]
+fn the_last_step_teaches_talk_cancel_and_paste_last() {
+    let _ui = test_ui::lock();
+    let (mut app, _) = in_app();
+    to_the_shortcut_step(&mut app);
+    press(&mut app, "Continue");
+    assert_eq!(app.step(), Step::Done);
+    for words in ["Hold to talk, let go to paste", "Esc", "Cancel", "Paste the last one again", "Shift", "Z"] {
+        assert!(shows(&app, words), "missing {words:?}");
+    }
+}
+
+#[test]
+fn the_last_step_leaves_paste_last_out_when_its_off() {
+    let _ui = test_ui::lock();
+    let (mut app, _) = in_app();
+    if let Some(settings) = &app.settings {
+        settings.write().expect("settings").paste_last = None;
+    }
+    to_the_shortcut_step(&mut app);
+    press(&mut app, "Continue");
+    assert!(shows(&app, "Cancel"));
+    assert!(!shows(&app, "Paste the last one again"));
+}
+
+#[test]
+fn a_shortcut_another_app_holds_leads_with_picking_new_keys() {
+    let _ui = test_ui::lock();
+    let (mut app, _) = in_app();
+    to_the_shortcut_step(&mut app);
+    hotkey::pretend_taken(true, false);
+    let taken = shows(&app, "Another app has these keys")
+        && shows(&app, "Ctrl + Space belongs to another app, so likh can't hear it. Pick new keys.");
+    press(&mut app, "Change shortcut");
+    let capturing = shows(&app, "Press your shortcut");
+    hotkey::pretend_taken(false, false);
+    assert!(taken, "the step says another app has the keys");
+    assert!(capturing, "Change shortcut listens for new keys right there");
+}
+
+#[test]
+fn picking_groq_without_a_key_saves_nothing_until_a_key_is() {
+    let _ui = test_ui::lock();
+    let (mut app, _) = in_app();
+    app.groq = GroqSetup::default();
+    press(&mut app, "Get started");
+    press(&mut app, "Groq");
+    assert!(shows(&app, "Add a free Groq key"));
+    let saved = app.settings.as_ref().map(|s| s.read().expect("settings").engine);
+    assert_eq!(saved, Some(Engine::Codex), "ChatGPT still transcribes until a Groq key is saved");
 }

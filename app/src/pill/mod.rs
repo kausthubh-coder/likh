@@ -129,6 +129,10 @@ pub enum Fix {
     Review,
     /// likh's Actions tab, where the failed action shows what went wrong.
     Details,
+    /// Send the failed recording again (its audio is kept).
+    Retry,
+    /// Another app has the shortcut: likh's Dictation tab, already listening for new keys.
+    Shortcut,
 }
 
 impl Fix {
@@ -138,13 +142,15 @@ impl Fix {
             Fix::MicAccess => "Open settings",
             Fix::Review => "Review",
             Fix::Details => "Details",
+            Fix::Retry => "Retry",
+            Fix::Shortcut => "Change keys",
         }
     }
 
     /// A Windows settings page, or None when the fix is in likh's own window.
     pub fn url(self) -> Option<&'static str> {
         match self {
-            Fix::PickMic | Fix::Review | Fix::Details => None,
+            Fix::PickMic | Fix::Review | Fix::Details | Fix::Retry | Fix::Shortcut => None,
             Fix::MicAccess => Some("ms-settings:privacy-microphone"),
         }
     }

@@ -261,17 +261,40 @@ impl Triggers {
 
 pub fn spawn(dictation: Sender<Input>, triggers: Triggers) -> Result<(), String> {
     #[cfg(target_os = "windows")]
-    {
-        windows::spawn(dictation, triggers)
-    }
+    let started = windows::spawn(dictation, triggers);
     #[cfg(not(target_os = "windows"))]
-    {
-        other::spawn(dictation, triggers.shortcut, triggers.mouse)
-    }
+    let started = other::spawn(dictation, triggers.shortcut, triggers.mouse);
+    note_shortcut(started.is_err());
+    started
 }
 
+/// Another app already had the shortcut's keys when likh started, so holding
+/// them does nothing until they change. Onboarding, the Dictation tab and the
+/// pill say so; only the trace knew before.
+static SHORTCUT_TAKEN: AtomicBool = AtomicBool::new(false);
+/// The same for paste last (the History tab says so).
+static PASTE_LAST_TAKEN: AtomicBool = AtomicBool::new(false);
 /// Another app already had the action key's keys when likh started, so it does nothing until changed.
 static ACTION_KEY_TAKEN: AtomicBool = AtomicBool::new(false);
+
+fn note_shortcut(taken: bool) {
+    SHORTCUT_TAKEN.store(taken, Ordering::SeqCst);
+}
+
+/// The shortcut's keys belong to another app.
+pub fn shortcut_taken() -> bool {
+    SHORTCUT_TAKEN.load(Ordering::SeqCst)
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows registers paste last"))]
+fn note_paste_last(taken: bool) {
+    PASTE_LAST_TAKEN.store(taken, Ordering::SeqCst);
+}
+
+/// Paste last's keys belong to another app.
+pub fn paste_last_taken() -> bool {
+    PASTE_LAST_TAKEN.load(Ordering::SeqCst)
+}
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows registers the action key"))]
 fn note_action_key(taken: bool) {
@@ -444,4 +467,12 @@ mod other {
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
+}
+
+/// Tests stand in for another app holding the keys. Hold `shared::test_ui::lock()`
+/// while it's set: every view that says so reads it.
+#[cfg(test)]
+pub fn pretend_taken(shortcut: bool, paste_last: bool) {
+    note_shortcut(shortcut);
+    note_paste_last(paste_last);
 }

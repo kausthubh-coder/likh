@@ -38,6 +38,9 @@ pub const QUIET_GRACE: Duration = Duration::from_secs(1);
 /// the pill says so while there's still time to fix it. People start talking
 /// well within it, and a quiet room isn't digital silence.
 pub const SILENT_AFTER: Duration = Duration::from_secs(2);
+/// Hands-free that has heard no voice by now was a stray tap: it ends as "No
+/// voice heard" instead of keeping the mic open until a tap, Esc or the cap.
+pub const NO_VOICE_AFTER: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Input {
@@ -72,6 +75,10 @@ pub enum Input {
     PasteLast,
     /// Sent with each tick once someone has spoken: how long it has been quiet since.
     Quiet(Duration),
+    /// Sent with each tick until someone has spoken.
+    Unspoken,
+    /// The pill's Retry, or `likh ctl retry`: send the last failed recording again.
+    Retry,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,6 +96,8 @@ pub enum Effect {
     Undo,
     /// Paste the last dictation's text again, or say there's none yet.
     PasteLast,
+    /// Send the kept audio of the last failed dictation to the transcriber again.
+    Retry,
     /// Hand what was said to the action runner.
     Act {
         said: String,
@@ -139,6 +148,9 @@ pub struct Dictation {
     /// The mic went away mid-recording; the paste says so.
     lost_mic: Option<String>,
     kind: Kind,
+    /// The last recording failed in a way that may pass (no connection, a busy
+    /// server, a sign-in to refresh): its audio is kept, and this is what it was for.
+    retry: Option<Kind>,
 }
 
 impl Default for Dictation {
@@ -151,6 +163,7 @@ impl Default for Dictation {
             warned_silent: false,
             lost_mic: None,
             kind: Kind::Dictate,
+            retry: None,
         }
     }
 }
@@ -163,6 +176,11 @@ impl Dictation {
     /// What the current (or last) recording is for.
     pub fn kind(&self) -> Kind {
         self.kind
+    }
+
+    /// A failed recording is kept and Retry would send it again.
+    pub fn can_retry(&self) -> bool {
+        self.retry.is_some()
     }
 
     pub fn handle(&mut self, input: Input, now: Instant, choices: Choices) -> Vec<Effect> {
@@ -214,6 +232,12 @@ impl Dictation {
             (Phase::Recording, Input::Release(_)) => self.transcribe(),
             // Either key finishes a hands-free recording, whichever started it.
             (Phase::HandsFree, Input::Hold | Input::ActionHold) => self.transcribe(),
+            // After a failure, paste last has nothing newer to paste: it tries the failed one again.
+            (Phase::Idle, Input::Retry | Input::PasteLast) if self.retry.is_some() => {
+                self.kind = self.retry.take().unwrap_or_default();
+                self.phase = Phase::Transcribing;
+                vec![Effect::Retry, Effect::Pill(Show::Thinking)]
+            }
             // Only between dictations: mid-recording it would paste into the sentence being spoken.
             (Phase::Idle, Input::PasteLast) => vec![Effect::PasteLast],
             (_, Input::Stop) if recording => self.transcribe(),
@@ -245,6 +269,10 @@ impl Dictation {
                 vec![Effect::Pill(if phase == Phase::HandsFree { Show::HandsFree } else { Show::Listening })]
             }
             (_, Input::Tick) if recording && held >= LONGEST => self.transcribe(),
+            // A stray tap: hands-free that never heard a voice. "Never" in Stop after quiet leaves it open.
+            (Phase::HandsFree, Input::Unspoken) if held >= NO_VOICE_AFTER && choices.silence_stop.is_some() => {
+                self.stop(Effect::Discard, Show::Note(Failure::NoVoice.message()))
+            }
             // Holding the keys means you decide when it ends; only hands-free stops by itself.
             (Phase::HandsFree, Input::Quiet(quiet)) => match choices.silence_stop {
                 Some(after) if quiet >= after => self.transcribe(),
@@ -271,6 +299,14 @@ impl Dictation {
             (Phase::Transcribing, Input::Transcribed(result)) => {
                 self.phase = Phase::Idle;
                 self.started = None;
+                // A newer recording that worked, or that failed for good, replaces a kept one;
+                // a stray tap or a silent one leaves it to retry.
+                match &result {
+                    Err(failure) if failure.retryable() => self.retry = Some(self.kind),
+                    Ok(text) if !text.is_empty() => self.retry = None,
+                    Err(Failure::TooLong) => self.retry = None,
+                    _ => {}
+                }
                 match result {
                     Ok(text) if text.is_empty() => vec![Effect::Pill(Show::Cancelled)],
                     // The runner takes it from here, and its pill states with it.
@@ -307,6 +343,10 @@ impl Dictation {
                             text: failure.message(),
                             fix: if blocked { Fix::MicAccess } else { Fix::PickMic },
                         }),
+                    ],
+                    Err(failure) if failure.retryable() => vec![
+                        Effect::Sound(Cue::Error),
+                        Effect::Pill(Show::Problem { text: failure.message(), fix: Fix::Retry }),
                     ],
                     Err(failure) => vec![Effect::Sound(Cue::Error), Effect::Pill(Show::Error(failure.message()))],
                 }
@@ -360,6 +400,14 @@ impl Ears {
     }
 }
 
+/// A piece of a long dictation on its way: its audio comes back with its text,
+/// so a failed dictation can keep all of it for Retry.
+type Piece = std::thread::JoinHandle<(Vec<f32>, Result<String, Failure>)>;
+
+/// The audio of the last dictation that failed in a way that may pass. Filled
+/// by the thread that transcribed it, before it reports the failure.
+type Kept = Arc<Mutex<Option<Vec<f32>>>>;
+
 /// Transcribes one piece of a long dictation. A piece with no voice in it is
 /// skipped (silence can come back as made-up words), and a dropped connection
 /// or a busy server gets one more try a second later.
@@ -382,6 +430,48 @@ fn transcribe_piece(
     }
 }
 
+/// Turns a recording into text on its own thread and sends `Input::Transcribed`:
+/// the pieces sent while you talked, then `samples`, then one cleanup over the
+/// whole text so it reads as one dictation. A short dictation is one upload; a
+/// retried long one goes up in pieces again, cut every `PIECE`. A failure that
+/// may pass leaves all the audio in `kept` first.
+#[expect(clippy::too_many_arguments, reason = "one recording and everything its text depends on")]
+fn send_off(
+    transcriber: Arc<Transcriber>,
+    pieces: Vec<Piece>,
+    samples: Vec<f32>,
+    words: Vec<String>,
+    language: Option<&'static str>,
+    pass: crate::cleanup::Pass,
+    kept: Kept,
+    tx: Sender<Input>,
+) {
+    std::thread::spawn(move || {
+        let mut audio = Vec::new();
+        let mut heard = Vec::new();
+        for piece in pieces {
+            let (piece_audio, text) = piece.join().unwrap_or_else(|_| (Vec::new(), Err(Failure::Unreadable)));
+            audio.extend(piece_audio);
+            heard.push(text);
+        }
+        let piece_len = (PIECE.as_secs_f32() * crate::transcriber::SAMPLE_RATE as f32) as usize;
+        if heard.is_empty() && samples.len() <= piece_len {
+            heard.push(transcriber.transcribe(&samples, &words, language));
+        } else {
+            heard
+                .extend(samples.chunks(piece_len).map(|chunk| transcribe_piece(&transcriber, chunk, &words, language)));
+        }
+        audio.extend(samples);
+        let heard = join_pieces(heard).map(|text| crate::cleanup::run(&text, &pass));
+        if let Err(failure) = &heard
+            && failure.retryable()
+        {
+            *kept.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(audio);
+        }
+        let _ = tx.send(Input::Transcribed(heard));
+    });
+}
+
 /// One dictation's text from its pieces, in order: every piece's words joined,
 /// or the first piece that failed. A gap in the middle would paste as if nothing were missing.
 pub fn join_pieces(pieces: Vec<Result<String, Failure>>) -> Result<String, Failure> {
@@ -393,6 +483,19 @@ pub fn join_pieces(pieces: Vec<Result<String, Failure>>) -> Result<String, Failu
         }
     }
     Ok(texts.join(" "))
+}
+
+/// What ChatGPT's pass does with a recording's text. An action's words are
+/// matched as heard: a cleanup would change the very words that pick it.
+fn cleanup_pass(kind: Kind, chosen: &Settings) -> crate::cleanup::Pass {
+    match kind {
+        Kind::Action => crate::cleanup::Pass::default(),
+        Kind::Dictate => crate::cleanup::Pass {
+            words: if chosen.fix_names { chosen.dictionary.clone() } else { Vec::new() },
+            tidy: chosen.cleanup,
+            commands: if chosen.commands { chosen.command_groups.phrases() } else { Vec::new() },
+        },
+    }
 }
 
 /// What the last dictation did, for `likh ctl status`. Never the text itself.
@@ -465,7 +568,7 @@ struct Running {
     /// Media this dictation is pausing (pausing takes a moment, so it runs on its own thread).
     paused: Option<std::thread::JoinHandle<crate::media::Paused>>,
     /// A long dictation's pieces already on their way, oldest first.
-    pieces: Vec<std::thread::JoinHandle<Result<String, Failure>>>,
+    pieces: Vec<Piece>,
     /// How much audio those pieces hold.
     pieces_seconds: f32,
     /// The window in front when the action key went down: an action's result goes there.
@@ -500,6 +603,9 @@ fn run(
     let mut dictation = Dictation::default();
     let mut running = Running::default();
     let mut released: Option<(Instant, f32)> = None;
+    let kept: Kept = Arc::default();
+    // The window the last paste landed in: "scratch that" undoes only there.
+    let mut pasted_in: Option<isize> = None;
     loop {
         // Idle waits without waking; only a recording needs the clock.
         let listening = matches!(dictation.phase(), Phase::Recording | Phase::HandsFree);
@@ -528,6 +634,7 @@ fn run(
             Input::Cancel if !listening && runner.cancel() => continue,
             _ => {}
         }
+        let finished = matches!(input, Input::Transcribed(_));
         let failed = match &input {
             Input::Transcribed(Err(failure)) => Some(failure.message()),
             Input::MicFailed { reason, .. } => Some(reason.clone()),
@@ -547,7 +654,11 @@ fn run(
         // stop, and whether the mic has sent any sound at all.
         let (quiet, sound) = match (&input, running.recording.as_ref()) {
             (Input::Tick, Some(recording)) => (
-                recording.quiet_for(),
+                match recording.quiet_for() {
+                    Some(quiet) => Some(Input::Quiet(quiet)),
+                    None if !recording.spoke() => Some(Input::Unspoken),
+                    None => None,
+                },
                 Some(Input::Sound {
                     heard: recording.sounded(),
                     lost: recording.lost(),
@@ -566,7 +677,10 @@ fn run(
         {
             running.pieces_seconds += piece.len() as f32 / crate::transcriber::SAMPLE_RATE as f32;
             let words = chosen.dictionary.clone();
-            running.pieces.push(std::thread::spawn(move || transcribe_piece(&transcriber, &piece, &words, language)));
+            running.pieces.push(std::thread::spawn(move || {
+                let text = transcribe_piece(&transcriber, &piece, &words, language);
+                (piece, text)
+            }));
         }
         let choices = Choices {
             mode: chosen.mode,
@@ -576,7 +690,7 @@ fn run(
         let now = Instant::now();
         let mut effects = dictation.handle(input, now, choices);
         if let Some(quiet) = quiet {
-            effects.extend(dictation.handle(Input::Quiet(quiet), now, choices));
+            effects.extend(dictation.handle(quiet, now, choices));
         }
         if let Some(sound) = sound {
             effects.extend(dictation.handle(sound, now, choices));
@@ -629,31 +743,22 @@ fn run(
                         let _ = tx.send(Input::Transcribed(Err(failure)));
                         continue;
                     }
-                    let words = chosen.dictionary.clone();
-                    // An action's words are matched as heard: a cleanup would change the very words that pick it.
-                    let pass = match dictation.kind() {
-                        crate::dictation::Kind::Action => crate::cleanup::Pass::default(),
-                        crate::dictation::Kind::Dictate => crate::cleanup::Pass {
-                            words: if chosen.fix_names { words.clone() } else { Vec::new() },
-                            tidy: chosen.cleanup,
-                            commands: if chosen.commands { chosen.command_groups.phrases() } else { Vec::new() },
-                        },
+                    let pass = cleanup_pass(dictation.kind(), &chosen);
+                    send_off(transcriber, pieces, samples, chosen.dictionary.clone(), language, pass, kept.clone(), tx);
+                }
+                Effect::Retry => {
+                    let samples = kept.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+                    let Some(samples) = samples else {
+                        let _ = tx.send(Input::Transcribed(Ok(String::new())));
+                        continue;
                     };
-                    std::thread::spawn(move || {
-                        // A short dictation is one upload, as it always was. A long one's
-                        // last piece goes now, and joins the pieces sent while you talked.
-                        let last = if pieces.is_empty() {
-                            transcriber.transcribe(&samples, &words, language)
-                        } else {
-                            transcribe_piece(&transcriber, &samples, &words, language)
-                        };
-                        let mut heard: Vec<_> =
-                            pieces.into_iter().map(|piece| piece.join().unwrap_or(Err(Failure::Unreadable))).collect();
-                        heard.push(last);
-                        // One cleanup over the whole text, so it reads as one dictation.
-                        let heard = join_pieces(heard).map(|text| crate::cleanup::run(&text, &pass));
-                        let _ = tx.send(Input::Transcribed(heard));
-                    });
+                    let seconds = samples.len() as f32 / crate::transcriber::SAMPLE_RATE as f32;
+                    released = Some((Instant::now(), seconds));
+                    // The engine picked now, so fixing a Groq key or switching engines is a way to retry.
+                    let transcriber = Arc::new(Transcriber::new(chosen.engine, fake.as_deref()));
+                    let pass = cleanup_pass(dictation.kind(), &chosen);
+                    let words = chosen.dictionary.clone();
+                    send_off(transcriber, Vec::new(), samples, words, language, pass, kept.clone(), tx.clone());
                 }
                 Effect::Discard => {
                     running.resume_media();
@@ -665,6 +770,10 @@ fn run(
                 }
                 Effect::Sound(cue) if chosen.sounds => crate::sounds::play(cue),
                 Effect::Sound(_) => {}
+                // Ctrl+Z in another app would undo something likh never typed.
+                Effect::Undo if pasted_in.is_none() || crate::hotkey::foreground().map(|w| w.id) != pasted_in => {
+                    pill.show(Show::Note("Nothing to undo here".into()));
+                }
                 Effect::Undo => {
                     if let Err(reason) = crate::paste::undo() {
                         diagnostics::error("paste", format!("couldn't undo: {reason}"));
@@ -680,7 +789,10 @@ fn run(
                     let mut last =
                         Last { audio_seconds: seconds, latency_ms: at.elapsed().as_millis(), characters, error: None };
                     let restore = match pasted {
-                        Ok(restore) => Some(restore),
+                        Ok(restore) => {
+                            pasted_in = crate::hotkey::foreground().map(|w| w.id);
+                            Some(restore)
+                        }
                         Err(reason) => {
                             let message = format!("likh couldn't paste. {reason}");
                             pill.show(Show::Error(message.clone()));
@@ -733,7 +845,10 @@ fn run(
                     match last {
                         // No pill: the text landing is the feedback, as with a dictation.
                         Some(text) => match crate::paste::paste(&text) {
-                            Ok(restore) => restore.finish(),
+                            Ok(restore) => {
+                                pasted_in = crate::hotkey::foreground().map(|w| w.id);
+                                restore.finish();
+                            }
                             Err(reason) => {
                                 diagnostics::error("paste", format!("couldn't paste the last dictation: {reason}"));
                                 pill.show(Show::Error(format!("likh couldn't paste. {reason}")));
@@ -749,6 +864,11 @@ fn run(
                 }
                 Effect::Pill(show) => pill.show(show),
             }
+        }
+        // The kept audio lives as long as the table can retry it. Only a result
+        // decides that: the thread fills it a moment before its failure arrives.
+        if finished && !dictation.can_retry() {
+            kept.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
         }
         // Esc belongs to likh only while a recording can be cancelled.
         crate::hotkey::watch_escape(matches!(dictation.phase(), Phase::Recording | Phase::HandsFree));

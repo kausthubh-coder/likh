@@ -25,8 +25,21 @@ const session = spawnSync(
 if (session.status !== 0) failures.push("global skills (cloud/session.sh)");
 
 // 2. Linux libraries: tray-icon links GTK and appindicator, cpal links ALSA,
-// enigo links libxdo. Without them the crate doesn't compile here.
-const libs = ["libgtk-3-dev", "libasound2-dev", "libxdo-dev", "libayatana-appindicator3-dev", "pkg-config"];
+// enigo links libxdo. Without them the crate doesn't compile here. iced's X11
+// windows load libxkbcommon-x11 at run time, and verify-likh's Linux recipes
+// speak test WAVs (espeak-ng, sox) and capture likh's own windows (xdotool, imagemagick).
+const libs = [
+  "libgtk-3-dev",
+  "libasound2-dev",
+  "libxdo-dev",
+  "libayatana-appindicator3-dev",
+  "pkg-config",
+  "libxkbcommon-x11-0",
+  "espeak-ng",
+  "sox",
+  "xdotool",
+  "imagemagick",
+];
 const missing = libs.filter((lib) => spawnSync("dpkg", ["-s", lib], { stdio: "ignore" }).status !== 0);
 if (missing.length > 0) {
   const isRoot = process.getuid?.() === 0;

@@ -67,9 +67,13 @@ export default function CodexSetup() {
           <h2 className="text-[22px] leading-[28px] font-semibold tracking-[-0.02em]">Which plans work</h2>
           <div className="mt-4 space-y-4 text-[15px] leading-[22px] text-pretty text-text-muted">
             <p>
-              OpenAI includes Codex with Free, Go, Plus, Pro, Business, Enterprise and Edu. Its feature table lists
-              voice dictation for Plus, Pro, Business, Enterprise and Edu, but doesn&apos;t establish Free or Go
-              support. likh has worked with a paid account. Free and Go transcription remain unverified.
+              OpenAI includes Codex with Free, Go, Plus, Pro, Business, Enterprise and Edu. likh has dictated with a
+              ChatGPT Free account (tested 21 October 2026) and with paid ones. Go is untested.
+            </p>
+            <p>
+              Clean up is a bonus. It asks ChatGPT to tidy each dictation, and that counts against your plan&apos;s
+              Codex allowance. On Free the allowance runs out for the month; likh then pastes what it heard, and
+              dictation keeps working.
             </p>
             <p>
               likh itself is free. OpenAI controls access and limits for transcription. Its published desktop Voice

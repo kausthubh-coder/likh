@@ -329,19 +329,24 @@ impl Onboarding {
                 Engine::Groq => {}
             },
             Message::GetCodex => crate::shared::open_url(crate::shared::CODEX_SETUP),
-            Message::Engine(engine) => {
-                self.save_engine(engine);
-                if engine == Engine::Groq && !self.groq.saved {
-                    return operation::focus(GROQ_KEY);
-                }
+            // Groq without a key would fail the first dictation: it's shown, and saved once a key is.
+            Message::Engine(Engine::Groq) if !self.groq.saved => {
+                self.engine = Engine::Groq;
+                return operation::focus(GROQ_KEY);
             }
+            Message::Engine(engine) => self.save_engine(engine),
             Message::GroqKey(key) => {
                 self.groq.key = key;
                 self.groq.notice = None;
             }
             Message::SaveGroqKey if self.groq.checking => {}
             Message::SaveGroqKey => return self.groq.save(Message::GroqChecked),
-            Message::GroqChecked(key, answer) => self.groq.checked(&key, answer),
+            Message::GroqChecked(key, answer) => {
+                self.groq.checked(&key, answer);
+                if self.groq.saved && self.engine == Engine::Groq {
+                    self.save_engine(Engine::Groq);
+                }
+            }
             Message::ReplaceGroqKey => {
                 self.groq.saved = false;
                 self.groq.notice = None;
@@ -559,17 +564,38 @@ impl Onboarding {
         Page {
             art: flock_art(p, Shape::Mark, self.flock_clock(Shape::Mark)),
             title: "Talk. It types.",
-            body: "Hold a key, say it, let go. Your words land wherever you're typing.".into(),
+            body: "Free dictation with any ChatGPT account. Hold a key, say it, let go.".into(),
             note: None,
             actions: vec![Action::Primary("Get started", Message::Next)],
         }
     }
 
+    /// The flock spells likh above the three keys worth knowing on day one:
+    /// talk, cancel, and paste the last one again.
     fn done(&self, p: &Palette) -> Page<'_> {
+        let paste_last = self.settings.as_ref().map_or(Some(hotkey::PASTE_LAST), |s| {
+            s.read().map(|s| s.paste_last).unwrap_or_else(|poisoned| poisoned.into_inner().paste_last)
+        });
+        let mut keys = vec![(self.shortcut().parts(), "Hold to talk, let go to paste"), (vec!["Esc"], "Cancel")];
+        if let Some(binding) = paste_last {
+            keys.push((binding.parts(), "Paste the last one again"));
+        }
+        let rows = column(keys.into_iter().map(|(parts, what)| key_row(p, parts, what))).spacing(space::S2);
+        let art = column![
+            flock_art(p, Shape::Word, self.flock_clock(Shape::Word)),
+            container(rows).center_x(Length::Fill),
+            Space::new().height(space::S4),
+        ]
+        .spacing(space::S3);
+        let tray = if cfg!(target_os = "windows") {
+            "likh waits in your tray and starts with Windows."
+        } else {
+            "likh waits in your menu bar."
+        };
         Page {
-            art: flock_art(p, Shape::Word, self.flock_clock(Shape::Word)),
+            art: art.into(),
             title: "You're all set",
-            body: format!("Hold {} in any app to talk. likh waits in your tray.", self.shortcut()),
+            body: tray.into(),
             note: None,
             actions: vec![Action::Primary("Finish", Message::Finish)],
         }
@@ -635,7 +661,7 @@ pub fn codex_copy(status: &CodexStatus) -> StateCopy {
     match status {
         CodexStatus::NotInstalled => StateCopy {
             title: "Codex isn't installed",
-            detail: "Install Codex, sign in once, then come back.".into(),
+            detail: "likh uses your ChatGPT account through Codex, free on any plan. Install it, sign in once.".into(),
             tone: Tone::Neutral,
         },
         CodexStatus::SignedOut => StateCopy {
@@ -811,8 +837,12 @@ impl Onboarding {
                         vec![Action::Primary("Check again", Message::Recheck)]
                     }
                 };
-                let note =
-                    if ready { "Nothing to pay, nothing to paste." } else { "likh checks again every 2 seconds." };
+                // Plain about Free: dictation stays free, the extras share a monthly allowance.
+                let note = if ready {
+                    "Dictation is free on every plan. Clean up, a bonus, can run out on Free."
+                } else {
+                    "likh checks again every 2 seconds."
+                };
                 (actions, (note.to_string(), p.text_subtle))
             }
             Engine::Groq if self.groq.saved => (
@@ -939,6 +969,23 @@ fn shortcut<'a>(p: &Palette, binding: Binding, practice: &'a Practice, in_app: b
             actions: vec![Action::Secondary("Keep current", Message::KeepShortcut)],
         };
     }
+    // Holding the keys would do nothing at all, so the step leads with the fix.
+    if hotkey::shortcut_taken() {
+        let note = practice.notice.clone().map_or_else(
+            || ("Pick keys no other app uses, like Ctrl + Alt + Space.".to_string(), p.text_subtle),
+            |(words, t)| (words, tone(t)),
+        );
+        return Page {
+            art: art.into(),
+            title: "Another app has these keys",
+            body: format!("{binding} belongs to another app, so likh can't hear it. Pick new keys."),
+            note: Some(note),
+            actions: vec![
+                Action::Secondary("Skip", Message::Next),
+                Action::Primary("Change shortcut", Message::ChangeShortcut),
+            ],
+        };
+    }
     let note = if practice.advance_at.is_some() {
         ("Heard you. On to the last step.".to_string(), p.success)
     } else if practice.listening {
@@ -960,6 +1007,27 @@ fn shortcut<'a>(p: &Palette, binding: Binding, practice: &'a Practice, in_app: b
             Action::Primary("Continue", Message::Next),
         ],
     }
+}
+
+/// One key on the done step: small caps on the left, what they do on the right.
+fn key_row<'a>(p: &Palette, parts: Vec<&'static str>, what: &'static str) -> Element<'a, Message> {
+    let (fill, ink, subtle) = (p.elevated, p.text, p.text_subtle);
+    let mut caps = row![].spacing(space::S1).align_y(Alignment::Center);
+    for part in parts {
+        caps = caps.push(
+            container(text(part).size(size::SMALL).font(theme::MONO).color(ink)).padding([space::S1, space::S2]).style(
+                move |_| container::Style {
+                    background: Some(Background::Color(fill)),
+                    border: Border { radius: radius::CONTROL.into(), ..Border::default() },
+                    ..container::Style::default()
+                },
+            ),
+        );
+    }
+    row![container(caps).width(160).align_right(160), text(what).size(size::SMALL).color(subtle).width(200),]
+        .spacing(space::S4)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 /// The wide dot slides between positions; `position` is the step index, mid-move it is fractional.
