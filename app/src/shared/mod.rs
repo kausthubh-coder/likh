@@ -8,8 +8,8 @@ pub mod theme;
 pub mod ui;
 
 /// likh's website, and its guide to installing Codex and signing in.
-pub const SITE: &str = "https://getlikh.vercel.app";
-pub const CODEX_SETUP: &str = "https://getlikh.vercel.app/codex";
+pub const SITE: &str = "https://likh.kausthubh.dev";
+pub const CODEX_SETUP: &str = "https://likh.kausthubh.dev/codex";
 
 /// The system's own page for the microphone permission.
 pub const MIC_SETTINGS: &str = if cfg!(target_os = "macos") {

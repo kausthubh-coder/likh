@@ -7,7 +7,7 @@ description: Take verified likh work to production through a PR, the Vercel site
 
 likh is public (`kausthubh-coder/likh`), so work lands through a PR with CI. Two things reach people:
 
-- **The site** (`getlikh.vercel.app`): Vercel builds every push to `main`. Merging deploys it.
+- **The site** (`likh.kausthubh.dev`): Vercel builds every push to `main`. Merging deploys it.
 - **The app**: only a `v<version>` tag ships it. `release.yml` builds, signs and publishes a prerelease with the Windows installer, then adds the macOS DMG (`scripts/build-mac-app.sh`), and every installed likh finds it within a day. When the change touches what goes into the app (`app/src/`, `app/assets/`, the dependencies in `app/Cargo.toml`, `installer/`), the release is part of the ship: do it in steps 1 and 4, don't ask about it at the end. Skip it only when I say so ("no release"), and say in the report that it was skipped. Tooling, docs, skills and site-only changes have no release.
 
 ## Rules
@@ -84,7 +84,7 @@ git fetch origin && git rev-parse origin/main    # <merge sha>
 
 ## 5. Check production, read-only
 
-- Site: `curl -s https://getlikh.vercel.app` returns 200 and contains the shipped change (after a release, `v<version>` in the download link).
+- Site: `curl -s https://likh.kausthubh.dev` returns 200 and contains the shipped change (after a release, `v<version>` in the download link).
 - Release: `gh release view v<version> --json isPrerelease,assets` lists `likh-setup-windows-x64.exe`, its `.sig` and `likh-macos.dmg`, and `curl -s "https://api.github.com/repos/kausthubh-coder/likh/releases?per_page=1"` (what the updater reads) leads with `v<version>`.
 - Never install it. I update my own likh ("Restart to update").
 
