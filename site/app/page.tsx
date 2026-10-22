@@ -26,6 +26,7 @@ const FEATURES = [
     title: "Clean up",
     line: "Drops the ums, keeps your “actually, 3”, and turns spoken lists into lists. A bonus: on ChatGPT Free it can run out for the month.",
   },
+  { title: "Edit by voice", line: "Select text, hold Ctrl + Space and say “make it shorter” or “in Hindi”." },
   { title: "Your own words", line: "Project names and people, spelled your way every time." },
   { title: "Paste it again", line: "Alt + Shift + Z pastes your last dictation anywhere." },
   { title: "History", line: "Every dictation, kept on your computer. Click to copy." },

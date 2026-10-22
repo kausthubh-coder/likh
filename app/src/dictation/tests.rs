@@ -672,3 +672,66 @@ fn holding_the_keys_never_ends_for_lack_of_a_voice() {
     assert_eq!(d.handle(Input::Unspoken, after(t0, 15_000), quiet), vec![]);
     assert_eq!(d.phase(), Phase::Recording);
 }
+
+fn said_then(d: &mut Dictation, t0: Instant, said: &str) -> Vec<Effect> {
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    d.handle(Input::Release(after(t0, 1_500)), after(t0, 1_500), HOLD_OR_TAP);
+    d.handle(Input::Transcribed(Ok(said.into())), after(t0, 2_000), HOLD_OR_TAP)
+}
+
+#[test]
+fn an_edit_instruction_waits_for_chatgpt_and_pastes_over_the_selection() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    assert_eq!(said_then(&mut d, t0, "Make it shorter."), vec![Effect::Edit { said: "Make it shorter.".into() }]);
+    assert_eq!(d.phase(), Phase::Editing);
+    // A new hold while ChatGPT edits waits its turn.
+    assert_eq!(d.handle(Input::Hold, after(t0, 2_500), HOLD_OR_TAP), vec![]);
+    assert_eq!(
+        d.handle(Input::Edited(Ok(Edited::Replace("Ship Friday.".into()))), after(t0, 3_200), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::Done), paste("Ship Friday.")]
+    );
+    assert_eq!(d.phase(), Phase::Idle);
+}
+
+#[test]
+fn an_instruction_with_nothing_selected_is_typed_as_said() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    said_then(&mut d, t0, "Make it shorter.");
+    assert_eq!(
+        d.handle(Input::Edited(Ok(Edited::Dictate("Make it shorter.".into()))), after(t0, 2_300), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::Done), paste("Make it shorter.")]
+    );
+}
+
+#[test]
+fn a_failed_edit_says_why_and_leaves_the_selection_alone() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    said_then(&mut d, t0, "In Hindi.");
+    assert_eq!(
+        d.handle(
+            Input::Edited(Err("ChatGPT's allowance for your plan ran out until 17 Nov".into())),
+            after(t0, 3_000),
+            HOLD_OR_TAP
+        ),
+        vec![
+            Effect::Sound(Cue::Error),
+            Effect::Pill(Show::Error(
+                "likh couldn't edit that. ChatGPT's allowance for your plan ran out until 17 Nov".into()
+            ))
+        ]
+    );
+    assert_eq!(d.phase(), Phase::Idle);
+}
+
+#[test]
+fn an_ordinary_sentence_pastes_without_any_edit() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    assert_eq!(
+        said_then(&mut d, t0, "Longer meetings mean less focus."),
+        vec![Effect::Pill(Show::Done), paste("Longer meetings mean less focus.")]
+    );
+}
