@@ -52,7 +52,7 @@ say = ["open {site}"]
 output = "none"
 [lists.site]
 github = "https://github.com"
-"likh docs" = "https://getlikh.vercel.app/docs?from=likh"
+"likh docs" = "https://likh.kausthubh.dev/docs?from=likh"
 [[do]]
 open = "{site}"
 "#;
@@ -145,7 +145,7 @@ fn what_you_said_matches_regardless_of_case_and_punctuation_and_the_rest_is_caug
 fn a_list_slot_matches_only_its_names_and_brings_their_value() {
     let actions = [one(SITES)];
     let found = matcher::find(&actions, "Open likh docs.").expect("a match");
-    assert_eq!(found.slots["site"], "https://getlikh.vercel.app/docs?from=likh");
+    assert_eq!(found.slots["site"], "https://likh.kausthubh.dev/docs?from=likh");
     assert_eq!(matcher::find(&actions, "open gitlab"), None);
 }
 
@@ -246,11 +246,11 @@ fn keys_are_chords_split_by_spaces() {
 fn open_url_encodes_what_you_said_but_not_a_link_from_the_file() {
     let values = BTreeMap::from([
         ("text".to_string(), "lo-fi beats & rain".to_string()),
-        ("site".to_string(), "https://getlikh.vercel.app/docs?from=likh".to_string()),
+        ("site".to_string(), "https://likh.kausthubh.dev/docs?from=likh".to_string()),
     ]);
     let raw = vec!["site".to_string()];
     assert_eq!(steps::fill("spotify:search:{text}", &values, true, &raw), "spotify:search:lo-fi%20beats%20%26%20rain");
-    assert_eq!(steps::fill("{site}", &values, true, &raw), "https://getlikh.vercel.app/docs?from=likh");
+    assert_eq!(steps::fill("{site}", &values, true, &raw), "https://likh.kausthubh.dev/docs?from=likh");
     // Pasted text goes in as said, and {{ }} are braces.
     assert_eq!(steps::fill("{{{text}}}", &values, false, &raw), "{lo-fi beats & rain}");
 }
@@ -356,7 +356,7 @@ fn the_router_offers_each_action_as_a_tool_and_reads_back_the_one_picked() {
     let pick = |arguments: &str| router::read_pick(&call("action_1", arguments), &actions, &offered, said, &[]);
     let picked = pick(r#"{"site":"Likh docs","site_heard":"likh docs"}"#).expect("picked");
     assert_eq!(picked.action, 1);
-    assert_eq!(picked.slots["site"], "https://getlikh.vercel.app/docs?from=likh");
+    assert_eq!(picked.slots["site"], "https://likh.kausthubh.dev/docs?from=likh");
     // A name that isn't on the list, or a tool that wasn't offered, picks nothing.
     assert_eq!(pick(r#"{"site":"gitlab","site_heard":"likh docs"}"#), None);
     assert_eq!(router::read_pick(&call("action_2", "{}"), &actions, &offered, said, &[]), None);

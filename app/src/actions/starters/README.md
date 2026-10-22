@@ -137,7 +137,7 @@ say = ["open {site}"]
 output = "none"
 [lists.site]
 github = "https://github.com"
-"likh docs" = "https://getlikh.vercel.app"
+"likh docs" = "https://likh.kausthubh.dev"
 [[do]]
 open = "{site}"
 ```
