@@ -103,6 +103,10 @@ fn with_panel(mtm: MainThreadMarker, then: impl FnOnce(&NSPanel, &NSImageView)) 
             panel.setOpaque(false);
             panel.setBackgroundColor(Some(&NSColor::clearColor()));
             panel.setHasShadow(false);
+            // A panel hides whenever its app isn't the active one, and likh never is:
+            // the pill must not take focus. Without this it never showed (CI's Mac, 2026-10-22).
+            panel.setHidesOnDeactivate(false);
+            panel.setFloatingPanel(true);
             panel.setLevel(NSStatusWindowLevel);
             panel.setIgnoresMouseEvents(true);
             panel.setCollectionBehavior(
@@ -131,6 +135,9 @@ fn place() {
     with_panel(mtm, |panel, _| {
         panel.setFrame_display(NSRect::new(origin, NSSize::new(w, h)), false);
         panel.orderFrontRegardless();
+        if !panel.isVisible() {
+            crate::diagnostics::warn("pill", "the pill's panel didn't come on screen");
+        }
     });
 }
 
