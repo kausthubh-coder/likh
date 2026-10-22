@@ -57,8 +57,8 @@ fn a_fresh_install_gets_the_defaults() {
     assert_eq!(settings.shortcut.to_string(), "Ctrl + Space");
     assert_eq!(settings.mode, Mode::HoldOrTap);
     assert!(settings.history && settings.sounds && settings.commands);
-    // On out of the box where likh can start with the system; macOS gets it with its app bundle.
-    assert_eq!(settings.start_with_windows, cfg!(target_os = "windows"));
+    // On out of the box where likh can start with the system: Windows, and macOS at login.
+    assert_eq!(settings.start_with_windows, cfg!(any(target_os = "windows", target_os = "macos")));
 }
 
 #[test]

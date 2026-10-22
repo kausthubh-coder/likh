@@ -73,7 +73,18 @@ pub fn foreground() -> Option<Window> {
     {
         windows::foreground()
     }
-    #[cfg(not(target_os = "windows"))]
+    // macOS gives the app, not its window: `app` is its bundle id
+    // (`com.tinyspeck.slackmacgap`), `title` its name, `id` its process.
+    #[cfg(target_os = "macos")]
+    {
+        let app = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication()?;
+        Some(Window {
+            id: app.processIdentifier() as isize,
+            app: app.bundleIdentifier().map(|id| id.to_string()).unwrap_or_default(),
+            title: app.localizedName().map(|name| name.to_string()).unwrap_or_default(),
+        })
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         None
     }
@@ -268,7 +279,7 @@ pub fn spawn(dictation: Sender<Input>, triggers: Triggers) -> Result<(), String>
     #[cfg(target_os = "windows")]
     let started = windows::spawn(dictation, triggers);
     #[cfg(not(target_os = "windows"))]
-    let started = other::spawn(dictation, triggers.shortcut, triggers.mouse);
+    let started = other::spawn(dictation, triggers);
     note_shortcut(started.is_err());
     started
 }
@@ -286,7 +297,31 @@ fn note_shortcut(taken: bool) {
     SHORTCUT_TAKEN.store(taken, Ordering::SeqCst);
 }
 
-/// The shortcut's keys belong to another app.
+/// Why holding the keys does nothing, when they couldn't start (macOS: no Accessibility permission).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, reason = "only macOS asks for Accessibility"))]
+pub const NEEDS_ACCESSIBILITY: &str =
+    "likh needs Accessibility access to hear its keys. Allow it in System Settings, Privacy & Security, Accessibility.";
+
+/// macOS: likh is on the Accessibility list, so it can listen for keys.
+#[cfg(target_os = "macos")]
+pub fn accessibility_granted() -> bool {
+    handy_keys::check_accessibility()
+}
+
+/// macOS: starts every key again, once the Accessibility permission is on.
+#[cfg(target_os = "macos")]
+pub fn start_again(triggers: Triggers) -> Result<(), String> {
+    let started = other::start_all(triggers);
+    note_shortcut(started.is_err());
+    started
+}
+
+/// Why the shortcut does nothing when it can't start, in the views' few words.
+pub fn why_unheard() -> &'static str {
+    if cfg!(target_os = "macos") { "likh needs Accessibility access." } else { "Another app has these keys." }
+}
+
+/// The shortcut's keys belong to another app (macOS: likh can't listen for any keys yet).
 pub fn shortcut_taken() -> bool {
     SHORTCUT_TAKEN.load(Ordering::SeqCst)
 }
@@ -319,8 +354,7 @@ pub fn set_action_key(binding: Option<Binding>) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = binding;
-        Err("The command key isn't available on macOS yet.".into())
+        other::set(other::Slot::Action, binding.map(String::from))
     }
 }
 
@@ -332,8 +366,7 @@ pub fn set_action_mouse(mouse: MouseTrigger) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = mouse;
-        Err("The command key isn't available on macOS yet.".into())
+        other::set(other::Slot::ActionMouse, other::mouse_name(mouse))
     }
 }
 
@@ -345,8 +378,7 @@ pub fn set_paste_last(binding: Option<Binding>) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = binding;
-        Err("Pasting the last dictation isn't available on macOS yet.".into())
+        other::set(other::Slot::PasteLast, binding.map(String::from))
     }
 }
 
@@ -358,7 +390,7 @@ pub fn set_mouse(mouse: MouseTrigger) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        other::set_mouse(mouse)
+        other::set(other::Slot::Mouse, other::mouse_name(mouse))
     }
 }
 
@@ -370,8 +402,7 @@ pub fn rebind(binding: Binding) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = binding;
-        Err("Changing the shortcut isn't available on macOS yet.".into())
+        other::set(other::Slot::Shortcut, Some(String::from(binding)))
     }
 }
 
@@ -380,7 +411,7 @@ pub fn pause(paused: bool) {
     #[cfg(target_os = "windows")]
     windows::pause(paused);
     #[cfg(not(target_os = "windows"))]
-    let _ = paused;
+    other::pause(paused);
 }
 
 /// Who wants Esc right now: a recording that can be cancelled, an action that can be stopped.
@@ -400,77 +431,183 @@ pub fn watch_escape_for_action(on: bool) {
 }
 
 fn apply_escape() {
-    let on = ESCAPE_FOR_DICTATION.load(Ordering::SeqCst) || ESCAPE_FOR_ACTION.load(Ordering::SeqCst);
     #[cfg(target_os = "windows")]
-    windows::watch_escape(on);
-    #[cfg(not(target_os = "windows"))]
-    let _ = on;
+    windows::watch_escape(escape_wanted());
 }
 
-/// macOS (alpha): handy-keys for the shortcut and the mouse button. Untested
-/// by hand; CI builds and tests it.
+/// A recording can be cancelled or an action stopped: Esc does it.
+fn escape_wanted() -> bool {
+    ESCAPE_FOR_DICTATION.load(Ordering::SeqCst) || ESCAPE_FOR_ACTION.load(Ordering::SeqCst)
+}
+
+/// macOS: handy-keys for every key and button. Each listener is its own
+/// event tap on its own thread, and handy-keys can't change one from outside
+/// its thread, so changing a key starts a new listener and retires the old
+/// one: it notices it's stale at its next event (its keys stay taken until
+/// then, at most one press). Esc has a listener of its own that never blocks
+/// the key, so Esc still reaches apps; it cancels only while there's
+/// something to cancel. Taken keys aren't a thing here: every listener needs
+/// the Accessibility permission, and without it none starts.
 #[cfg(not(target_os = "windows"))]
 mod other {
-    use super::{Binding, MouseTrigger};
+    use super::{MouseTrigger, Triggers};
     use crate::dictation::Input;
     use handy_keys::{Hotkey, HotkeyManager, HotkeyState};
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::mpsc::Sender;
     use std::sync::{Mutex, OnceLock};
 
-    /// Bumped on every mouse change: a listener for an older choice stops at its next event.
-    static MOUSE_GENERATION: AtomicU64 = AtomicU64::new(0);
+    /// What a listener does.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Slot {
+        Shortcut,
+        PasteLast,
+        Action,
+        Mouse,
+        ActionMouse,
+    }
+
+    impl Slot {
+        const ALL: [Slot; 5] = [Slot::Shortcut, Slot::PasteLast, Slot::Action, Slot::Mouse, Slot::ActionMouse];
+
+        fn index(self) -> usize {
+            Slot::ALL.iter().position(|slot| *slot == self).unwrap_or_default()
+        }
+
+        /// What going down and coming up send. Paste last waits for its keys
+        /// to come up, so the paste isn't read as a shortcut.
+        fn inputs(self) -> (Option<Input>, fn() -> Option<Input>) {
+            match self {
+                Slot::Shortcut | Slot::Mouse => (Some(Input::Hold), || Some(Input::Release(std::time::Instant::now()))),
+                Slot::Action | Slot::ActionMouse => {
+                    (Some(Input::ActionHold), || Some(Input::Release(std::time::Instant::now())))
+                }
+                Slot::PasteLast => (None, || Some(Input::PasteLast)),
+            }
+        }
+    }
+
+    /// Bumped each time a slot's listener is replaced: an older one stops at its next event.
+    static GENERATIONS: [AtomicU64; 5] =
+        [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+    /// Picking new keys in likh's window: listeners ignore what they hear.
+    static PAUSED: AtomicBool = AtomicBool::new(false);
     static DICTATION: OnceLock<Mutex<Sender<Input>>> = OnceLock::new();
 
-    pub fn spawn(dictation: Sender<Input>, binding: Binding, mouse: MouseTrigger) -> Result<(), String> {
-        let _ = DICTATION.set(Mutex::new(dictation.clone()));
-        if let Err(reason) = set_mouse(mouse) {
-            crate::diagnostics::warn("hotkey", format!("the mouse button won't work: {reason}"));
+    /// Esc's listener is running.
+    static ESCAPE_STARTED: AtomicBool = AtomicBool::new(false);
+
+    pub fn spawn(dictation: Sender<Input>, triggers: Triggers) -> Result<(), String> {
+        let _ = DICTATION.set(Mutex::new(dictation));
+        start_all(triggers)
+    }
+
+    /// Every listener, each replacing its slot's old one.
+    pub fn start_all(triggers: Triggers) -> Result<(), String> {
+        if !ESCAPE_STARTED.load(Ordering::SeqCst)
+            && let Err(reason) = listen_for_escape()
+        {
+            crate::diagnostics::warn("hotkey", format!("Esc won't cancel: {reason}"));
         }
-        listen(dictation, String::from(binding), None)
+        let optional = [
+            (Slot::PasteLast, triggers.paste_last.map(String::from), "pasting the last dictation"),
+            (Slot::Action, triggers.action_key.map(String::from), "the action key"),
+            (Slot::Mouse, mouse_name(triggers.mouse), "the mouse button"),
+            (Slot::ActionMouse, mouse_name(triggers.action_mouse), "the action key's mouse button"),
+        ];
+        for (slot, keys, what) in optional {
+            if let Err(reason) = set(slot, keys) {
+                crate::diagnostics::warn("hotkey", format!("{what} won't work: {reason}"));
+            }
+        }
+        set(Slot::Shortcut, Some(String::from(triggers.shortcut)))
     }
 
-    pub fn set_mouse(mouse: MouseTrigger) -> Result<(), String> {
-        let generation = MOUSE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-        let button = match mouse {
-            MouseTrigger::Off => return Ok(()),
-            MouseTrigger::Middle => "MouseMiddle",
-            MouseTrigger::Back => "MouseX1",
-            MouseTrigger::Forward => "MouseX2",
-        };
-        let dictation = DICTATION
+    pub fn mouse_name(mouse: MouseTrigger) -> Option<String> {
+        match mouse {
+            MouseTrigger::Off => None,
+            MouseTrigger::Middle => Some("MouseMiddle".into()),
+            MouseTrigger::Back => Some("MouseX1".into()),
+            MouseTrigger::Forward => Some("MouseX2".into()),
+        }
+    }
+
+    pub fn pause(paused: bool) {
+        PAUSED.store(paused, Ordering::SeqCst);
+    }
+
+    /// Puts `keys` on `slot` (None turns it off) and retires its old listener.
+    pub fn set(slot: Slot, keys: Option<String>) -> Result<(), String> {
+        let generation = GENERATIONS[slot.index()].fetch_add(1, Ordering::SeqCst) + 1;
+        let Some(keys) = keys else { return Ok(()) };
+        let (down, up) = slot.inputs();
+        listen(&keys, true, move |state| {
+            if GENERATIONS[slot.index()].load(Ordering::SeqCst) != generation {
+                return Flow::Stop;
+            }
+            if PAUSED.load(Ordering::SeqCst) {
+                return Flow::Go;
+            }
+            match state {
+                HotkeyState::Pressed => down.clone().map_or(Flow::Go, send),
+                HotkeyState::Released => up().map_or(Flow::Go, send),
+            }
+        })
+    }
+
+    /// Esc, heard but never taken from the app in front.
+    fn listen_for_escape() -> Result<(), String> {
+        let started = listen("Escape", false, |state| match state {
+            HotkeyState::Pressed if super::escape_wanted() => send(Input::Cancel),
+            _ => Flow::Go,
+        });
+        ESCAPE_STARTED.store(started.is_ok(), Ordering::SeqCst);
+        started
+    }
+
+    enum Flow {
+        Go,
+        Stop,
+    }
+
+    fn send(input: Input) -> Flow {
+        let sent = DICTATION
             .get()
-            .ok_or("the shortcut isn't running")?
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        listen(dictation, button.to_string(), Some(generation))
+            .map(|dictation| dictation.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).send(input).is_ok());
+        if sent == Some(false) { Flow::Stop } else { Flow::Go }
     }
 
-    /// One manager per hotkey, on its own thread. A mouse listener (`generation`
-    /// set) goes quiet once a newer choice replaces it.
-    fn listen(dictation: Sender<Input>, hotkey: String, generation: Option<u64>) -> Result<(), String> {
-        let manager = HotkeyManager::new_with_blocking().map_err(|error| error.to_string())?;
-        let hold: Hotkey = hotkey.parse().map_err(|error: handy_keys::Error| error.to_string())?;
-        let id = manager.register(hold).map_err(|error| error.to_string())?;
+    /// One listener for one hotkey on its own thread, until `on` says stop.
+    /// `block` keeps the keys from the app in front.
+    fn listen(
+        hotkey: &str,
+        block: bool,
+        mut on: impl FnMut(HotkeyState) -> Flow + Send + 'static,
+    ) -> Result<(), String> {
+        let manager = if block { HotkeyManager::new_with_blocking() } else { HotkeyManager::new() }
+            .map_err(|error| explain(&error.to_string()))?;
+        let keys: Hotkey = hotkey.parse().map_err(|error: handy_keys::Error| error.to_string())?;
+        let id = manager.register(keys).map_err(|error| error.to_string())?;
         std::thread::Builder::new()
             .name("likh-hotkey".into())
             .spawn(move || {
                 while let Ok(event) = manager.recv() {
-                    if generation.is_some_and(|mine| mine != MOUSE_GENERATION.load(Ordering::SeqCst)) {
-                        return;
-                    }
-                    let input = match event.state {
-                        HotkeyState::Pressed => Input::Hold,
-                        HotkeyState::Released => Input::Release(std::time::Instant::now()),
-                    };
-                    if event.id == id && dictation.send(input).is_err() {
+                    if event.id == id && matches!(on(event.state), Flow::Stop) {
                         return;
                     }
                 }
             })
             .map(|_| ())
             .map_err(|error| error.to_string())
+    }
+
+    /// handy-keys' error, or what to do about the usual one.
+    fn explain(error: &str) -> String {
+        #[cfg(target_os = "macos")]
+        if !handy_keys::check_accessibility() {
+            return super::NEEDS_ACCESSIBILITY.into();
+        }
+        error.to_owned()
     }
 }
 

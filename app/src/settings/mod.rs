@@ -121,7 +121,7 @@ pub struct Settings {
     pub cleanup: bool,
     /// With Clean up on, each app in front gets its own tone: email, chat, notes, code (`styles/`).
     pub styles: bool,
-    /// Start likh when you sign in to Windows.
+    /// Start likh when you sign in to Windows (macOS: open it at login).
     pub start_with_windows: bool,
     /// Look for a newer likh at launch and after dictations, once a day (`update/`).
     pub auto_update: bool,
@@ -154,8 +154,8 @@ impl Default for Settings {
             cleanup: false,
             styles: true,
             // On out of the box (applied when setup finishes): a dictation app that's gone
-            // after a restart looks broken. Start at login on macOS comes with its app bundle.
-            start_with_windows: cfg!(target_os = "windows"),
+            // after a restart looks broken. On macOS it's Open at login.
+            start_with_windows: cfg!(any(target_os = "windows", target_os = "macos")),
             auto_update: true,
         }
     }
