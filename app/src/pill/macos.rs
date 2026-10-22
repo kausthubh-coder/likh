@@ -7,8 +7,9 @@
 //! Central Dispatch, where it becomes the panel's image. Idle, that thread
 //! sleeps on its channel and nothing is drawn.
 //!
-//! Unlike Windows, its buttons don't take clicks yet: hands-free stops with
-//! the shortcut or Esc, Retry is paste last, and the fixes are in likh's window.
+//! Unlike Windows, it takes no clicks yet, so it shows no buttons: hands-free
+//! stops with the shortcut or Esc, Retry is paste last, and the fixes are in
+//! likh's window.
 
 use super::{CANVAS, Command, Look};
 use dispatch2::DispatchQueue;
@@ -19,6 +20,8 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSData, NSPoint, NSRect, NSSize};
 use std::cell::RefCell;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
@@ -52,7 +55,7 @@ fn run(commands: &Receiver<Command>) {
     let mut last = Instant::now();
     loop {
         // Still: sleep until the next command. Moving: a frame every 16 ms.
-        let command = if moving {
+        let first = if moving {
             match commands.recv_timeout(FRAME) {
                 Ok(command) => Some(command),
                 Err(RecvTimeoutError::Timeout) => None,
@@ -64,19 +67,21 @@ fn run(commands: &Receiver<Command>) {
                 Err(_) => return,
             }
         };
-        if let Some(command) = command {
+        if first.is_some() && !moving {
+            last = Instant::now();
+        }
+        // Everything waiting goes in before one frame is drawn: the mic's levels
+        // arrive about 33 times a second, and a frame each fell behind (CI's Mac, 2026-10-22).
+        for command in first.into_iter().chain(commands.try_iter()) {
             match command {
                 Command::Show(show) => {
                     if look.is_hidden() && show != super::Show::Hidden {
                         look.hold_still(!animations_on());
                         DispatchQueue::main().exec_async(place);
                     }
-                    look.set(show);
+                    look.set(without_buttons(show));
                 }
                 Command::Level(level) => look.level(level),
-            }
-            if !moving {
-                last = Instant::now();
             }
         }
         let now = Instant::now();
@@ -85,11 +90,46 @@ fn run(commands: &Receiver<Command>) {
         if let Some(pixmap) = look.draw(SCALE)
             && let Ok(png) = pixmap.encode_png()
         {
-            DispatchQueue::main().exec_async(move || present(&png));
+            deliver(Frame::Image(png));
         }
         if !moving && look.is_hidden() {
-            DispatchQueue::main().exec_async(hide);
+            deliver(Frame::Hide);
         }
+    }
+}
+
+/// The macOS pill takes no clicks, so a problem shows as its error, without a
+/// button that would do nothing.
+fn without_buttons(show: super::Show) -> super::Show {
+    match show {
+        super::Show::Problem { text, .. } => super::Show::Error(text),
+        other => other,
+    }
+}
+
+/// What the main thread shows next.
+enum Frame {
+    Image(Vec<u8>),
+    Hide,
+}
+
+/// Only the newest frame waits for the main thread; one it hasn't shown yet is
+/// replaced. Queueing every frame put the pill seconds behind.
+static LATEST: Mutex<Option<Frame>> = Mutex::new(None);
+/// A block that shows `LATEST` is already queued on the main thread.
+static QUEUED: AtomicBool = AtomicBool::new(false);
+
+fn deliver(frame: Frame) {
+    *LATEST.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(frame);
+    if !QUEUED.swap(true, Ordering::SeqCst) {
+        DispatchQueue::main().exec_async(|| {
+            QUEUED.store(false, Ordering::SeqCst);
+            match LATEST.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take() {
+                Some(Frame::Image(png)) => present(&png),
+                Some(Frame::Hide) => hide(),
+                None => {}
+            }
+        });
     }
 }
 
