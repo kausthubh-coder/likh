@@ -88,10 +88,12 @@ fn run(commands: &Receiver<Command>) {
         // took: clamping it once made a 6 s error stay 24 s in a debug build.
         let now = Instant::now();
         let mut behind = (now - last).as_secs_f32().min(1.0);
-        moving = false;
-        while behind > 0.0 {
+        loop {
             moving = look.step(behind.min(0.05));
             behind -= 0.05;
+            if behind <= 0.0 {
+                break;
+            }
         }
         last = now;
         if let Some(pixmap) = look.draw(SCALE)
