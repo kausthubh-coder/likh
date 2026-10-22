@@ -423,7 +423,7 @@ fn open_input(
     });
     // The default follows Windows when it switches inputs; a picked mic can only go away.
     let device = picked.or_else(|| host.default_input_device()).ok_or("No microphone is connected.")?;
-    let supported = device.default_input_config().map_err(|error| error.to_string())?;
+    let supported = device.default_input_config().map_err(|error| plain_reason(&error.to_string()))?;
     let config = supported.config();
     let stream = match supported.sample_format() {
         SampleFormat::F32 => build::<f32>(&device, config, lost, on_audio),
@@ -432,7 +432,7 @@ fn open_input(
         SampleFormat::I32 => build::<i32>(&device, config, lost, on_audio),
         other => return Err(format!("The microphone uses a sample format likh can't read yet ({other:?}).")),
     }?;
-    stream.play().map_err(|error| error.to_string())?;
+    stream.play().map_err(|error| plain_reason(&error.to_string()))?;
     Ok(Input { stream, device: short_name(&device.to_string()) })
 }
 
@@ -469,7 +469,19 @@ where
             },
             None,
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| plain_reason(&error.to_string()))
+}
+
+/// What a mic that won't open says, in words people can act on. macOS's
+/// CoreAudio errors arrive as "OSStatus: 560947818" (Devin's Mac with no
+/// input, 2026-10-22); the raw text goes to the log instead.
+pub fn plain_reason(error: &str) -> String {
+    if error.contains("OSStatus") {
+        crate::diagnostics::warn("microphone", format!("the microphone didn't open: {error}"));
+        "No microphone answered. Plug one in, or allow likh in System Settings, Privacy & Security, Microphone.".into()
+    } else {
+        error.to_owned()
+    }
 }
 
 /// Turns a run of samples into one level per window.
