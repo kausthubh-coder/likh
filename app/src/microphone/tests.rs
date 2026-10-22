@@ -272,3 +272,13 @@ fn mic_pick_live() {
     println!("unplugged pick -> opened {}", gone.device());
     assert!(default.name.starts_with(gone.device()));
 }
+
+#[test]
+fn a_coreaudio_error_reads_as_what_to_do() {
+    assert_eq!(
+        plain_reason("An error unknown to the coreaudio-rs API occurred, OSStatus: 560947818"),
+        "No microphone answered. Plug one in, or allow likh in System Settings, Privacy & Security, Microphone."
+    );
+    // Windows' own words already say it.
+    assert_eq!(plain_reason("Access is denied."), "Access is denied.");
+}
