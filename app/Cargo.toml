@@ -55,10 +55,31 @@ winreg = "0.56"
 [target.'cfg(not(windows))'.dependencies]
 handy-keys = "0.3"
 
-# macOS: the app in front (NSWorkspace), for styles, commands' {app} and "scratch that".
-# Already in the tree through winit, so nothing new is built.
+# macOS: the app in front (NSWorkspace), for styles, commands' {app} and "scratch that";
+# and the pill's panel (pill/macos.rs), fed frames on the main thread through dispatch2.
+# All already in the tree through winit, so nothing new is built.
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace", "NSRunningApplication"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSGeometry"] }
+dispatch2 = "0.3"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSAccessibility",
+  "NSCell",
+  "NSColor",
+  "NSControl",
+  "NSGraphics",
+  "NSImage",
+  "NSImageCell",
+  "NSImageView",
+  "NSPanel",
+  "NSResponder",
+  "NSRunningApplication",
+  "NSScreen",
+  "NSView",
+  "NSWindow",
+  "NSWorkspace",
+] }
 
 # Linux isn't a likh platform, but cloud agent sessions run on it: without a
 # windowing backend iced's software renderer (softbuffer) doesn't compile, and
