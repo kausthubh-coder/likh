@@ -146,9 +146,12 @@ fn clean_up_is_off_until_switched_on_and_says_what_it_needs() {
     assert!(shows(&f.panel, "Drops ums, keeps corrections, makes lists. Can run out on Free."));
     let saved = || Settings::load_from(&f.dir.path().join("settings.json"));
     assert!(!saved().cleanup);
-    press(&mut f.panel, "Clean up");
-    assert!(saved().cleanup);
-    press(&mut f.panel, "Clean up");
+    press(&mut f.panel, "Everywhere");
+    assert!(saved().cleanup && !saved().styles);
+    press(&mut f.panel, "By app");
+    assert!(saved().cleanup && saved().styles);
+    assert!(shows(&f.panel, "A tone for each app: email, chat, notes, code. Can run out on Free."));
+    press(&mut f.panel, "Off");
     assert!(!saved().cleanup);
 }
 

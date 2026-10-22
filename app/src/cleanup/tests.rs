@@ -205,6 +205,7 @@ fn cleanup_live_tidies_what_was_said() {
         words: words(&["Critly"]),
         tidy: true,
         commands: vec!["new line", "new paragraph", "new bullet", "press enter", "scratch that"],
+        style: None,
     };
     let cases: [(&str, &Judge); 6] = [
         ("Um, so, uh, I think we should, um, ship it on Friday.", &|out| out == "I think we should ship it on Friday."),
@@ -229,4 +230,14 @@ fn cleanup_live_tidies_what_was_said() {
         eprintln!("{heard:?}\n  -> {cleaned:?} in {:?}", started.elapsed());
         assert!(good(&cleaned), "{cleaned:?}");
     }
+}
+
+#[test]
+fn an_apps_style_rides_on_clean_up_and_never_without_it() {
+    use crate::styles::Style;
+    let tidy = instructions(&Pass { tidy: true, style: Some(Style::Email), ..Pass::default() });
+    assert!(tidy.contains(Style::Email.instruction()), "{tidy}");
+    assert!(tidy.find(TIDY) < tidy.find(Style::Email.instruction()), "the style comes after Clean up's own job");
+    let names_only = instructions(&Pass { words: words(&["Critly"]), style: Some(Style::Chat), ..Pass::default() });
+    assert!(!names_only.contains(Style::Chat.instruction()), "{names_only}");
 }

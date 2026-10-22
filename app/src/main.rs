@@ -23,6 +23,7 @@ mod settings;
 mod shared;
 mod silence;
 mod sounds;
+mod styles;
 mod transcriber;
 mod tray;
 mod update;

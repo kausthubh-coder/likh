@@ -88,6 +88,14 @@ pub enum Tab {
     Diagnostics,
 }
 
+/// Clean up's pick: off, the same pass everywhere, or a tone per app (`styles/`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CleanupMode {
+    Off,
+    Everywhere,
+    ByApp,
+}
+
 /// The Commands tab's two halves: phrases that work inside any dictation, and
 /// the commands you start with the command key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -157,7 +165,7 @@ pub enum Message {
     AddWord,
     RemoveWord(usize),
     FixNames(bool),
-    Cleanup(bool),
+    Cleanup(CleanupMode),
     KeepHistory(bool),
     StartWithWindows(bool),
     Engine(Engine),
@@ -613,7 +621,13 @@ impl Panel {
                 }
             }),
             Message::FixNames(on) => self.change(|s| s.fix_names = on),
-            Message::Cleanup(on) => self.change(|s| s.cleanup = on),
+            Message::Cleanup(mode) => self.change(|s| {
+                s.cleanup = mode != CleanupMode::Off;
+                // Off keeps the per-app choice for the next time it's on.
+                if mode != CleanupMode::Off {
+                    s.styles = mode == CleanupMode::ByApp;
+                }
+            }),
             Message::KeepHistory(on) => {
                 self.change(|s| s.history = on);
                 self.load_history();
@@ -1174,15 +1188,25 @@ impl Panel {
 
     /// Clean up: ChatGPT tidies each dictation after whichever engine heard it.
     fn cleanup_line(&self, p: &Palette) -> Line<'_> {
-        let on = self.chosen().cleanup;
-        let what = match (self.allowance, &self.codex) {
-            (Some(resets_at), _) => crate::allowance::paused_line(resets_at),
-            (None, CodexStatus::Connected(_)) => {
+        let chosen = self.chosen();
+        let mode = match (chosen.cleanup, chosen.styles) {
+            (false, _) => CleanupMode::Off,
+            (true, false) => CleanupMode::Everywhere,
+            (true, true) => CleanupMode::ByApp,
+        };
+        let what = match (self.allowance, &self.codex, mode) {
+            (Some(resets_at), _, _) => crate::allowance::paused_line(resets_at),
+            (None, CodexStatus::Connected(_), CleanupMode::ByApp) => {
+                "A tone for each app: email, chat, notes, code. Can run out on Free.".into()
+            }
+            (None, CodexStatus::Connected(_), _) => {
                 "Drops ums, keeps corrections, makes lists. Can run out on Free.".into()
             }
-            (None, _) => "Needs Codex signed in, whichever engine you pick.".into(),
+            (None, _, _) => "Needs Codex signed in, whichever engine you pick.".into(),
         };
-        Line::plain(named_owned(p, "Clean up", what), switch(on)).press(Message::Cleanup(!on))
+        let options =
+            [(CleanupMode::Off, "Off"), (CleanupMode::Everywhere, "Everywhere"), (CleanupMode::ByApp, "By app")];
+        Line::plain(named_owned(p, "Clean up", what), segmented(&options, mode, Message::Cleanup))
     }
 
     /// Language: Auto-detect, or one pinned, with why you'd leave it on auto.

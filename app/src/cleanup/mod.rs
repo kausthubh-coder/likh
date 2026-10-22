@@ -64,6 +64,8 @@ pub struct Pass {
     /// The spoken commands that are on ("new line", "scratch that"). `commands::interpret`
     /// acts on them after this pass, so they must come through word for word.
     pub commands: Vec<&'static str>,
+    /// The tone of the app in front, when Clean up is "By app" (`styles/`). Only with `tidy`.
+    pub style: Option<crate::styles::Style>,
 }
 
 impl Pass {
@@ -86,6 +88,7 @@ pub fn run(text: &str, pass: &Pass) -> String {
     };
     let span = crate::diagnostics::Span::start("cleanup")
         .with("tidy", pass.tidy)
+        .with("style", pass.style.map_or("none", crate::styles::Style::name))
         .with("words", pass.words.len())
         .with("characters", text.chars().count());
     let answer = ask(&credentials, request_body(text, pass), patience(text)).map(|stream| read_answer(&stream));
@@ -164,6 +167,9 @@ pub fn instructions(pass: &Pass) -> String {
     let mut parts = vec![ROLE.to_owned()];
     if pass.tidy {
         parts.push(TIDY.to_owned());
+        if let Some(style) = pass.style {
+            parts.push(style.instruction().to_owned());
+        }
     }
     // After the cleanup, so a name wins over tidying a misheard word into a nearby real one.
     if !pass.words.is_empty() {

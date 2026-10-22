@@ -526,13 +526,15 @@ pub fn join_pieces(pieces: Vec<Result<String, Failure>>) -> Result<String, Failu
 
 /// What ChatGPT's pass does with a recording's text. An action's words are
 /// matched as heard: a cleanup would change the very words that pick it.
-fn cleanup_pass(kind: Kind, chosen: &Settings) -> crate::cleanup::Pass {
+/// `style` is the app in front's, used only when Clean up is on "By app".
+fn cleanup_pass(kind: Kind, chosen: &Settings, style: Option<crate::styles::Style>) -> crate::cleanup::Pass {
     match kind {
         Kind::Action => crate::cleanup::Pass::default(),
         Kind::Dictate => crate::cleanup::Pass {
             words: if chosen.fix_names { chosen.dictionary.clone() } else { Vec::new() },
             tidy: chosen.cleanup,
             commands: if chosen.commands { chosen.command_groups.phrases() } else { Vec::new() },
+            style: style.filter(|_| chosen.cleanup && chosen.styles),
         },
     }
 }
@@ -670,6 +672,8 @@ fn run(
                 }
                 running.window = crate::hotkey::foreground();
             }
+            // The app in front picks the dictation's style.
+            Input::Hold if dictation.phase() == Phase::Idle => running.window = crate::hotkey::foreground(),
             Input::Cancel if !listening && runner.cancel() => continue,
             _ => {}
         }
@@ -782,7 +786,12 @@ fn run(
                         let _ = tx.send(Input::Transcribed(Err(failure)));
                         continue;
                     }
-                    let pass = cleanup_pass(dictation.kind(), &chosen);
+                    // An action keeps its window: its result goes there.
+                    let style = match dictation.kind() {
+                        Kind::Dictate => running.window.take().as_ref().and_then(crate::styles::Style::of),
+                        Kind::Action => None,
+                    };
+                    let pass = cleanup_pass(dictation.kind(), &chosen, style);
                     send_off(transcriber, pieces, samples, chosen.dictionary.clone(), language, pass, kept.clone(), tx);
                 }
                 Effect::Edit { said } => {
@@ -812,7 +821,8 @@ fn run(
                     released = Some((Instant::now(), seconds));
                     // The engine picked now, so fixing a Groq key or switching engines is a way to retry.
                     let transcriber = Arc::new(Transcriber::new(chosen.engine, fake.as_deref()));
-                    let pass = cleanup_pass(dictation.kind(), &chosen);
+                    let style = crate::hotkey::foreground().as_ref().and_then(crate::styles::Style::of);
+                    let pass = cleanup_pass(dictation.kind(), &chosen, style);
                     let words = chosen.dictionary.clone();
                     send_off(transcriber, Vec::new(), samples, words, language, pass, kept.clone(), tx.clone());
                 }

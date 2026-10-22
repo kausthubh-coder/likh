@@ -22,11 +22,13 @@ const STATS = [
 const FEATURES = [
   { title: "Hold or tap", line: "Hold to talk, or tap to go hands-free. It stops when you go quiet." },
   { title: "Voice commands", line: "“New line”, “new bullet”, “press enter”, “scratch that”." },
+  { title: "Your own commands", line: "Hold Ctrl + Shift + Space: “search for…”, “open gmail”, or add yours." },
   {
     title: "Clean up",
     line: "Drops the ums, keeps your “actually, 3”, and turns spoken lists into lists. A bonus: on ChatGPT Free it can run out for the month.",
   },
   { title: "Edit by voice", line: "Select text, hold Ctrl + Space and say “make it shorter” or “in Hindi”." },
+  { title: "A tone for each app", line: "Full sentences in email, casual in chat, exact terms in your code editor." },
   { title: "Your own words", line: "Project names and people, spelled your way every time." },
   { title: "Paste it again", line: "Alt + Shift + Z pastes your last dictation anywhere." },
   { title: "History", line: "Every dictation, kept on your computer. Click to copy." },
