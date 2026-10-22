@@ -84,8 +84,15 @@ fn run(commands: &Receiver<Command>) {
                 Command::Level(level) => look.level(level),
             }
         }
+        // Real time, in steps the springs handle, however long the last frame
+        // took: clamping it once made a 6 s error stay 24 s in a debug build.
         let now = Instant::now();
-        moving = look.step((now - last).as_secs_f32().min(0.05));
+        let mut behind = (now - last).as_secs_f32().min(1.0);
+        moving = false;
+        while behind > 0.0 {
+            moving = look.step(behind.min(0.05));
+            behind -= 0.05;
+        }
         last = now;
         if let Some(pixmap) = look.draw(SCALE)
             && let Ok(png) = pixmap.encode_png()
