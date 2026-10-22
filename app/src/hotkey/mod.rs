@@ -611,10 +611,23 @@ mod other {
     }
 }
 
-/// Tests stand in for another app holding the keys. Hold `shared::test_ui::lock()`
-/// while it's set: every view that says so reads it.
+/// Tests stand in for another app holding the keys, until the guard drops (even
+/// when the test fails, so it never leaks into the next). Hold
+/// `shared::test_ui::lock()` while it's set: every view that says so reads it.
 #[cfg(test)]
-pub fn pretend_taken(shortcut: bool, paste_last: bool) {
+pub fn pretend_taken(shortcut: bool, paste_last: bool) -> PretendTaken {
     note_shortcut(shortcut);
     note_paste_last(paste_last);
+    PretendTaken
+}
+
+#[cfg(test)]
+pub struct PretendTaken;
+
+#[cfg(test)]
+impl Drop for PretendTaken {
+    fn drop(&mut self) {
+        note_shortcut(false);
+        note_paste_last(false);
+    }
 }
