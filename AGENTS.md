@@ -33,7 +33,7 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/tray/` | the tray icon and the main thread's iced daemon that owns the windows |
 | `app/src/microphone/` | levels and recordings from the picked mic (saved by Windows' id; Windows' default when none is picked or it's unplugged), the list of inputs, and whether Windows' privacy settings block the mic; `LIKH_AUDIO=file.wav` replays a file instead. `cargo test -p likh mic_pick_live -- --ignored` opens this machine's real inputs |
 | `app/src/silence/` | silence stop: is someone talking? A small voice detector (earshot) hears a voice, not loudness; `eval.rs` scores it in quiet and noisy rooms |
-| `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), each engine's glyph (`glyph.rs`), the languages a user can pin (`language.rs`; auto-detect by default); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them |
+| `app/src/transcriber/` | audio to text: Codex (`mod.rs`), Groq (`groq.rs`, key in the OS credential store), each engine's glyph (`glyph.rs`), the languages a user can pin (`language.rs`; auto-detect by default); `LIKH_TRANSCRIBER=echo:<text>` fakes all of them, `flaky:<text>` fails the first one as offline (for Retry) |
 | `app/src/paste/` | clipboard, Ctrl+V, clipboard back; an action's keys, links and the selection it reads (Ctrl+C); `LIKH_PASTE=<file>` logs pastes, key presses and opened links there instead (the selection is then `LIKH_SELECTION`) |
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
 | `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |
@@ -55,7 +55,7 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Every task in a new worktree starts with the `worktree-likh` skill. Ship only with `ship-likh`, when I say so.
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, this checkout's own `LIKH_HOME` and site port). Safe to rerun
 - Doctor: `bun run doctor`. Run it first when anything looks off.
-- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|action-start|action-stop|cancel|paste-last|copy-last|diagnostics|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
+- Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|action-start|action-stop|cancel|paste-last|retry|copy-last|diagnostics|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
 - One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
 - Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
@@ -69,16 +69,16 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 
 ## Cloud sessions
 
-A cloud session (Claude Code on the web, Codex Cloud) is a Linux VM with a fresh clone, not my Windows machine. `scripts/cloud.mjs` gets it ready: the SessionStart hook in `.claude/settings.json` runs it (Codex Cloud: `CLOUD=1 node scripts/cloud.mjs` as the setup script). It fetches my global skills and rules, apt-installs the libraries the crate links on Linux (GTK, appindicator, ALSA, libxdo), then runs `bun run setup`. It does nothing on my machine. No env vars or secrets needed.
+A cloud session (Claude Code on the web, Codex Cloud) is a Linux VM with a fresh clone, not my Windows machine. `scripts/cloud.mjs` gets it ready: the SessionStart hook in `.claude/settings.json` runs it (Codex Cloud: `CLOUD=1 node scripts/cloud.mjs` as the setup script). It fetches my global skills and rules, apt-installs the libraries the crate links on Linux (GTK, appindicator, ALSA, libxdo, xkbcommon-x11) and the tools `verify-likh` uses there (espeak-ng, sox, xdotool, imagemagick), then runs `bun run setup`. It does nothing on my machine. No env vars or secrets needed.
 
 Works here:
 - `bun run setup`, `bun run doctor`, and all of `bun run check`: fmt, clippy, `cargo check`, every unit and view test (iced_test renders without a window), the site's lint, typecheck and build. Linux needs iced's X11 backend to compile, hence the Linux-only `iced` line in `app/Cargo.toml`; Windows and macOS builds don't see it.
 - The CLI without the app: `likh status`, `likh actions check`, `likh actions test "<phrase>"`.
+- The app itself, on an X display (`DISPLAY=:1` on my cloud machine): `likh run` has no tray icon on Linux and its hotkeys don't register (no `/dev/uinput`), but `likh ctl` drives every dictation with `LIKH_AUDIO`, `LIKH_TRANSCRIBER` and `LIKH_PASTE`, and onboarding and the settings window open for real. `verify-likh`, On Linux, has the recipes. It proves the dictation thread, `likh ctl`, onboarding and the panel; never the Win32 or macOS parts below.
 - The site: `bun run dev:site`, checked with headless Playwright (pass the Chromium under `$PLAYWRIGHT_BROWSERS_PATH` as `executablePath`).
 - Shipping tooling, docs and site changes: `ship-likh` has the cloud way to open and merge the PR.
 
 Needs my Windows machine:
-- Running the app. On Linux `likh run` dies at the tray (GTK is never initialised), so there's no `likh ctl`, no faked dictation end to end, and no `verify-likh` evidence. Anything that changes what the app does is proved there.
 - The mic, the hotkeys and mouse buttons, the pill, paste into real apps, media pause, start with Windows, the credential store (Groq key), idle cost and benchmarks: all Win32, and every `scripts/*.ps1`.
 - Releases: the installer build for `RELEASE` in `site/app/page.tsx`, the tag and watching `release.yml`. A cloud agent can land app code, then says first thing in its report that the release is still owed (`ship-likh`).
 

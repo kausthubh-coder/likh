@@ -4,17 +4,17 @@ The first-run window: five steps in one borderless 560 x 640 window. It opens wi
 
 ## Sub-features
 
-- `onb-welcome` plays the flock into the mark, then "Talk. It types." and a peach `Get started`, with the first of five dots wide. The window then draws nothing until something changes.
-- `onb-codex-not-installed` titles the step "Codex isn't installed", with `Check again` (plain text) and `Get Codex`. `Get Codex` opens https://developers.openai.com/codex.
+- `onb-welcome` plays the flock into the mark, then "Talk. It types.", "Free dictation with any ChatGPT account. Hold a key, say it, let go." and a peach `Get started`, with the first of five dots wide. The window then draws nothing until something changes.
+- `onb-codex-not-installed` titles the step "Codex isn't installed", says "likh uses your ChatGPT account through Codex, free on any plan. Install it, sign in once.", with `Check again` (plain text) and `Get Codex`. `Get Codex` opens https://developers.openai.com/codex.
 - `onb-codex-signed-out` titles it "Codex isn't signed in", with `Check again`.
 - `onb-codex-expired` titles it "Your Codex sign-in expired", with `Check again`.
-- `onb-codex-connected` titles it "Connected through Codex", shows the masked email and plan, and offers `Continue`. The link in the art turns green.
+- `onb-codex-connected` titles it "Connected through Codex", shows the masked email and plan, notes "Dictation is free on every plan. Clean up, a bonus, can run out on Free.", and offers `Continue`. The link in the art turns green.
 - `onb-codex-live` turns not-connected into connected on its own within 2 s once a valid `auth.json` appears.
-- `onb-engine` the step opens on the engine in settings (ChatGPT for a new install) with a ChatGPT · Groq · Windows pick above the art; the pick stays in place whichever is chosen. Picking one saves it at once.
+- `onb-engine` the step opens on the engine in settings (ChatGPT for a new install) with a ChatGPT · Groq · Windows pick above the art; the pick stays in place whichever is chosen. Picking ChatGPT saves it at once; Groq is saved only once its key is (without one, the first dictation would fail).
 - `onb-groq` "Add a free Groq key", a hidden key field, `Get a free key` (opens console.groq.com/keys) and `Save key`. A key not starting `gsk_` is refused before any request; Groq's 401 says "Groq turned down that key". A saved key reads "Groq is ready" with `Continue`.
 - `onb-mic` shows nine live bars and the device name; with no mic, "Can't hear a microphone" and `Open settings`.
-- `onb-shortcut` lights the `Ctrl` `Space` key caps. Inside the app: holding the real shortcut records, and the words land in the practice box.
-- `onb-done` spells likh in dots and `Finish` closes the window. likh keeps running.
+- `onb-shortcut` lights the `Ctrl` `Space` key caps. Inside the app: holding the real shortcut records, and the words land in the practice box. If another app has the keys: "Another app has these keys", "<keys> belongs to another app, so likh can't hear it. Pick new keys.", `Skip` and `Change shortcut` (listens for new keys right there).
+- `onb-done` spells likh in dots above three small key rows: the shortcut ("Hold to talk, let go to paste"), Esc ("Cancel"), paste last ("Paste the last one again", left out when off). Body: "likh waits in your tray and starts with Windows." `Finish` closes the window, turns on Start with Windows (not under `LIKH_HOME`) and likh keeps running.
 - `onb-back` returns to the step before from anywhere but welcome and done.
 - `onb-drag` moves the window by dragging any empty spot (there is no title bar).
 

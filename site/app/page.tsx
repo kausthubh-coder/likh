@@ -22,12 +22,15 @@ const STATS = [
 const FEATURES = [
   { title: "Hold or tap", line: "Hold to talk, or tap to go hands-free. It stops when you go quiet." },
   { title: "Voice commands", line: "“New line”, “new bullet”, “press enter”, “scratch that”." },
-  { title: "Clean up", line: "Drops the ums, keeps your “actually, 3”, and turns spoken lists into lists." },
+  {
+    title: "Clean up",
+    line: "Drops the ums, keeps your “actually, 3”, and turns spoken lists into lists. A bonus: on ChatGPT Free it can run out for the month.",
+  },
   { title: "Your own words", line: "Project names and people, spelled your way every time." },
   { title: "Paste it again", line: "Alt + Shift + Z pastes your last dictation anywhere." },
   { title: "History", line: "Every dictation, kept on your computer. Click to copy." },
   { title: "Your shortcut", line: "Press the keys you want, or use a mouse button." },
-  { title: "Two free engines", line: "Your ChatGPT plan, or a free Groq key." },
+  { title: "Two free engines", line: "Any ChatGPT account, Free included, or a free Groq key." },
   { title: "Keeps itself current", line: "Starts with Windows and updates when you say so." },
 ];
 
@@ -79,7 +82,8 @@ export default function Home() {
             Talk. It types.
           </h1>
           <p className="mt-5 max-w-[30em] text-[17px] leading-[26px] text-pretty text-text-muted">
-            Hold Ctrl + Space, talk, let go. Your words land wherever you&apos;re typing.
+            Free dictation with any ChatGPT account. Hold Ctrl + Space, talk, let go, and your words land wherever
+            you&apos;re typing.
           </p>
           <DownloadButton className="mt-8" />
         </section>
@@ -159,8 +163,9 @@ export default function Home() {
           <h2 className="text-[28px] leading-[34px] font-semibold tracking-[-0.02em]">Questions</h2>
           <div className="mt-6 divide-y divide-elevated">
             <Question q="Is it free?">
-              likh is free and MIT licensed. OpenAI controls transcription access and limits; we haven&apos;t confirmed
-              how these requests count toward your usage.{" "}
+              Yes. Dictation works with any ChatGPT account, Free included. Clean up is a bonus that uses your plan&apos;s
+              Codex allowance: on Free it can run out for the month, and likh then pastes what it heard. likh itself is
+              free and MIT licensed; OpenAI controls transcription access and limits.{" "}
               <Link href="/codex#plans" className="text-text underline-offset-4 hover:underline">
                 Which plans work
               </Link>

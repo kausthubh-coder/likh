@@ -212,6 +212,8 @@ pub struct Panel {
     updates: Updates,
     codex: CodexStatus,
     groq: GroqSetup,
+    /// Groq's card was clicked before a key was saved: it becomes the engine once one is.
+    groq_wanted: bool,
     /// Picking new keys: the modifiers held so far.
     capturing: Option<keyboard::Modifiers>,
     /// Which shortcut the keys being picked are for.
@@ -341,6 +343,7 @@ impl Panel {
             updates,
             codex: onboarding::check_codex_now(),
             groq: GroqSetup::look(),
+            groq_wanted: false,
             capturing: None,
             picking: Picking::Shortcut,
             keys: Keys::at_rest(&shortcut.parts()),
@@ -609,7 +612,14 @@ impl Panel {
                 Ok(()) => self.change(|s| s.start_with_windows = on),
                 Err(reason) => self.notice = Some((format!("Windows didn't allow that: {reason}"), Tone::Danger)),
             },
+            // Groq without a key would fail the next dictation: it switches once a key is saved.
+            Message::Engine(Engine::Groq) if !self.groq.saved => {
+                self.groq_wanted = true;
+                self.groq.notice = Some(("Save a key to switch to Groq.".into(), Tone::Neutral));
+                return operation::focus(GROQ_KEY);
+            }
             Message::Engine(engine) => {
+                self.groq_wanted = false;
                 self.change(|s| s.engine = engine);
                 self.recheck();
             }
@@ -620,13 +630,25 @@ impl Panel {
             }
             Message::SaveGroqKey if self.groq.checking => {}
             Message::SaveGroqKey => return self.groq.save(Message::GroqChecked),
-            Message::GroqChecked(key, answer) => self.groq.checked(&key, answer),
+            Message::GroqChecked(key, answer) => {
+                self.groq.checked(&key, answer);
+                if self.groq.saved && std::mem::take(&mut self.groq_wanted) {
+                    self.change(|s| s.engine = Engine::Groq);
+                }
+            }
             Message::ReplaceGroqKey => {
                 self.groq.saved = false;
                 self.groq.notice = None;
                 return operation::focus(GROQ_KEY);
             }
-            Message::ForgetGroqKey => self.groq.forget(),
+            Message::ForgetGroqKey => {
+                self.groq.forget();
+                // Groq can't transcribe without a key: back to ChatGPT, which needs none.
+                if !self.groq.saved && self.chosen().engine == Engine::Groq {
+                    self.change(|s| s.engine = Engine::Codex);
+                    self.recheck();
+                }
+            }
             Message::CheckForUpdates => {
                 self.updates.check_now();
                 self.last_frame = None;
@@ -1026,6 +1048,10 @@ impl Panel {
                 Tone::Success,
                 link(p, "Change", Message::ChangeShortcut),
             ),
+            // Holding them would do nothing, so the fix is the first thing on the tab.
+            None if hotkey::shortcut_taken() => {
+                ("Another app has these keys.".into(), Tone::Danger, link(p, "Change", Message::ChangeShortcut))
+            }
             None => ("Hold to talk, in any app.".into(), Tone::Neutral, link(p, "Change", Message::ChangeShortcut)),
         };
         let art = canvas_widget(self.keys.art(p)).width(Length::Fill).height(shortcut::KEYBOARD.height);
@@ -1086,7 +1112,11 @@ impl Panel {
         let (what, control): (&str, Element<'_, Message>) = match self.chosen().paste_last {
             _ if picking => ("Press the new keys.", link(p, "Cancel", Message::KeepShortcut)),
             Some(keys) => (
-                "Missed a paste? Puts it in again.",
+                if hotkey::paste_last_taken() {
+                    "Another app has these keys. Change them."
+                } else {
+                    "Missed a paste? Puts it in again. After a failed one, tries it again."
+                },
                 row![
                     // The keys as one small mono chip: full key caps belong to the dictation shortcut.
                     container(text(String::from(keys)).size(size::SMALL).font(theme::MONO).color(p.text))
@@ -1131,7 +1161,7 @@ impl Panel {
     fn cleanup_line(&self, p: &Palette) -> Line<'_> {
         let on = self.chosen().cleanup;
         let what = match self.codex {
-            CodexStatus::Connected(_) => "Drops ums, keeps your corrections, makes lists. Adds about 1 s.",
+            CodexStatus::Connected(_) => "Drops ums, keeps corrections, makes lists. Can run out on Free.",
             _ => "Needs Codex signed in, whichever engine you pick.",
         };
         Line::plain(named(p, "Clean up", Some(what)), switch(on)).press(Message::Cleanup(!on))
@@ -1921,7 +1951,11 @@ fn fade_edge<'a>(bg: Color, height: f32, top: bool) -> Element<'a, Message> {
         .into()
 }
 
-/// The shortcut as people say it, for the tray menu and tooltip.
+/// The shortcut as people say it, for the tray menu and tooltip, or that another app has it.
 pub fn hold_to_talk(binding: Binding) -> String {
-    format!("Hold {binding} to talk")
+    if hotkey::shortcut_taken() {
+        format!("Another app has {binding}. Open likh to change it.")
+    } else {
+        format!("Hold {binding} to talk")
+    }
 }

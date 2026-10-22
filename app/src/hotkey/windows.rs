@@ -84,9 +84,11 @@ pub fn spawn(dictation: Sender<Input>, triggers: Triggers) -> Result<(), String>
             let _ = THREAD.set(unsafe { GetCurrentThreadId() });
             MOUSE.store(mouse_code(triggers.mouse), Ordering::SeqCst);
             ACTION_MOUSE.store(mouse_code(triggers.action_mouse), Ordering::SeqCst);
-            if let Some(Err(reason)) = triggers.paste_last.map(|keys| register(PASTE_LAST, keys)) {
+            let paste_last = triggers.paste_last.map(|keys| register(PASTE_LAST, keys));
+            if let Some(Err(reason)) = &paste_last {
                 crate::diagnostics::warn("hotkey", format!("pasting the last dictation won't work: {reason}"));
             }
+            super::note_paste_last(paste_last.is_some_and(|registered| registered.is_err()));
             let action = triggers.action_key.map(|keys| register(ACTION, keys));
             if let Some(Err(reason)) = &action {
                 crate::diagnostics::warn("hotkey", format!("the action key won't work: {reason}"));
@@ -416,8 +418,11 @@ fn run(dictation: Sender<Input>, triggers: Triggers) {
                     match &result {
                         Ok(()) => {
                             bound.set(id, next);
-                            if id == ACTION {
-                                super::note_action_key(false);
+                            match id {
+                                SHORTCUT => super::note_shortcut(false),
+                                PASTE_LAST => super::note_paste_last(false),
+                                ACTION => super::note_action_key(false),
+                                _ => {}
                             }
                         }
                         Err(_) => {

@@ -146,13 +146,15 @@ fn a_failed_transcription_says_why_with_a_sound_and_pastes_nothing() {
     d.handle(Input::Hold, t0, HOLD_OR_TAP);
     d.handle(Input::Release(after(t0, 2_000)), after(t0, 2_000), HOLD_OR_TAP);
     let expired = Failure::SignIn(CodexStatus::Expired(Account { email_hint: None, plan: None, expires_at: Some(1) }));
+    // Refreshing the sign-in fixes it, so the audio is kept for Retry.
     assert_eq!(
         d.handle(Input::Transcribed(Err(expired)), after(t0, 2_500), HOLD_OR_TAP),
         vec![
             Effect::Sound(Cue::Error),
-            Effect::Pill(Show::Error(
-                "Your Codex sign-in expired. Open Codex once to refresh it, then try again.".into()
-            ))
+            Effect::Pill(Show::Problem {
+                text: "Your Codex sign-in expired. Open Codex once to refresh it, then try again.".into(),
+                fix: Fix::Retry,
+            })
         ]
     );
     assert_eq!(d.phase(), Phase::Idle);
@@ -551,4 +553,122 @@ fn an_action_that_heard_nothing_says_so_like_a_dictation() {
         d.handle(Input::Transcribed(Err(Failure::NoVoice)), after(t0, 1_500), HOLD_OR_TAP),
         vec![Effect::Pill(Show::Note(Failure::NoVoice.message()))]
     );
+}
+
+fn fail_once(d: &mut Dictation, t0: Instant, failure: Failure) -> Vec<Effect> {
+    d.handle(Input::Hold, t0, HOLD_OR_TAP);
+    d.handle(Input::Release(after(t0, 2_000)), after(t0, 2_000), HOLD_OR_TAP);
+    d.handle(Input::Transcribed(Err(failure)), after(t0, 2_500), HOLD_OR_TAP)
+}
+
+#[test]
+fn a_failure_that_may_pass_keeps_the_recording_and_retry_sends_it_again() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    assert_eq!(
+        fail_once(&mut d, t0, Failure::Offline),
+        vec![
+            Effect::Sound(Cue::Error),
+            Effect::Pill(Show::Problem {
+                text: "Can't reach ChatGPT. Check your connection and try again.".into(),
+                fix: Fix::Retry,
+            })
+        ]
+    );
+    assert!(d.can_retry());
+    assert_eq!(
+        d.handle(Input::Retry, after(t0, 20_000), HOLD_OR_TAP),
+        vec![Effect::Retry, Effect::Pill(Show::Thinking)]
+    );
+    assert_eq!(d.phase(), Phase::Transcribing);
+    assert_eq!(
+        d.handle(Input::Transcribed(Ok("Send the deck by Friday.".into())), after(t0, 21_000), HOLD_OR_TAP),
+        vec![Effect::Pill(Show::Done), paste("Send the deck by Friday.")]
+    );
+    // Pasted: nothing is kept, and Retry does nothing.
+    assert!(!d.can_retry());
+    assert_eq!(d.handle(Input::Retry, after(t0, 22_000), HOLD_OR_TAP), vec![]);
+}
+
+#[test]
+fn after_a_failure_paste_last_retries_instead_of_pasting_an_older_dictation() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    fail_once(&mut d, t0, Failure::Server(502));
+    assert_eq!(
+        d.handle(Input::PasteLast, after(t0, 5_000), HOLD_OR_TAP),
+        vec![Effect::Retry, Effect::Pill(Show::Thinking)]
+    );
+    // A retry that fails again keeps it for the next try.
+    assert!(matches!(
+        d.handle(Input::Transcribed(Err(Failure::Offline)), after(t0, 6_000), HOLD_OR_TAP).as_slice(),
+        [Effect::Sound(Cue::Error), Effect::Pill(Show::Problem { fix: Fix::Retry, .. })]
+    ));
+    assert!(d.can_retry());
+}
+
+#[test]
+fn a_stray_tap_keeps_the_failed_recording_and_a_good_dictation_drops_it() {
+    let t0 = Instant::now();
+    let mut d = Dictation::default();
+    fail_once(&mut d, t0, Failure::Offline);
+    // A tap too short to hear doesn't throw the kept one away.
+    d.handle(Input::Hold, after(t0, 4_000), HOLD_ONLY);
+    d.handle(Input::Release(after(t0, 4_100)), after(t0, 4_100), HOLD_ONLY);
+    assert!(d.can_retry());
+    d.handle(Input::Hold, after(t0, 8_000), HOLD_OR_TAP);
+    d.handle(Input::Release(after(t0, 10_000)), after(t0, 10_000), HOLD_OR_TAP);
+    d.handle(Input::Transcribed(Ok("Okay.".into())), after(t0, 10_500), HOLD_OR_TAP);
+    assert!(!d.can_retry());
+    assert_eq!(d.handle(Input::PasteLast, after(t0, 11_000), HOLD_OR_TAP), vec![Effect::PasteLast]);
+}
+
+#[test]
+fn audio_that_was_the_problem_has_no_retry() {
+    let t0 = Instant::now();
+    for failure in [Failure::NoVoice, Failure::TooLong] {
+        let mut d = Dictation::default();
+        let effects = fail_once(&mut d, t0, failure.clone());
+        assert!(
+            !effects.iter().any(|e| matches!(e, Effect::Pill(Show::Problem { fix: Fix::Retry, .. }))),
+            "{failure:?}"
+        );
+        assert!(!d.can_retry(), "{failure:?}");
+    }
+}
+
+#[test]
+fn a_stray_tap_into_hands_free_ends_after_ten_seconds_without_a_voice() {
+    let t0 = Instant::now();
+    let quiet = Choices { silence_stop: Some(Duration::from_secs(5)), ..HOLD_OR_TAP };
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, quiet);
+    d.handle(Input::Release(after(t0, 120)), after(t0, 120), quiet);
+    assert_eq!(d.phase(), Phase::HandsFree);
+    assert_eq!(d.handle(Input::Unspoken, after(t0, 9_750), quiet), vec![]);
+    assert_eq!(
+        d.handle(Input::Unspoken, after(t0, 10_000), quiet),
+        vec![Effect::Discard, Effect::Pill(Show::Note("No voice heard".into()))]
+    );
+    assert_eq!(d.phase(), Phase::Idle);
+}
+
+#[test]
+fn stop_after_quiet_set_to_never_leaves_a_silent_hands_free_open() {
+    let t0 = Instant::now();
+    let never = Choices { silence_stop: None, ..TAP_ONLY };
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, never);
+    assert_eq!(d.handle(Input::Unspoken, after(t0, 60_000), never), vec![]);
+    assert_eq!(d.phase(), Phase::HandsFree);
+}
+
+#[test]
+fn holding_the_keys_never_ends_for_lack_of_a_voice() {
+    let t0 = Instant::now();
+    let quiet = Choices { silence_stop: Some(Duration::from_secs(5)), ..HOLD_OR_TAP };
+    let mut d = Dictation::default();
+    d.handle(Input::Hold, t0, quiet);
+    assert_eq!(d.handle(Input::Unspoken, after(t0, 15_000), quiet), vec![]);
+    assert_eq!(d.phase(), Phase::Recording);
 }

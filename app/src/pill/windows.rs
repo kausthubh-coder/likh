@@ -364,13 +364,19 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
                     }
                 }),
                 Some(Click::Fix(fix)) => {
-                    match fix.url() {
-                        Some(url) => crate::shared::open_url(url),
-                        None => UI.with(|slot| {
+                    match (fix, fix.url()) {
+                        (Fix::Retry, _) => DICTATION.with(|slot| {
+                            if let Some(dictation) = slot.borrow().as_ref() {
+                                let _ = dictation.send(Input::Retry);
+                            }
+                        }),
+                        (_, Some(url)) => crate::shared::open_url(url),
+                        (_, None) => UI.with(|slot| {
                             if let Some(ui) = slot.borrow().as_ref() {
                                 let _ = ui.unbounded_send(match fix {
                                     Fix::Review | Fix::Details => Pick::Actions,
-                                    Fix::PickMic | Fix::MicAccess => Pick::Microphone,
+                                    Fix::Shortcut => Pick::Shortcut,
+                                    Fix::PickMic | Fix::MicAccess | Fix::Retry => Pick::Microphone,
                                 });
                             }
                         }),

@@ -107,7 +107,7 @@ The pill hugs what it shows. Seven bars (4px wide, 3px apart, 46px in all) sit 1
 | `done` | back to resting | 250ms; the pasted text is the feedback, no checkmark toast |
 | `time running out` | 100 x 36 | from 29:00: bars + an amber ring that empties over the last minute, seconds left inside it (`55`) |
 | `error` | 200 to 360 x 52 | red icon, one sentence (two lines at most). Stays 6 s, longer while the pointer is on it |
-| `problem` | 200 to 360 x 52 | an error with its fix: one pill-shaped button on the right (36 tall, inset 8) that opens it and dismisses the pill. "No sound from Microphone Array. Is it muted?" · Pick mic (opens likh at the Microphone row) |
+| `problem` | 200 to 360 x 52 | an error with its fix: one pill-shaped button on the right (36 tall, inset 8) that opens it and dismisses the pill. "No sound from Microphone Array. Is it muted?" · Pick mic (opens likh at the Microphone row). A transcription that may pass (no connection, a busy server, a sign-in to refresh) keeps its audio: "Can't reach ChatGPT. Check your connection and try again." · Retry (sends it again; paste last does too). Another app holding the shortcut at launch: "Another app has Ctrl + Space, so likh can't hear it." · Change keys (opens Dictation, listening for new keys) |
 | `note` | hugs its words x 36 (52 for two lines) | nothing broke, nothing happened: three grey bars lying flat, one sentence, no sound. "No voice heard". Stays 3 s |
 | `mic silent` | hugs its words x 36 | while recording, after 2 s of digital silence: the note's look, "Microphone Array is silent. Is it muted?". Stays until sound arrives (the bars come back) or the dictation ends |
 | `cancelled` | back to resting | bars fall flat, `exit` timing |
@@ -135,9 +135,9 @@ Codex sign-in copy (used by onboarding and errors):
 | State | Message | Action |
 |---|---|---|
 | checking | Looking for Codex… | none |
-| not installed | likh transcribes with your ChatGPT plan through Codex. Install Codex, sign in once, then come back. | Get Codex · Check again |
+| not installed | Codex isn't installed. likh uses your ChatGPT account through Codex, free on any plan. Install it, sign in once. | Get Codex · Check again |
 | signed out | Codex is installed but not signed in. Open Codex (or run `codex login`) and sign in. | Check again |
-| connected | Connected through Codex as k•••@gmail.com | Continue |
+| connected | Connected through Codex · k•••@gmail.com · ChatGPT Free. Note: "Dictation is free on every plan. Clean up, a bonus, can run out on Free." | Continue |
 | expired | Your Codex sign-in expired. Open Codex once to refresh it, then try again. | Open Codex |
 | rejected | ChatGPT turned down the sign-in. Sign in to Codex again. | Open Codex |
 | offline | Can't reach ChatGPT. Check your connection and try again. | none |
@@ -165,10 +165,10 @@ Calm and compact (Feel, above). Eight tabs, each with one job: Dictation, Transc
 
 Five steps in one borderless window, 560 x 640, no title bar: drag it anywhere, Alt+F4 closes it. Each step slides 24px on `spring.default`; the back button and the progress dots stay still, and the wide dot slides to the new step. Every step has the same skeleton (art, display title, one line of body, a note line, the actions), so nothing jumps. No cards: the state is the headline.
 
-1. **Welcome**: the flock flies in from the left and lands on the mark, then title, body and button arrive 50ms apart. "Talk. It types." · Get started
+1. **Welcome**: the flock flies in from the left and lands on the mark, then title, body and button arrive 50ms apart. "Talk. It types." "Free dictation with any ChatGPT account. Hold a key, say it, let go." · Get started
 2. **Connect**: a segmented pick on top (ChatGPT · Groq · Windows; Windows only on Windows), then likh's bars, a dotted link and the engine's glyph: a terminal prompt for ChatGPT through Codex, a bolt for Groq, four panes for Windows. The link carries the state's icon and colour; the title is the state (the Codex copy table above, or the engine copy below). A slot under the art holds the Groq key field and stays reserved for the other engines, so the pick never moves when you switch. Re-checks every 2s while the picked engine (Codex or Windows) isn't ready.
 3. **Microphone**: nine live bars from the default mic, newest in the middle. The device name underneath. If no mic opens: "Can't hear a microphone" with Open settings.
-4. **Shortcut**: big key caps `Ctrl` `Space`. Inside the app this is a real first dictation: hold the keys, talk, let go, and the words land in a practice box.
-5. **Done**: the flock spells likh in dots (`spring.playful`, the one bounce). "Hold Ctrl + Space in any app to talk." · Finish opens settings and saves setup completion. Closing setup before Finish leaves it unfinished.
+4. **Shortcut**: big key caps `Ctrl` `Space`. Inside the app this is a real first dictation: hold the keys, talk, let go, and the words land in a practice box. If another app has the keys, the step says so first: "Another app has these keys" · Skip · Change shortcut.
+5. **Done**: the flock spells likh in dots (`spring.playful`, the one bounce), above three keys as small mono caps with what they do: the shortcut ("Hold to talk, let go to paste"), Esc ("Cancel") and paste last ("Paste the last one again", left out when it's off). "likh waits in your tray and starts with Windows." · Finish turns on Start with Windows (on by default), opens settings and saves setup completion. Closing setup before Finish leaves it unfinished.
 
 The opening flock plays each time the window opens; the window only opens the first time. The finish plays once. Screens on the board are rendered from the app's own views (`cargo test -p likh brand_board -- --ignored`).

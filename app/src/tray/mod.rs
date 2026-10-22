@@ -58,6 +58,13 @@ pub enum Pick {
         allow(dead_code, reason = "only the Windows pill has action buttons; macOS (alpha) has no pill window yet")
     )]
     Actions,
+    /// The pill's "Change keys" when another app has the shortcut: open the
+    /// likh window at Dictation, already listening for new keys.
+    #[cfg_attr(
+        not(target_os = "windows"),
+        allow(dead_code, reason = "only the Windows pill has buttons; macOS (alpha) has no pill window yet")
+    )]
+    Shortcut,
 }
 
 #[derive(Debug, Clone)]
@@ -170,13 +177,16 @@ impl App {
                     self.open_panel()
                 }
             }
-            Message::Tray(pick @ (Pick::Microphone | Pick::Actions)) => {
+            Message::Tray(pick @ (Pick::Microphone | Pick::Actions | Pick::Shortcut)) => {
                 let tab = if pick == Pick::Actions { panel::Tab::Actions } else { panel::Tab::Dictation };
                 let opened = self.open_panel();
                 match &mut self.panel {
                     Some((id, panel)) => {
                         let id = *id;
-                        let to_tab = panel.update(panel::Message::Tab(tab));
+                        let mut to_tab = panel.update(panel::Message::Tab(tab));
+                        if pick == Pick::Shortcut {
+                            to_tab = Task::batch([to_tab, panel.update(panel::Message::ChangeShortcut)]);
+                        }
                         Task::batch([opened, to_tab.map(move |message| Message::Panel(id, message))])
                     }
                     None => opened,
@@ -224,6 +234,15 @@ impl App {
                     onboarding.closing();
                     self.setup = None;
                     if let Some(marker) = self.first_run_marker.as_ref().filter(|_| finished) {
+                        // Start with Windows is on out of the box, so likh is there after a restart.
+                        // A test instance (`LIKH_HOME`) leaves the Run key alone: it would start the person's likh.
+                        let start = self.settings.read().is_ok_and(|s| s.start_with_windows);
+                        if start
+                            && std::env::var_os("LIKH_HOME").is_none()
+                            && let Err(reason) = crate::autostart::set(true)
+                        {
+                            crate::diagnostics::warn("autostart", format!("couldn't start with Windows: {reason}"));
+                        }
                         let _ = marker.parent().map(std::fs::create_dir_all);
                         if let Err(error) = std::fs::write(marker, "") {
                             crate::diagnostics::warn("onboarding", format!("couldn't save setup completion: {error}"));
@@ -304,6 +323,13 @@ fn ui_requests(inbox: &UiRequests) -> UnboundedReceiver<Pick> {
 
 /// The icon and its menu. None if the shell has no tray (then likh still runs; `likh ctl quit` stops it).
 fn build(hold_to_talk: &str) -> Option<Tray> {
+    // Linux runs likh only for agents and tests (a cloud machine has no Windows):
+    // tray-icon needs GTK's own loop running, which iced never starts, so there's
+    // no icon there. Everything else runs and `likh ctl` drives it.
+    if cfg!(target_os = "linux") {
+        crate::diagnostics::info("tray", "no tray icon on Linux; drive likh with `likh ctl`.");
+        return None;
+    }
     let menu = Menu::new();
     let shortcut = MenuItem::new(hold_to_talk, false, None);
     let (line, enabled) = copy_line(None);

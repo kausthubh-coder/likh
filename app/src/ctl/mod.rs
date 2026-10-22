@@ -3,7 +3,8 @@
 //! named pipe on Windows), private to the signed-in user's name.
 //!
 //! `likh ctl start` / `stop` are the shortcut going down and up,
-//! `action-start` / `action-stop` the same for the action key, `cancel` is Esc, `status` reports what likh is doing (and where updating stands),
+//! `action-start` / `action-stop` the same for the action key, `cancel` is Esc,
+//! `retry` sends the last failed dictation again (the pill's Retry), `status` reports what likh is doing (and where updating stands),
 //! `update` checks for a newer likh now, `install-update` is "Restart to
 //! update", `diagnostics` sums up the trace (what failed, what was slow) with
 //! likh's memory, `quit` stops it.
@@ -21,7 +22,7 @@ use std::sync::{Arc, Mutex};
 #[cfg(test)]
 mod tests;
 
-pub const COMMANDS: [&str; 13] = [
+pub const COMMANDS: [&str; 14] = [
     "status",
     "start",
     "stop",
@@ -29,6 +30,7 @@ pub const COMMANDS: [&str; 13] = [
     "action-stop",
     "cancel",
     "paste-last",
+    "retry",
     "copy-last",
     "quit",
     "open",
@@ -67,7 +69,11 @@ pub fn serve(
     ui: iced::futures::channel::mpsc::UnboundedSender<crate::tray::Pick>,
     updates: crate::update::Updates,
 ) -> std::io::Result<()> {
-    let listener = ListenerOptions::new().name(name()?).create_sync()?;
+    // On macOS the name is a socket file, and quitting leaves it behind: the
+    // next launch failed with "Address already in use" and `likh ctl` never
+    // answered (found 2026-10-22). `run` hands off to a likh that's still
+    // running before it gets here, so a file left now is stale.
+    let listener = ListenerOptions::new().name(name()?).try_overwrite(true).create_sync()?;
     std::thread::Builder::new().name("likh-ctl".into()).spawn(move || {
         for connection in listener.incoming().filter_map(Result::ok) {
             let mut connection = BufReader::new(connection);
@@ -150,6 +156,7 @@ pub fn answer(command: &str, status: &Status, update: &crate::update::State) -> 
         // Ends the recording either way; the action key's own release does the same.
         "action-stop" => (ok, Some(Input::Stop)),
         "cancel" => (ok, Some(Input::Cancel)),
+        "retry" => (ok, Some(Input::Retry)),
         "paste-last" => (ok, Some(Input::PasteLast)),
         "quit" | "open" | "copy-last" | "install-update" | "diagnostics" => (ok, None),
         "update" => (json!({ "ok": true, "update": update }), None),

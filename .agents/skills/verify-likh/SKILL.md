@@ -28,6 +28,22 @@ Read `features/README.md`, then the feature file you're proving.
    ```
    If that lists more than one PID, one of them isn't yours. Stop and find out whose it is before driving anything.
 
+## On Linux (a cloud machine)
+
+likh runs on Linux for agents only: no tray icon, no global hotkeys (they need `/dev/uinput`, so every view also shows "Another app has these keys"), no pill. `likh ctl` drives everything else, and the onboarding and settings windows open on the X display. Use it to prove dictation logic, `likh ctl`, onboarding and the panel here before Devin's Mac or my Windows.
+
+1. `bun scripts/cloud.mjs` (or the apt list in it) installs what it needs; `cargo build -p likh`.
+2. A spoken WAV: `espeak-ng -w /tmp/raw.wav "Send the launch notes to the team by Friday." && sox /tmp/raw.wav -r 16000 -c 1 -b 16 .agents/qa/speech.wav`. espeak's voice passes likh's voice detector. Room noise with no voice: `sox -n -r 16000 -c 1 -b 16 .agents/qa/room.wav synth 20 pinknoise vol 0.01`.
+3. Start it in its own process group with this checkout's home, so it can be stopped as a group:
+   ```sh
+   export LIKH_HOME=<from .env.local> DISPLAY=:1
+   LIKH_AUDIO=$PWD/.agents/qa/speech.wav LIKH_TRANSCRIBER="echo:<text>" LIKH_PASTE=$PWD/.agents/qa/pasted.jsonl \
+     CODEX_HOME=$PWD/.agents/qa/codex-connected setsid ./target/debug/likh run --skip-onboarding > .agents/qa/likh.log 2>&1 < /dev/null &
+   ```
+   Ready when `./target/debug/likh ctl status` answers. Drop `--skip-onboarding` and delete `$LIKH_HOME/onboarded` to get the first-run window.
+4. Windows: `xdotool search --name '^likh$'` finds likh's own window; `import -window <id> out.png` captures only it (the desktop is shared with other threads' browsers: never capture the root window); `xdotool mousemove --window <id> <x> <y> click 1` clicks at the same logical coordinates the feature files give.
+5. Stop: `likh ctl quit`, then check `pgrep -f target/debug/likh` is empty.
+
 ## Doctor
 
 Run `bun run doctor` (toolchain, MSVC linker, site deps, Cargo.lock, Codex sign-in). Then make sure the window exists:
