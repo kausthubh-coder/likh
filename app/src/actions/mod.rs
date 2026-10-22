@@ -36,9 +36,12 @@ pub const LONGEST_TIMEOUT: Duration = Duration::from_secs(600);
 pub const README: &str = include_str!("starters/README.md");
 pub const SCHEMA: &str = include_str!("starters/actions.schema.json");
 /// What a new actions folder starts with: file name, contents.
-pub const STARTERS: [(&str, &str); 3] = [
+/// Ones anyone can use, and examples (ignored until renamed) for tools not everyone has.
+pub const STARTERS: [(&str, &str); 5] = [
     ("make-this.toml", include_str!("starters/make-this.toml")),
-    ("new-t3-thread.toml", include_str!("starters/new-t3-thread.toml")),
+    ("search-the-web.toml", include_str!("starters/search-the-web.toml")),
+    ("open-site.toml", include_str!("starters/open-site.toml")),
+    ("new-t3-thread.example.toml", include_str!("starters/new-t3-thread.example.toml")),
     ("run-tests.example.toml", include_str!("starters/run-tests.example.toml")),
 ];
 
@@ -678,7 +681,7 @@ pub fn test(dir: &Path, said: &str) -> String {
                 report.push_str(if approved {
                     "  its scripts are approved\n"
                 } else {
-                    "  won't run until you approve it on likh's Actions tab\n"
+                    "  won't run until you approve it on likh's Commands tab\n"
                 });
             }
         }

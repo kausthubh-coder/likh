@@ -1,0 +1,17 @@
+#:schema ./actions.schema.json
+# Hold the command key and say "open gmail". Add your own sites to the list:
+# a name you say, and the link it opens.
+name = "Open a site"
+description = "Open one of the user's sites in the browser"
+say = ["open {site}", "go to {site}"]
+output = "none"
+
+[lists.site]
+gmail = "https://mail.google.com"
+calendar = "https://calendar.google.com"
+youtube = "https://www.youtube.com"
+chatgpt = "https://chatgpt.com"
+github = "https://github.com"
+
+[[do]]
+open = "{site}"

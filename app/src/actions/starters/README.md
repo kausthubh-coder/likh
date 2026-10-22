@@ -1,8 +1,11 @@
-# likh actions
+# likh commands
 
-Hold the action key (Ctrl+Shift+Space unless you changed it, or the mouse
+Hold the command key (Ctrl+Shift+Space unless you changed it, or the mouse
 button you picked), say what to do, and likh does it. Each `*.toml` file in
-this folder is one action. likh reads the folder again every time you press
+this folder is one command; inside likh's files and its `likh actions` tool a
+command is called an action. Say it your way: when none of a command's
+phrases match, ChatGPT picks the closest one by its name and description.
+You can also make simple ones on likh's Commands tab, with New command. likh reads the folder again every time you press
 the key, so a saved file works on the next press. likh rewrites this README
 and `actions.schema.json`; every other file here is yours.
 
@@ -36,9 +39,9 @@ open = "t3code://new?prompt={text}"
 | `lists` | `[lists.site]` then `github = "https://github.com"`: a `{site}` slot matches "github" and becomes the link. |
 | `input` | Anything of `"selection"`, `"clipboard"`, `"app"`, `"title"`. Only what's listed is read. |
 | `output` | What happens to the last step's result. `replace` needs `input = ["selection"]`. |
-| `confirm` | `true` asks in the pill first: press the action key again to run it, Esc or 5 s to cancel. |
+| `confirm` | `true` asks in the pill first: press the command key again to run it, Esc or 5 s to cancel. |
 | `router` | `false` keeps ChatGPT from ever picking this action. |
-| `enabled` | `false` turns it off (the switch on likh's Actions tab writes this). |
+| `enabled` | `false` turns it off (the switch on likh's Commands tab writes this). |
 | `timeout` | Seconds a `run` step may take, 1 to 600 (default 30). |
 
 ## Slots
@@ -81,7 +84,7 @@ In `open`, what you said is URL-encoded; a list's value goes in as written.
   them as one JSON object on stdin.
 - What it prints is the result. A non-zero exit fails the action, and its last
   line on stderr is what the pill says.
-- **It never runs until you approve it** on likh's Actions tab, and again
+- **It never runs until you approve it** on likh's Commands tab, and again
   after any change to the action's file or a script next to it that it runs.
   Agents can write and edit actions; only a person can approve them.
 - If ChatGPT picked the action (no phrase matched), likh asks in the pill

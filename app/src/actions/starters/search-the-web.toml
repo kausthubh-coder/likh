@@ -1,0 +1,10 @@
+#:schema ./actions.schema.json
+# Hold the command key and say "search for flights to Lisbon in May".
+# Your browser opens the search.
+name = "Search the web"
+description = "Search the web for what the user said"
+say = ["search for {text}", "search the web for {text}", "google {text}"]
+output = "none"
+
+[[do]]
+open = "https://www.google.com/search?q={text}"

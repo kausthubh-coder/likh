@@ -1,0 +1,12 @@
+#:schema ./actions.schema.json
+# For T3 Code users. Files ending in .example.toml are ignored: rename this to
+# new-t3-thread.toml to use it. Then hold the command key and say "new thread
+# fix the flaky login test": T3 Code opens with that as a new thread's draft,
+# and nothing is sent until you press Send.
+name = "New T3 thread"
+description = "Start a new T3 Code thread with what the user said as its first message"
+say = ["new thread {text}", "new t3 thread {text}"]
+output = "none"
+
+[[do]]
+open = "t3code://new?prompt={text}"

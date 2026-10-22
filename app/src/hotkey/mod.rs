@@ -315,7 +315,7 @@ pub fn set_action_key(binding: Option<Binding>) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = binding;
-        Err("Actions aren't available on macOS yet.".into())
+        Err("The command key isn't available on macOS yet.".into())
     }
 }
 
@@ -328,7 +328,7 @@ pub fn set_action_mouse(mouse: MouseTrigger) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = mouse;
-        Err("Actions aren't available on macOS yet.".into())
+        Err("The command key isn't available on macOS yet.".into())
     }
 }
 

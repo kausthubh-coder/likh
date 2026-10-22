@@ -95,7 +95,9 @@ impl Group {
         match self {
             Group::Lines => "Anywhere in what you say.",
             Group::Keys => "At the very end, after the text lands.",
-            Group::Scratch => "Alone, it undoes the last paste. After a sentence, it drops that sentence.",
+            Group::Scratch => {
+                "Alone, it undoes the last paste in the app it landed in. After a sentence, it drops that sentence."
+            }
             Group::Punctuation => {
                 "For when the transcriber misses a mark. Off by default: \u{201c}period\u{201d} is also a word."
             }

@@ -52,7 +52,7 @@ pub enum Pick {
         allow(dead_code, reason = "only the Windows pill has a Pick mic button; macOS (alpha) has no pill window yet")
     )]
     Microphone,
-    /// The pill's Review or Details on an action: open the likh window at the Actions tab.
+    /// The pill's Review or Details on a command: open the likh window at Commands, on the command key's half.
     #[cfg_attr(
         not(target_os = "windows"),
         allow(dead_code, reason = "only the Windows pill has action buttons; macOS (alpha) has no pill window yet")
@@ -178,7 +178,7 @@ impl App {
                 }
             }
             Message::Tray(pick @ (Pick::Microphone | Pick::Actions | Pick::Shortcut)) => {
-                let tab = if pick == Pick::Actions { panel::Tab::Actions } else { panel::Tab::Dictation };
+                let tab = if pick == Pick::Actions { panel::Tab::Commands } else { panel::Tab::Dictation };
                 let opened = self.open_panel();
                 match &mut self.panel {
                     Some((id, panel)) => {
@@ -186,6 +186,11 @@ impl App {
                         let mut to_tab = panel.update(panel::Message::Tab(tab));
                         if pick == Pick::Shortcut {
                             to_tab = Task::batch([to_tab, panel.update(panel::Message::ChangeShortcut)]);
+                        }
+                        // Review and Details are about a command-key command.
+                        if pick == Pick::Actions {
+                            let view = panel::CommandsView::CommandKey;
+                            to_tab = Task::batch([to_tab, panel.update(panel::Message::CommandsView(view))]);
                         }
                         Task::batch([opened, to_tab.map(move |message| Message::Panel(id, message))])
                     }

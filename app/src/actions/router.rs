@@ -216,7 +216,7 @@ pub fn pick(actions: &[Action], said: &str, words: &[String]) -> Result<Option<P
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let credentials = crate::codex_auth::codex_home()
         .and_then(|home| crate::codex_auth::credentials(&home, now).ok())
-        .ok_or("Picking an action needs Codex signed in.")?;
+        .ok_or("Picking a command needs Codex signed in.")?;
     let stream = crate::cleanup::ask(&credentials, request(actions, &offered, said, words), PATIENCE)?;
     Ok(read_pick(&stream, actions, &offered, said, words))
 }

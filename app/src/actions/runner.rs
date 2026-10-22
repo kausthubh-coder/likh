@@ -123,7 +123,7 @@ impl Runner {
             runner.set(State::Idle);
         });
         if let Err(error) = spawned {
-            self.pill.show(Show::Error(format!("likh couldn't start the action. {error}")));
+            self.pill.show(Show::Error(format!("likh couldn't start the command. {error}")));
         }
     }
 
@@ -141,7 +141,7 @@ impl Runner {
             return;
         }
         let Some(dir) = super::folder() else {
-            self.fail(settings, Show::Error("likh has no folder for actions.".into()));
+            self.fail(settings, Show::Error("likh has no folder for commands.".into()));
             return;
         };
         if let Err(reason) = super::prepare(&dir) {
@@ -157,12 +157,12 @@ impl Runner {
                 // A near miss ChatGPT couldn't place runs the phrase that did match.
                 (Ok(None) | Err(_), Some(found)) => (found.action, found.slots, false),
                 (Ok(None), None) => {
-                    self.pill.show(Show::Note(format!("No action for \u{201c}{said}\u{201d}")));
+                    self.pill.show(Show::Note(format!("No command for \u{201c}{said}\u{201d}")));
                     return;
                 }
                 (Err(reason), None) => {
                     diagnostics::warn("actions", format!("no phrase matched and ChatGPT couldn't pick: {reason}"));
-                    self.pill.show(Show::Note(format!("No action for \u{201c}{said}\u{201d}")));
+                    self.pill.show(Show::Note(format!("No command for \u{201c}{said}\u{201d}")));
                     return;
                 }
             },
@@ -182,7 +182,7 @@ impl Runner {
         if action.confirm || (routed && action.runs_programs()) {
             let (reply, answer) = mpsc::channel();
             self.set(State::Confirming { reply });
-            let keys = settings.action_key.map(|key| key.parts().join("+")).unwrap_or_else(|| "the action key".into());
+            let keys = settings.action_key.map(|key| key.parts().join("+")).unwrap_or_else(|| "the command key".into());
             self.pill.show(Show::Confirm {
                 question: format!("Run {}?", action.name),
                 keys,
