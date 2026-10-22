@@ -28,6 +28,33 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      # One real dictation in the built app: the macOS voice into likh's mic
+      # replay, a fixed transcript, the paste logged (scripts/e2e-dictate.sh).
+      - if: runner.os == 'macOS'
+        uses: oven-sh/setup-bun@v2
+      - if: runner.os == 'macOS'
+        name: One dictation, end to end
+        run: |
+          cargo build -p likh --locked
+          say -o speech.wav --data-format=LEI16@16000 "Send the launch notes to the team by Friday."
+          scripts/e2e-dictate.sh target/debug/likh speech.wav "Send the launch notes to the team by Friday."
+
+  # likh.app and its DMG, as a download on every run: ad hoc signed, so
+  # macOS asks to confirm it the first time (right-click, Open).
+  mac-app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99"
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/build-mac-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: likh-macos
+          path: target/macos/likh-macos.dmg
 
   site:
     runs-on: ubuntu-latest

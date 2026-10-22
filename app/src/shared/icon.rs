@@ -1,5 +1,5 @@
 //! The app icon (docs/brand/logo/icon.svg) drawn into RGBA pixels, for the
-//! window icon and the tray. Antialiased with signed distances, so it is sharp
+//! window icon, the tray and the macOS app bundle's iconset. Antialiased with signed distances, so it is sharp
 //! at any size without shipping image files.
 
 use super::theme::{oklch, palette};
@@ -45,6 +45,39 @@ fn mix(a: Color, b: Color, t: f32) -> Color {
     Color { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t, a: 1.0 }
 }
 
+/// The sizes a macOS iconset holds, by file name.
+const ICONSET: [(&str, u32); 10] = [
+    ("icon_16x16.png", 16),
+    ("icon_16x16@2x.png", 32),
+    ("icon_32x32.png", 32),
+    ("icon_32x32@2x.png", 64),
+    ("icon_128x128.png", 128),
+    ("icon_128x128@2x.png", 256),
+    ("icon_256x256.png", 256),
+    ("icon_256x256@2x.png", 512),
+    ("icon_512x512.png", 512),
+    ("icon_512x512@2x.png", 1024),
+];
+
+/// Writes `folder` as a macOS `.iconset` (`iconutil -c icns` makes the `.icns`).
+pub fn write_iconset(folder: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(folder).map_err(|error| error.to_string())?;
+    for (name, side) in ICONSET {
+        // tiny-skia stores premultiplied pixels.
+        let mut pixels = rgba(side);
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            let alpha = f32::from(pixel[3]) / 255.0;
+            for channel in &mut pixel[..3] {
+                *channel = (f32::from(*channel) * alpha).round() as u8;
+            }
+        }
+        let size = tiny_skia::IntSize::from_wh(side, side).ok_or("an icon can't be empty")?;
+        let image = tiny_skia::Pixmap::from_vec(pixels, size).ok_or("the icon's pixels don't fit its size")?;
+        image.save_png(folder.join(name)).map_err(|error| format!("can't write {name}: {error}"))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,5 +100,20 @@ mod tests {
         let gap = pixel(&icon, 64, 20, 32);
         assert_eq!(gap[3], 255);
         assert!(gap[0] < 50, "{gap:?}");
+    }
+
+    #[test]
+    fn the_iconset_has_every_size_macos_asks_for() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let folder = dir.path().join("likh.iconset");
+        write_iconset(&folder).expect("written");
+        for (name, side) in ICONSET {
+            let png = std::fs::read(folder.join(name)).expect(name);
+            assert_eq!(&png[1..4], b"PNG", "{name}");
+            // The IHDR chunk's width and height, big-endian, right after the 16-byte header.
+            let width = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+            let height = u32::from_be_bytes([png[20], png[21], png[22], png[23]]);
+            assert_eq!((width, height), (side, side), "{name}");
+        }
     }
 }

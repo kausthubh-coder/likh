@@ -42,7 +42,8 @@ Native dictation for Windows (macOS in alpha). Hold Ctrl+Space, talk, let go, an
 | `app/src/pill/` | the overlay: animation and drawing (`mod.rs`), the Win32 window (`windows.rs`) |
 | `app/src/ctl/` | `likh ctl`: drive the running app over a local pipe |
 | `app/src/update/` | updates from GitHub Releases: check at launch and after dictations (once a day), download, verify the Ed25519 signature, run the installer silently on "Restart to update" (the foot of the settings sidebar, or the tray's update line). `LIKH_UPDATE_FEED=<url>` points it at a fake release list |
-| `installer/windows.iss`, `.github/workflows/release.yml` | the per-user Inno Setup installer, and the workflow that builds, signs and publishes it when a `v*` tag is pushed |
+| `installer/windows.iss`, `.github/workflows/release.yml` | the per-user Inno Setup installer, and the workflow that builds, signs and publishes it when a `v*` tag is pushed, then adds the macOS DMG |
+| `installer/macos/`, `scripts/build-mac-app.sh` | likh.app's Info.plist (menu bar only, the mic prompt's words) and the script that builds the universal app, its icon (`likh icon`), signs it (Developer ID with `MAC_SIGNING_IDENTITY`, ad hoc without) and packs the DMG |
 | `app/src/codex_auth/` | is Codex installed and signed in; reading credentials safely |
 | `app/src/onboarding/` | the first-run window and its flock |
 | `app/src/shared/` | `theme.rs` (brand tokens), `spring.rs` (motion). Only code two features use |
@@ -60,7 +61,7 @@ Each feature lives in one folder with its UI, logic and tests. Adding a feature 
 - Install / fresh worktree: `bun run setup` (site deps, `cargo fetch`, this checkout's own `LIKH_HOME` and site port). Safe to rerun
 - Doctor: `bun run doctor`. Run it first when anything looks off.
 - Run the app: `bun run dev` (onboarding opens the first time). Agents: `bun run likh run --skip-onboarding`, then `bun run likh ctl status|start|stop|action-start|action-stop|cancel|paste-last|retry|copy-last|diagnostics|quit`. Both use this checkout's `LIKH_HOME` from `.env.local`: its own settings, history and `likh ctl` pipe, never my installed likh's
-- One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
+- One dictation end to end, with fakes: `scripts/tts-wav.ps1` makes the audio, `scripts/e2e-dictate.ps1` checks what got pasted. On Linux and macOS: `scripts/e2e-dictate.sh <likh> <wav> "<text>"` (CI runs it on macOS). Prefer `LIKH_PASTE=<file>` with `-PasteFile <file>`: the paste goes to a log, so I can keep working while you test. Without it, the script clicks into a throwaway box and moves my cursor
 - Groq for real: `GROQ_API_KEY=... LIKH_TEST_WAV=<absolute path> LIKH_TEST_TEXT=... cargo test -p likh groq_live -- --ignored --nocapture`. The key stays in the environment, never in a file
 - Idle cost of a running build: `scripts/measure-idle.ps1 -ProcessId <pid>`
 - What a build costs idle, recording and after: `scripts/benchmark.ps1 [-Label <text>]` on a release build. It runs its own likh and keeps every run in `.agents/qa/bench/results.jsonl`

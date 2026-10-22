@@ -67,6 +67,9 @@ enum Command {
         #[command(subcommand)]
         command: ActionsCommand,
     },
+    /// Writes the app icon as a macOS iconset folder (scripts/build-mac-app.sh).
+    #[command(hide = true)]
+    Icon { folder: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -120,6 +123,13 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Command::Icon { folder } => match shared::icon::write_iconset(&folder) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("likh: {error}");
+                ExitCode::FAILURE
+            }
+        },
         Command::Ctl { command } => match ctl::send(&command) {
             Ok(answer) => {
                 println!("{answer}");

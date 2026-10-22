@@ -44,6 +44,13 @@ likh runs on Linux for agents only: no tray icon, no global hotkeys (they need `
 4. Windows: `xdotool search --name '^likh$'` finds likh's own window; `import -window <id> out.png` captures only it (the desktop is shared with other threads' browsers: never capture the root window); `xdotool mousemove --window <id> <x> <y> click 1` clicks at the same logical coordinates the feature files give.
 5. Stop: `likh ctl quit`, then check `pgrep -f target/debug/likh` is empty.
 
+## On macOS (Devin's Mac, or yours)
+
+- `cargo build -p likh` and run `./target/debug/likh` with the same env fakes as Linux; `say -o speech.wav --data-format=LEI16@16000 "<sentence>"` makes the WAV. `scripts/e2e-dictate.sh target/debug/likh speech.wav "<sentence>"` is one dictation end to end (CI runs it on every PR).
+- The real app: `scripts/build-mac-app.sh` makes `target/macos/likh.app` and `likh-macos.dmg` (CI's `mac-app` job uploads the DMG as an artifact). Ad hoc signed: right-click, Open the first time. It's a menu bar app (no Dock icon).
+- Keys need Accessibility (System Settings, Privacy & Security, Accessibility): until then setup's shortcut step says "Let likh hear its keys" and the Dictation tab says "likh needs Accessibility access.". The mic asks the first time it opens.
+- No pill window on macOS yet; the pill's buttons' jobs are `likh ctl retry`, the Dictation tab and the Commands tab.
+
 ## Doctor
 
 Run `bun run doctor` (toolchain, MSVC linker, site deps, Cargo.lock, Codex sign-in). Then make sure the window exists:
