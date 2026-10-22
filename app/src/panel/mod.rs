@@ -565,6 +565,9 @@ impl Panel {
                 },
                 // Esc closes the window when nothing else wants it.
                 None if is_escape(&event) => return window::close(self.window),
+                // Tab moves between fields (New command's form has six); iced leaves it to the app.
+                None if tab(&event) == Some(false) => return operation::focus_next(),
+                None if tab(&event) == Some(true) => return operation::focus_previous(),
                 None => {}
             },
             Message::Frame(now) => {
@@ -1971,6 +1974,18 @@ fn small_button<'a>(p: &Palette, words: &'a str, message: Message, peach: bool) 
             }
         })
         .into()
+}
+
+/// Tab went down: Some(true) with Shift held.
+fn tab(event: &keyboard::Event) -> Option<bool> {
+    match event {
+        keyboard::Event::KeyPressed {
+            physical_key: keyboard::key::Physical::Code(keyboard::key::Code::Tab),
+            modifiers,
+            ..
+        } => Some(modifiers.shift()),
+        _ => None,
+    }
 }
 
 fn is_escape(event: &keyboard::Event) -> bool {
