@@ -63,7 +63,12 @@ pub struct Window {
 }
 
 /// The window in front now. None where likh can't tell (macOS for now).
+/// `LIKH_WINDOW=<program>|<title>` stands in for it, for tests and agents.
 pub fn foreground() -> Option<Window> {
+    if let Ok(fake) = std::env::var("LIKH_WINDOW") {
+        let (app, title) = fake.split_once('|').unwrap_or((fake.as_str(), ""));
+        return Some(Window { id: 1, app: app.to_owned(), title: title.to_owned() });
+    }
     #[cfg(target_os = "windows")]
     {
         windows::foreground()

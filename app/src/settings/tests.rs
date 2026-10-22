@@ -95,6 +95,7 @@ fn what_you_save_is_what_you_load() {
         dictionary: vec!["Critly".into(), "Kriyan".into()],
         fix_names: false,
         cleanup: true,
+        styles: false,
         start_with_windows: true,
         auto_update: false,
     };

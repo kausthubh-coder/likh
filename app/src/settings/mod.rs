@@ -119,6 +119,8 @@ pub struct Settings {
     pub fix_names: bool,
     /// After transcribing, ChatGPT drops "um"s and false starts and shapes spoken lists (`cleanup/`).
     pub cleanup: bool,
+    /// With Clean up on, each app in front gets its own tone: email, chat, notes, code (`styles/`).
+    pub styles: bool,
     /// Start likh when you sign in to Windows.
     pub start_with_windows: bool,
     /// Look for a newer likh at launch and after dictations, once a day (`update/`).
@@ -150,6 +152,7 @@ impl Default for Settings {
             // Off until asked for: it adds about a second to every dictation,
             // and instant is what likh is for.
             cleanup: false,
+            styles: true,
             // On out of the box (applied when setup finishes): a dictation app that's gone
             // after a restart looks broken. Start at login on macOS comes with its app bundle.
             start_with_windows: cfg!(target_os = "windows"),
