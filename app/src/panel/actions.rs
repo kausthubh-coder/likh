@@ -1,7 +1,9 @@
-//! The Actions tab: the action key and its mouse button, every action in the
-//! folder as its file says (with a switch each), what's broken and where,
-//! Review and Approve for scripts, and a form that writes simple actions.
-//! It reads the folder each time the tab opens; it never watches it.
+//! The Commands tab's command-key half: the command key and its mouse button,
+//! every command in the folder as its file says (with a switch each), what's
+//! broken and where, Review and Approve for scripts, and a form that writes
+//! simple commands. Inside likh a command is an action (`actions/`): one file
+//! each in the `actions` folder. It reads the folder each time the tab opens;
+//! it never watches it.
 
 use super::{Line, Panel, Picking, group, hint, label, link, named, small_button, tone_color};
 use crate::actions::trust::{self, Trust};
@@ -14,7 +16,7 @@ use iced::widget::{Space, column, container, row, text, text_input};
 use iced::{Alignment, Background, Border, Element, Length, Task, keyboard};
 use std::collections::BTreeMap;
 
-/// The label column of the New action form.
+/// The label column of the New command form.
 const FORM_LABEL: f32 = 92.0;
 /// A changed script shows at most this many lines in Review.
 const DIFF_LINES: usize = 200;
@@ -167,7 +169,15 @@ impl Panel {
             }
             Message::Save => {
                 let mut draft = self.actions.form.clone();
-                draft.say = vec![self.actions.say.trim().to_owned()];
+                // Other ways to say it, comma-separated: matching ignores punctuation, so a comma is never part of one.
+                draft.say = self
+                    .actions
+                    .say
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|phrase| !phrase.is_empty())
+                    .map(String::from)
+                    .collect();
                 let saved = match &self.files.actions {
                     Some(dir) => draft.save(dir),
                     None => Err("there is no actions folder".into()),
@@ -176,7 +186,7 @@ impl Panel {
                     Ok(path) => {
                         self.load_actions();
                         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                        self.notice = Some((format!("Saved {name}. Hold the action key and say it."), Tone::Success));
+                        self.notice = Some((format!("Saved {name}. Hold the command key and say it."), Tone::Success));
                     }
                     Err(why) => self.notice = Some((format!("Not saved: {why}"), Tone::Danger)),
                 }
@@ -205,7 +215,7 @@ impl Panel {
                 if hotkey::action_key_taken() {
                     "Another app has these keys. Change them."
                 } else {
-                    "Hold it and say an action."
+                    "Hold it and say a command."
                 },
                 row![
                     container(text(String::from(keys)).size(size::SMALL).font(theme::MONO).color(p.text))
@@ -227,18 +237,18 @@ impl Panel {
         let keys = group(
             p,
             vec![
-                Line::plain(named(p, "Action key", Some(what)), control),
+                Line::plain(named(p, "Command key", Some(what)), control),
                 Line::plain(
-                    named(p, "Mouse button", Some("Works like the action key.")),
+                    named(p, "Mouse button", Some("Works like the command key.")),
                     segmented(&mouse_options, chosen.action_mouse, |t| act(Message::Mouse(t))),
                 ),
             ],
         );
         let top = row![
-            label(p, "Your actions"),
+            label(p, "Your commands"),
             Space::new().width(Length::Fill),
             link(p, "Open folder", act(Message::OpenFolder)),
-            small_button(p, "New action", act(Message::New), true),
+            small_button(p, "New command", act(Message::New), true),
         ]
         .spacing(space::S4)
         .padding(iced::Padding { right: space::S4, ..iced::Padding::ZERO })
@@ -261,14 +271,14 @@ impl Panel {
             Line::plain(left.into(), link(p, "Open file", act(Message::OpenFile(path))))
         }));
         let list: Element<'_, super::Message> = if rows.is_empty() {
-            hint(p, "No actions yet. Make one with New action, or ask an agent to write one into the folder.")
+            hint(p, "No commands yet. Make one with New command, or ask an agent to write one into the folder.")
         } else {
             group(p, rows)
         };
         column![
             keys,
             column![top, list].spacing(space::S2),
-            hint(p, "Each action is a file in the folder. Agents can write them; a program runs only after you approve it here."),
+            hint(p, "Say it your way: when no phrase matches, ChatGPT picks the closest command. Each is a file in the folder; a program runs only after you approve it here."),
         ]
         .spacing(space::S4)
         .into()
@@ -357,7 +367,7 @@ impl Panel {
         .spacing(space::S4)
         .padding(iced::Padding { left: space::S4, right: space::S4, ..iced::Padding::ZERO })
         .align_y(Alignment::Center);
-        column![link(p, "\u{2039} All actions", act(Message::Back)), group(p, vec![Line::custom(body.into())]), foot,]
+        column![link(p, "\u{2039} All commands", act(Message::Back)), group(p, vec![Line::custom(body.into())]), foot,]
             .spacing(space::S3)
             .into()
     }
@@ -397,14 +407,14 @@ impl Panel {
             )
         };
         let say = column![
-            field("make this {style}", &self.actions.say, Message::Say),
-            text("A {slot} at the end catches the words you say there, like {text}.")
+            field("pause the music, stop the music", &self.actions.say, Message::Say),
+            text("Commas between other ways to say it. A {slot} at the end catches the rest, like {text}.")
                 .size(size::CAPTION)
                 .color(p.text_muted),
         ]
         .spacing(space::S1);
         let rows = vec![
-            labelled("Name", field("Make this formal", &form.name, Message::Name).into()),
+            labelled("Name", field("Pause music", &form.name, Message::Name).into()),
             labelled("When I say", say.into()),
             labelled("Do", segmented(&kinds, form.kind, |k| act(Message::Kind(k)))),
             labelled(value_label, field(value_hint, &form.value, Message::Value).into()),

@@ -327,7 +327,7 @@ fn brand_board_panel() {
     hotkey::pretend_taken(false, false);
     // Actions: the list, Review on the unapproved script, and the form.
     seed_actions(&f);
-    let _ = f.panel.update(Message::Tab(Tab::Actions));
+    open_command_key(&mut f.panel);
     snap(&out, "actions", &f.panel);
     let _ = f.panel.update(Message::Action(actions::Message::Review("deploy-preview".into())));
     snap(&out, "actions-review", &f.panel);
@@ -690,13 +690,49 @@ fn seed_actions(f: &Fixture) {
     }
 }
 
+/// Commands, on the command key's half: what the pill's Review and Details open.
+fn open_command_key(panel: &mut Panel) {
+    let _ = panel.update(Message::Tab(Tab::Commands));
+    let _ = panel.update(Message::CommandsView(CommandsView::CommandKey));
+}
+
+#[test]
+fn commands_holds_both_kinds_and_says_what_each_group_does_even_when_on() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Commands");
+    assert!(shows(&f.panel, "While dictating") && shows(&f.panel, "With the command key"));
+    // On by default, and its explanation still shows: three chips that all say "undo" never said where.
+    assert!(shows(&f.panel, "Take it back"));
+    assert!(shows(
+        &f.panel,
+        "Alone, it undoes the last paste in the app it landed in. After a sentence, it drops that sentence."
+    ));
+    assert!(shows(&f.panel, "\u{201c}delete that\u{201d}"));
+    press(&mut f.panel, "With the command key");
+    assert!(shows(&f.panel, "Command key") && shows(&f.panel, "Hold it and say a command."));
+    assert!(shows(&f.panel, "Your commands") && shows(&f.panel, "New command"));
+    // The starters a new folder gets: ones anyone can use.
+    assert!(shows(&f.panel, "Search the web") && shows(&f.panel, "Open a site") && shows(&f.panel, "Make this"));
+    assert!(!shows(&f.panel, "New T3 thread"), "the T3 Code starter is an example until renamed");
+    press(&mut f.panel, "While dictating");
+    assert!(shows(&f.panel, "Lines and lists"));
+}
+
+#[test]
+fn there_is_no_separate_actions_tab() {
+    let _ui = test_ui::lock();
+    let f = panel();
+    assert!(!shows(&f.panel, "Actions"));
+}
+
 #[test]
 fn actions_lists_every_file_and_flags_the_broken_and_the_unapproved() {
     let _ui = test_ui::lock();
     let mut f = panel();
     seed_actions(&f);
-    let _ = f.panel.update(Message::Tab(Tab::Actions));
-    assert!(shows(&f.panel, "New T3 thread") && shows(&f.panel, "Spotify search"));
+    open_command_key(&mut f.panel);
+    assert!(shows(&f.panel, "Search the web") && shows(&f.panel, "Spotify search"));
     assert!(shows(&f.panel, "\u{201c}spotify {text}\u{201d}"));
     assert!(shows(&f.panel, "Runs a program. Approve it to use it."));
     assert!(shows(
@@ -711,7 +747,7 @@ fn approving_a_script_after_reading_it_lets_it_run() {
     let _ui = test_ui::lock();
     let mut f = panel();
     seed_actions(&f);
-    let _ = f.panel.update(Message::Tab(Tab::Actions));
+    open_command_key(&mut f.panel);
     press(&mut f.panel, "Review");
     assert!(shows(&f.panel, "Deploy preview runs a program you haven't approved yet"));
     assert!(shows(&f.panel, "+ vercel deploy --prebuilt"));
@@ -729,7 +765,7 @@ fn the_switch_turns_an_action_off_in_its_file() {
     let _ui = test_ui::lock();
     let mut f = panel();
     seed_actions(&f);
-    let _ = f.panel.update(Message::Tab(Tab::Actions));
+    open_command_key(&mut f.panel);
     press(&mut f.panel, "Next song");
     let text = std::fs::read_to_string(f.dir.path().join("actions").join("next-song.toml")).expect("read");
     assert!(text.contains("enabled = false"), "{text}");
@@ -739,11 +775,11 @@ fn the_switch_turns_an_action_off_in_its_file() {
 fn new_action_writes_a_file_that_works_on_the_next_press() {
     let _ui = test_ui::lock();
     let mut f = panel();
-    let _ = f.panel.update(Message::Tab(Tab::Actions));
-    press(&mut f.panel, "New action");
+    open_command_key(&mut f.panel);
+    press(&mut f.panel, "New command");
     for message in [
         actions::Message::Name("Pause music".into()),
-        actions::Message::Say("pause the music".into()),
+        actions::Message::Say("pause the music, stop the music".into()),
         actions::Message::Kind(crate::actions::DraftKind::Keys),
         actions::Message::Value("play_pause".into()),
     ] {
@@ -751,9 +787,12 @@ fn new_action_writes_a_file_that_works_on_the_next_press() {
     }
     assert!(shows(&f.panel, "saves pause-music.toml"));
     press(&mut f.panel, "Save");
-    assert!(shows(&f.panel, "Saved pause-music.toml. Hold the action key and say it."));
+    assert!(shows(&f.panel, "Saved pause-music.toml. Hold the command key and say it."));
     let catalog = crate::actions::Catalog::load(&f.dir.path().join("actions"));
     let found = crate::actions::matcher::find(&catalog.actions, "Pause the music.").expect("it matches");
+    assert_eq!(catalog.actions[found.action].name, "Pause music");
+    // Each comma-separated phrase is its own way to say it.
+    let found = crate::actions::matcher::find(&catalog.actions, "Stop the music.").expect("the second phrase matches");
     assert_eq!(catalog.actions[found.action].name, "Pause music");
 }
 

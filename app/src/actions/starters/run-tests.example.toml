@@ -1,7 +1,7 @@
 #:schema ./actions.schema.json
 # An example that runs a program. Files ending in .example.toml are ignored:
 # rename this to run-tests.toml, point it at your project, then approve it on
-# likh's Actions tab. A program never runs until you approve it, and again
+# likh's Commands tab. A program never runs until you approve it, and again
 # after any change.
 name = "Run tests"
 description = "Run the project's tests and say whether they passed"

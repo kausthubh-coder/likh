@@ -1,6 +1,6 @@
-# Actions
+# Actions (commands)
 
-Hold the action key (Ctrl+Shift+Space by default, or the mouse button picked for it), say what to do, and likh does it: opens a link, presses keys, pastes text, asks ChatGPT, or runs a program. Each action is one TOML file in `LIKH_HOME/actions/`; the format is in `app/src/actions/starters/README.md`, which likh also writes into the folder.
+Users call these commands and the key the command key; the code, the folder and the CLI call them actions. Hold the action key (Ctrl+Shift+Space by default, or the mouse button picked for it), say what to do, and likh does it: opens a link, presses keys, pastes text, asks ChatGPT, or runs a program. Each action is one TOML file in `LIKH_HOME/actions/`; the format is in `app/src/actions/starters/README.md`, which likh also writes into the folder.
 
 ## Sub-features
 
@@ -11,14 +11,14 @@ Hold the action key (Ctrl+Shift+Space by default, or the mouse button picked for
 - `act-trust` an action with a `run` step runs only after Approve on the Actions tab, and again after any change to its file or a script it runs. Otherwise the pill says "<file> isn't approved yet, so it won't run." with Review.
 - `act-confirm` `confirm = true` (or a `run` the router picked): the pill asks "Run <name>?" with a peach ring; the action key again runs it, Esc or 5 s cancels.
 - `act-busy` one action at a time: the action key meanwhile shows "Busy: <name>"; Esc stops a running one.
-- `act-tab` the Actions tab: the action key (Change, Turn off; says when another app owns it) and its mouse button, every action with its phrases and a switch (writes `enabled` in the file), broken files with file and line, Review (the diff since approval) and Approve, New action (paste, open, keys or ask).
+- `act-tab` the Commands tab's "With the command key" half (the pill's Review and Details open it): the command key (Change, Turn off; says when another app owns it) and its mouse button, every command with its phrases and a switch (writes `enabled` in the file), broken files with file and line, Review (the diff since approval) and Approve, New command (paste, open, keys or ask; "When I say" takes several phrases, comma-separated). A new folder gets Make this, Search the web and Open a site; New T3 thread and Run tests are `.example.toml` files until renamed.
 - `act-cli` `likh actions check` and `likh actions test "<phrase>"` work without likh running and never run a step.
 - `act-history` actions go to history with their name; only paste and replace count for paste last.
 
 ## How to get to it (user POV)
 
 - Hold Ctrl+Shift+Space, say "new thread fix the login bug", let go: T3 Code opens with that as a draft.
-- Tray, Open likh, Actions.
+- Tray, Open likh, Commands, "With the command key".
 
 ## Driving it with scripts
 
@@ -37,6 +37,6 @@ Hold the action key (Ctrl+Shift+Space by default, or the mouse button picked for
 
 ## Gotchas
 
-- The person's installed likh doesn't use the action key, but other apps might: on the dev machine Ctrl+Shift+Space was taken by another app (2026-10-15). The log says "the action key won't work", and the Actions tab says so under Action key.
+- The person's installed likh doesn't use the action key, but other apps might: on the dev machine Ctrl+Shift+Space was taken by another app (2026-10-15). The log says "the action key won't work", and the Commands tab says so under Command key.
 - An approval can't be given from `likh ctl` on purpose. To prove approve-then-run in the live app, click Review and Approve in the window (`scripts/click-window.ps1`; it moves the person's cursor), or rely on the panel test `approving_a_script_after_reading_it_lets_it_run` plus `a_program_gets_what_you_said_and_its_output_is_the_result`.
 - `printf` into a TOML file turns `\n` into a real newline inside a quoted string, which breaks the file; use a heredoc with `"""`.

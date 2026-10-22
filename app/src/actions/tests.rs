@@ -70,7 +70,15 @@ fn a_new_folder_gets_the_starters_and_a_used_one_keeps_what_you_did_to_it() {
     let dir = tempfile::tempdir().expect("temp dir");
     let actions = dir.path().join("actions");
     prepare(&actions).expect("prepare");
-    for name in ["README.md", "actions.schema.json", "make-this.toml", "new-t3-thread.toml", "run-tests.example.toml"] {
+    for name in [
+        "README.md",
+        "actions.schema.json",
+        "make-this.toml",
+        "search-the-web.toml",
+        "open-site.toml",
+        "new-t3-thread.example.toml",
+        "run-tests.example.toml",
+    ] {
         assert!(actions.join(name).is_file(), "{name} is missing");
     }
     // You deleted a starter and edited the README: the starter stays gone, likh's README comes back.
@@ -79,9 +87,11 @@ fn a_new_folder_gets_the_starters_and_a_used_one_keeps_what_you_did_to_it() {
     prepare(&actions).expect("prepare again");
     assert!(!actions.join("make-this.toml").exists());
     assert_eq!(std::fs::read_to_string(actions.join("README.md")).expect("readme"), README);
-    // The example is ignored until it's renamed.
+    // The examples are ignored until they're renamed.
     let catalog = Catalog::load(&actions);
-    assert_eq!(catalog.actions.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["new-t3-thread"]);
+    let mut ids: Vec<&str> = catalog.actions.iter().map(|a| a.id.as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["open-site", "search-the-web"]);
 }
 
 #[test]
@@ -528,4 +538,17 @@ fn ask_live_answers_with_only_the_text_asked_for() {
     println!("{answer:?} in {} ms", started.elapsed().as_millis());
     assert!(!answer.to_lowercase().contains("here is"), "{answer}");
     assert!(answer.to_lowercase().contains("deck"), "{answer}");
+}
+
+#[test]
+fn the_everyday_starters_answer_what_people_say() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let actions = dir.path().join("actions");
+    prepare(&actions).expect("prepare");
+    let said = test(&actions, "search for flights to Lisbon in May");
+    assert!(said.starts_with("matches Search the web (search-the-web.toml)"), "{said}");
+    assert!(said.contains("{text} = \"flights to Lisbon in May\""), "{said}");
+    let said = test(&actions, "open Gmail");
+    assert!(said.starts_with("matches Open a site (open-site.toml)"), "{said}");
+    assert!(said.contains("{site} = \"https://mail.google.com\""), "{said}");
 }

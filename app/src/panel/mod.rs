@@ -1,8 +1,9 @@
 //! The likh window, opened from the tray. Seven tabs, each with one job: how
 //! you start and stop a dictation (Dictation), which engine transcribes
-//! (Transcription), the spoken commands (Commands), your own actions
-//! (Actions), your own words (Dictionary), what you dictated (History),
-//! startup, updates and links (App), and what went wrong or slow lately (Diagnostics).
+//! (Transcription), everything you can say to make likh do something
+//! (Commands: phrases while dictating, and the command key's commands), your
+//! own words (Dictionary), what you dictated (History), startup, updates and
+//! links (App), and what went wrong or slow lately (Diagnostics).
 //!
 //! Every setting is one row in a panel: its name on the left, its control on
 //! the right. Every tab fits without scrolling except a long History and Diagnostics.
@@ -81,31 +82,30 @@ pub enum Tab {
     Dictation,
     Transcription,
     Commands,
-    Actions,
     Dictionary,
     History,
     App,
     Diagnostics,
 }
 
+/// The Commands tab's two halves: phrases that work inside any dictation, and
+/// the commands you start with the command key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CommandsView {
+    #[default]
+    WhileDictating,
+    CommandKey,
+}
+
 impl Tab {
-    const ALL: [Tab; 8] = [
-        Tab::Dictation,
-        Tab::Transcription,
-        Tab::Commands,
-        Tab::Actions,
-        Tab::Dictionary,
-        Tab::History,
-        Tab::App,
-        Tab::Diagnostics,
-    ];
+    const ALL: [Tab; 7] =
+        [Tab::Dictation, Tab::Transcription, Tab::Commands, Tab::Dictionary, Tab::History, Tab::App, Tab::Diagnostics];
 
     fn name(self) -> &'static str {
         match self {
             Tab::Dictation => "Dictation",
             Tab::Transcription => "Transcription",
             Tab::Commands => "Commands",
-            Tab::Actions => "Actions",
             Tab::Dictionary => "Dictionary",
             Tab::History => "History",
             Tab::App => "App",
@@ -117,8 +117,7 @@ impl Tab {
         match self {
             Tab::Dictation => Shape::Mic,
             Tab::Transcription => Shape::Wave,
-            Tab::Commands => Shape::Code,
-            Tab::Actions => Shape::Spark,
+            Tab::Commands => Shape::Spark,
             Tab::Dictionary => Shape::Book,
             Tab::History => Shape::Clock,
             Tab::App => Shape::Gear,
@@ -192,8 +191,10 @@ pub enum Message {
     Open(&'static str),
     Close,
     Drag,
-    /// The Actions tab (`actions.rs`).
+    /// The Commands tab's command-key half (`actions.rs`).
     Action(actions::Message),
+    /// Which half of the Commands tab shows.
+    CommandsView(CommandsView),
 }
 
 /// The two shortcuts the Dictation tab can pick keys for.
@@ -244,8 +245,9 @@ pub struct Panel {
     testing: bool,
     /// The meter's levels, newest last.
     mic_levels: [f32; MIC_BARS],
-    /// The Actions tab: the folder as last read, and which view of it is open.
+    /// The command key's commands: the folder as last read, and which view of it is open.
     actions: actions::State,
+    commands_view: CommandsView,
     /// The trace summed up; None while it's being read.
     report: Option<Report>,
     /// Reads likh's own process. Held only while Diagnostics is open.
@@ -365,6 +367,7 @@ impl Panel {
             testing: false,
             mic_levels: [0.0; MIC_BARS],
             actions: actions::State::default(),
+            commands_view: CommandsView::default(),
             report: None,
             sampler: None,
             usage: None,
@@ -446,7 +449,7 @@ impl Panel {
                         Task::none()
                     }
                     // Read the folder again: an agent may have changed it since.
-                    Tab::Actions => {
+                    Tab::Commands => {
                         self.load_actions();
                         Task::none()
                     }
@@ -456,7 +459,7 @@ impl Panel {
                         self.sampler = Some(sampler);
                         self.diagnose()
                     }
-                    Tab::Dictation | Tab::Commands | Tab::App => Task::none(),
+                    Tab::Dictation | Tab::App => Task::none(),
                 };
                 // Each tab starts at its top.
                 return Task::batch([read, operation::snap_to(BODY, scrollable::RelativeOffset::START)]);
@@ -714,6 +717,12 @@ impl Panel {
             Message::Close => return window::close(self.window),
             Message::Drag => return window::drag(self.window),
             Message::Action(message) => return self.update_actions(message),
+            Message::CommandsView(view) => {
+                self.stop_capturing();
+                self.commands_view = view;
+                self.actions.view = actions::View::List;
+                self.notice = None;
+            }
         }
         Task::none()
     }
@@ -855,8 +864,7 @@ impl Panel {
         let content = match self.tab {
             Tab::Dictation => self.dictation_tab(&p),
             Tab::Transcription => self.transcription(&p),
-            Tab::Commands => self.commands(&p),
-            Tab::Actions => self.actions_tab(&p),
+            Tab::Commands => self.commands_tab(&p),
             Tab::Dictionary => self.dictionary(&p),
             Tab::History => self.history_list(&p),
             Tab::App => self.app(&p),
@@ -1318,6 +1326,21 @@ impl Panel {
         }
     }
 
+    /// Both kinds of command, one pick above them. Review and New take the whole tab.
+    fn commands_tab(&self, p: &Palette) -> Element<'_, Message> {
+        if self.commands_view == CommandsView::CommandKey && self.actions.view != actions::View::List {
+            return self.actions_tab(p);
+        }
+        let options =
+            [(CommandsView::WhileDictating, "While dictating"), (CommandsView::CommandKey, "With the command key")];
+        let pick = segmented(&options, self.commands_view, Message::CommandsView);
+        let body = match self.commands_view {
+            CommandsView::WhileDictating => self.commands(p),
+            CommandsView::CommandKey => self.actions_tab(p),
+        };
+        column![pick, body].spacing(space::S4).into()
+    }
+
     fn commands(&self, p: &Palette) -> Element<'_, Message> {
         let chosen = self.chosen();
         let master = Line::plain(
@@ -1335,8 +1358,15 @@ impl Panel {
             let phrases = group.phrases();
             // A result every phrase shares ("undo", three times) says nothing, so it's left off.
             let shared = phrases.windows(2).all(|pair| pair[0].1 == pair[1].1) && phrases.len() > 1;
-            let under: Element<'_, Message> = if on {
-                row(phrases.iter().map(|(phrase, result)| {
+            // What a group does always shows: three chips that all say "undo" never said where.
+            let mut left = column![
+                text(group.name()).size(size::BODY).font(theme::UI_MEDIUM),
+                text(group.explain()).size(size::SMALL).color(p.text_muted),
+            ]
+            .spacing(space::S1)
+            .width(Length::Fill);
+            if on {
+                let chips = row(phrases.iter().map(|(phrase, result)| {
                     let mut chip = row![said(phrase)].spacing(space::S1).align_y(Alignment::Center);
                     if !shared {
                         chip = chip.push(text(*result).size(size::CAPTION).font(theme::MONO).color(p.text_subtle));
@@ -1345,14 +1375,9 @@ impl Panel {
                 }))
                 .spacing(space::S3)
                 .wrap()
-                .vertical_spacing(space::S2)
-                .into()
-            } else {
-                text(group.explain()).size(size::SMALL).color(p.text_muted).into()
-            };
-            let left = column![text(group.name()).size(size::BODY).font(theme::UI_MEDIUM), under]
-                .spacing(space::S2)
-                .width(Length::Fill);
+                .vertical_spacing(space::S2);
+                left = left.push(Space::new().height(space::S1)).push(chips);
+            }
             Line::plain(left.into(), switch(on)).press(Message::CommandGroup(group, !on))
         });
         // The master switch heads the same panel as the groups it turns on.

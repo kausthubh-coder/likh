@@ -1,12 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "likh action",
-  "description": "One likh action: hold the action key, say one of its phrases, and likh carries out its steps. See README.md next to this file.",
+  "description": "One likh command: hold the command key, say one of its phrases, and likh carries out its steps. See README.md next to this file.",
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "say", "do"],
   "properties": {
-    "name": { "type": "string", "minLength": 1, "description": "What the pill and the Actions tab call it." },
+    "name": { "type": "string", "minLength": 1, "description": "What the pill and the Commands tab call it." },
     "description": { "type": "string", "description": "What it does, for ChatGPT when no phrase matched. Defaults to the name." },
     "say": {
       "type": "array",
