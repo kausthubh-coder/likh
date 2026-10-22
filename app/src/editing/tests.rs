@@ -12,6 +12,13 @@ fn edits_and_translations_read_as_instructions() {
         ("Rewrite it as bullet points!", "Rewrite it as bullet points"),
         ("Summarize this in two sentences.", "Summarize this in two sentences"),
         ("More casual.", "More casual"),
+        ("Translate to French.", "Translate to French"),
+        ("Make it sound more professional.", "Make it sound more professional"),
+        ("Turn this into a list.", "Turn this into a list"),
+        ("Clean it up.", "Clean it up"),
+        ("Expand on this.", "Expand on this"),
+        ("Shorter.", "Shorter"),
+        ("As bullet points.", "As bullet points"),
     ] {
         assert_eq!(super::instruction(said).as_deref(), Some(instruction), "{said}");
     }
@@ -27,6 +34,17 @@ fn ordinary_sentences_are_typed_not_treated_as_edits() {
         "In Hindi we say namaste to everyone who comes to the door.",
         "Make it shorter and then send it to Priya before the call tomorrow morning at nine.",
         "",
+        // Sentences that start like an edit (Devin found these replacing a selection, 2026-10-22).
+        "Expand the team next quarter.",
+        "Make it happen by Friday.",
+        "Fix it by Friday.",
+        "Make it a priority.",
+        "More people came than we planned.",
+        "Translate the launch notes for the Paris team.",
+        "Rewrite the intro tomorrow.",
+        "Summarize the meeting for Priya.",
+        "Change the date to Tuesday.",
+        "In Spain we eat late.",
     ] {
         assert_eq!(super::instruction(said), None, "{said}");
     }
