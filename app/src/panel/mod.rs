@@ -1197,7 +1197,7 @@ impl Panel {
         let what = match (self.allowance, &self.codex, mode) {
             (Some(resets_at), _, _) => crate::allowance::paused_line(resets_at),
             (None, CodexStatus::Connected(_), CleanupMode::ByApp) => {
-                "Emails get full sentences, chats stay casual, code keeps its terms. Can run out on Free.".into()
+                "A tone for each app: email, chat, notes, code. Can run out on Free.".into()
             }
             (None, CodexStatus::Connected(_), _) => {
                 "Drops ums, keeps corrections, makes lists. Can run out on Free.".into()
