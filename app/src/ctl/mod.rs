@@ -142,6 +142,8 @@ pub fn answer(command: &str, status: &Status, update: &crate::update::State) -> 
                 "version": env!("CARGO_PKG_VERSION"),
                 "dictation": status,
                 "codex": crate::onboarding::check_codex_now(),
+                // Clean up, names and the action router wait for ChatGPT's allowance until then.
+                "allowance": { "paused_until": crate::allowance::paused_until_now() },
                 "update": update,
             }),
             None,

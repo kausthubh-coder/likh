@@ -830,6 +830,12 @@ fn run(
                     if chosen.auto_update {
                         updates.check_if_due();
                     }
+                    // The dictation that found ChatGPT's allowance ran out says when cleanup comes back.
+                    if restore.is_some()
+                        && let Some(resets_at) = crate::allowance::take_news()
+                    {
+                        pill.show(Show::Note(crate::allowance::news_line(resets_at)));
+                    }
                     if let Some(restore) = restore {
                         if let Some(key) = then
                             && let Err(reason) = crate::paste::press(key)

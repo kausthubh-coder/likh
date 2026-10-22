@@ -211,6 +211,8 @@ pub struct Panel {
     dictation: Arc<Mutex<Status>>,
     updates: Updates,
     codex: CodexStatus,
+    /// ChatGPT's allowance ran out until then (`allowance/`): Clean up and Fix names wait.
+    allowance: Option<u64>,
     groq: GroqSetup,
     /// Groq's card was clicked before a key was saved: it becomes the engine once one is.
     groq_wanted: bool,
@@ -342,6 +344,7 @@ impl Panel {
             dictation,
             updates,
             codex: onboarding::check_codex_now(),
+            allowance: None,
             groq: GroqSetup::look(),
             groq_wanted: false,
             capturing: None,
@@ -439,6 +442,7 @@ impl Panel {
                     // Both engines show where they stand, so look at both. Fixing names needs Codex too.
                     Tab::Transcription | Tab::Dictionary => {
                         self.codex = onboarding::check_codex_now();
+                        self.allowance = crate::allowance::paused_until_now();
                         Task::none()
                     }
                     // Read the folder again: an agent may have changed it since.
@@ -1160,11 +1164,14 @@ impl Panel {
     /// Clean up: ChatGPT tidies each dictation after whichever engine heard it.
     fn cleanup_line(&self, p: &Palette) -> Line<'_> {
         let on = self.chosen().cleanup;
-        let what = match self.codex {
-            CodexStatus::Connected(_) => "Drops ums, keeps corrections, makes lists. Can run out on Free.",
-            _ => "Needs Codex signed in, whichever engine you pick.",
+        let what = match (self.allowance, &self.codex) {
+            (Some(resets_at), _) => crate::allowance::paused_line(resets_at),
+            (None, CodexStatus::Connected(_)) => {
+                "Drops ums, keeps corrections, makes lists. Can run out on Free.".into()
+            }
+            (None, _) => "Needs Codex signed in, whichever engine you pick.".into(),
         };
-        Line::plain(named(p, "Clean up", Some(what)), switch(on)).press(Message::Cleanup(!on))
+        Line::plain(named_owned(p, "Clean up", what), switch(on)).press(Message::Cleanup(!on))
     }
 
     /// Language: Auto-detect, or one pinned, with why you'd leave it on auto.
@@ -1378,16 +1385,19 @@ impl Panel {
                 .vertical_spacing(space::S2)
                 .into()
         };
-        let fix_detail = match self.codex {
-            CodexStatus::Connected(_) => "ChatGPT reads each dictation and puts your words in. Adds about a second.",
-            _ => "Needs Codex signed in. Groq still hears your words as it listens.",
+        let fix_detail = match (self.allowance, &self.codex) {
+            (Some(resets_at), _) => crate::allowance::paused_line(resets_at),
+            (None, CodexStatus::Connected(_)) => {
+                "ChatGPT reads each dictation and puts your words in. Adds about a second.".into()
+            }
+            (None, _) => "Needs Codex signed in. Groq still hears your words as it listens.".into(),
         };
         column![
             group(
                 p,
                 vec![
                     Line::custom(column![add, words].spacing(space::S3).into()),
-                    Line::plain(named(p, "Fix misheard names", Some(fix_detail)), switch(chosen.fix_names))
+                    Line::plain(named_owned(p, "Fix misheard names", fix_detail), switch(chosen.fix_names))
                         .press(Message::FixNames(!chosen.fix_names)),
                 ]
             ),

@@ -76,7 +76,8 @@ impl Pass {
 /// `text` after the pass, or `text` unchanged when there's nothing to do, no
 /// Codex sign-in, or ChatGPT is slow or says something that isn't the transcript back.
 pub fn run(text: &str, pass: &Pass) -> String {
-    if pass.is_empty() || text.trim().is_empty() {
+    // Out of ChatGPT's allowance: what was heard, with no request that would only be refused.
+    if pass.is_empty() || text.trim().is_empty() || crate::allowance::paused_until_now().is_some() {
         return text.to_owned();
     }
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
@@ -103,12 +104,43 @@ pub fn run(text: &str, pass: &Pass) -> String {
 }
 
 /// Sends one request to Codex's model endpoint and returns its event stream.
-/// Actions' `ask` step and the action router use it too.
+/// Actions' `ask` step and the action router use it too. While ChatGPT's
+/// allowance is out (`allowance/`) it sends nothing and says until when.
 pub fn ask(
     credentials: &codex_auth::Credentials,
     body: serde_json::Value,
     patience: Duration,
 ) -> Result<String, String> {
+    if let Some(resets_at) = crate::allowance::paused_until_now() {
+        return Err(crate::allowance::refused(resets_at));
+    }
+    let (status, stream) = match crate::allowance::fake_answer() {
+        Some(answer) => answer,
+        None => send(credentials, body, patience)?,
+    };
+    if (200..300).contains(&status) {
+        return Ok(stream);
+    }
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    if let Some(resets_at) = crate::allowance::read_limit(status, &stream, now) {
+        crate::diagnostics::warn(
+            "allowance",
+            format!("ChatGPT's allowance ran out; no model calls until {}.", crate::allowance::when(resets_at, now)),
+        );
+        if let Some(Err(reason)) = crate::allowance::file().map(|file| crate::allowance::record(&file, resets_at)) {
+            crate::diagnostics::warn("allowance", format!("couldn't save when it resets: {reason}"));
+        }
+        return Err(crate::allowance::refused(resets_at));
+    }
+    Err(format!("ChatGPT said {status}: {}", first_line(&stream)))
+}
+
+/// One request to the model endpoint: its status and its event stream.
+fn send(
+    credentials: &codex_auth::Credentials,
+    body: serde_json::Value,
+    patience: Duration,
+) -> Result<(u16, String), String> {
     let mut request = agent(0.0, USER_AGENT)
         .post(ENDPOINT)
         .config()
@@ -124,11 +156,7 @@ pub fn ask(
     let mut response = request.send_json(body).map_err(|error| error.to_string())?;
     let status = response.status().as_u16();
     let stream = response.body_mut().read_to_string().map_err(|error| error.to_string())?;
-    if (200..300).contains(&status) {
-        Ok(stream)
-    } else {
-        Err(format!("ChatGPT said {status}: {}", first_line(&stream)))
-    }
+    Ok((status, stream))
 }
 
 /// The instructions for this pass: the role, then each job that's on.

@@ -839,3 +839,18 @@ fn diagnostics_reads_the_process_only_while_its_tab_is_open() {
     let _ = f.panel.update(Message::Tab(Tab::App));
     assert!(f.panel.sampler.is_none() && f.panel.usage.is_none(), "leaving the tab stops the sampling");
 }
+
+#[test]
+fn when_chatgpts_allowance_ran_out_clean_up_and_names_say_until_when() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Transcription");
+    let resets_at = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()) + 30 * 86_400;
+    f.panel.allowance = Some(resets_at);
+    let line = crate::allowance::paused_line(resets_at);
+    assert!(line.starts_with("Paused until ") && line.ends_with(": your plan's allowance ran out."));
+    assert!(shows(&f.panel, &line));
+    let _ = f.panel.update(Message::Tab(Tab::Dictionary));
+    f.panel.allowance = Some(resets_at);
+    assert!(shows(&f.panel, &line));
+}
