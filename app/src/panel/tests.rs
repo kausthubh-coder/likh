@@ -150,10 +150,7 @@ fn clean_up_is_off_until_switched_on_and_says_what_it_needs() {
     assert!(saved().cleanup && !saved().styles);
     press(&mut f.panel, "By app");
     assert!(saved().cleanup && saved().styles);
-    assert!(shows(
-        &f.panel,
-        "Emails get full sentences, chats stay casual, code keeps its terms. Can run out on Free."
-    ));
+    assert!(shows(&f.panel, "A tone for each app: email, chat, notes, code. Can run out on Free."));
     press(&mut f.panel, "Off");
     assert!(!saved().cleanup);
 }

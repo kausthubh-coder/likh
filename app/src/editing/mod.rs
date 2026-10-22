@@ -4,9 +4,9 @@
 //! result over it. Translation is one more instruction.
 //!
 //! It's the ordinary shortcut, not a key of its own, so it has to tell an
-//! instruction from words meant to be typed. Only a short sentence that starts
-//! like an edit counts (`instruction`), and only then is the selection read,
-//! with a Ctrl+C. With nothing selected the words are pasted as said, so
+//! instruction from words meant to be typed. Only a short sentence shaped like
+//! an edit counts (`instruction`), and only then is the selection read, with a
+//! Ctrl+C. With nothing selected the words are pasted as said, so
 //! dictating "Make it shorter." into an empty box still types it.
 //!
 //! In a terminal on Windows a Ctrl+C with nothing selected stops the program
@@ -24,41 +24,69 @@ mod tests;
 /// Longer than this, it's a sentence to type, not an instruction.
 const MOST_WORDS: usize = 12;
 
-/// How a sentence that's an instruction starts, as bare lowercase words. Verbs
-/// and "make it", never a bare adjective: "Longer meetings mean less focus." is a sentence.
-const STARTS: [&str; 31] = [
-    "make it",
-    "make this",
-    "make that",
+/// Words that point at the selection.
+const IT: [&str; 3] = ["it", "this", "that"];
+/// What "make it" can become: "make it shorter", "make this sound friendlier".
+const BECOMES: [&str; 22] = [
+    "shorter",
+    "longer",
+    "more",
+    "less",
+    "formal",
+    "casual",
+    "friendly",
+    "friendlier",
+    "professional",
+    "polite",
+    "politer",
+    "concise",
+    "clear",
+    "clearer",
+    "simple",
+    "simpler",
+    "punchier",
+    "warmer",
+    "nicer",
+    "better",
+    "sound",
+    "bullet",
+];
+/// A tone after "more" or "less": "more formal", "less casual".
+const TONES: [&str; 12] = [
+    "formal",
+    "casual",
+    "friendly",
+    "professional",
+    "polite",
+    "concise",
+    "direct",
+    "confident",
+    "detailed",
+    "personal",
+    "specific",
+    "clear",
+];
+/// Verbs whose object is the selection, said as "it", "this" or "that": "rewrite it as …".
+const VERBS: [&str; 13] = [
     "rewrite",
     "rephrase",
     "reword",
-    "translate",
-    "turn it into",
-    "turn this into",
-    "fix the grammar",
-    "fix grammar",
-    "fix the spelling",
-    "fix spelling",
-    "fix the typos",
-    "fix typos",
-    "fix it",
-    "fix this",
-    "proofread",
     "shorten",
     "summarize",
     "summarise",
     "simplify",
     "expand",
-    "more formal",
-    "more casual",
-    "more friendly",
-    "less formal",
-    "as bullet points",
-    "as a list",
-    "change it to",
-    "change this to",
+    "proofread",
+    "translate",
+    "polish",
+    "tighten",
+    "clean",
 ];
+/// "turn it into …", "change it to …": verbs that need their object and a destination.
+const INTO: [&str; 3] = ["turn", "change", "convert"];
+/// Said alone, these are instructions: "Shorter.", "Proofread.", "Bullet points."
+const ALONE: [&str; 9] =
+    ["shorter", "longer", "simpler", "friendlier", "proofread", "summarize", "summarise", "bullets", "translate"];
 
 const ROLE: &str = "You edit text the user selected in another app, following their spoken instruction. \
 Return only the edited text, ready to replace the selection: no quotes, no preamble, no explanation. \
@@ -70,26 +98,51 @@ fn patience(selection: &str) -> std::time::Duration {
     std::time::Duration::from_secs(8) + std::time::Duration::from_millis(4 * selection.chars().count() as u64)
 }
 
-/// The instruction in what was said, if it is one: short, and starting the
-/// way an edit does, or "in <language>" alone. Trailing punctuation goes.
+/// The instruction in what was said, if it is one. Only the shape of an edit
+/// counts, never just its first word: "make it shorter" is one, "Make it happen
+/// by Friday." and "Expand the team next quarter." are sentences to type over
+/// the selection (Devin, 2026-10-22). At most 12 words. Trailing punctuation goes.
 pub fn instruction(said: &str) -> Option<String> {
-    let bare: Vec<String> = said
+    let words: Vec<String> = said
         .split_whitespace()
         .map(|word| word.chars().filter(|c| c.is_alphanumeric() || *c == '\'').collect::<String>().to_lowercase())
         .filter(|word| !word.is_empty())
         .collect();
-    if bare.is_empty() || bare.len() > MOST_WORDS {
+    let w: Vec<&str> = words.iter().map(String::as_str).collect();
+    if w.is_empty() || w.len() > MOST_WORDS {
         return None;
     }
-    let joined = format!("{} ", bare.join(" "));
-    let starts = STARTS.iter().any(|start| joined.starts_with(&format!("{start} ")));
-    // "In Hindi", "in Spanish please": a language on its own is a translation.
-    let polite = |rest: &[String]| rest.is_empty() || rest == ["please"];
-    let in_language = bare.len() >= 2
-        && bare[0] == "in"
-        && polite(&bare[2..])
-        && language::ALL.iter().any(|l| l.name.eq_ignore_ascii_case(&bare[1]));
-    (starts || in_language).then(|| said.trim().trim_end_matches(['.', '!', '?', ',']).trim().to_owned())
+    let it = |i: usize| w.get(i).is_some_and(|word| IT.contains(word));
+    let is_language =
+        |i: usize| w.get(i).is_some_and(|word| language::ALL.iter().any(|l| l.name.eq_ignore_ascii_case(word)));
+    // Nothing after, or only "please".
+    let ends_at = |i: usize| w.len() == i || (w.len() == i + 1 && w[i] == "please");
+    let edit = match w.as_slice() {
+        // "make it shorter", "make this sound more professional", "make it bullet points"
+        ["make", _, next, ..] => it(1) && BECOMES.contains(next),
+        // "more formal", "less casual please"
+        ["more" | "less", tone, ..] => TONES.contains(tone) && ends_at(2),
+        // "in Hindi", "in Spanish please"
+        ["in", ..] => is_language(1) && ends_at(2),
+        // "translate to French", "translate this into Hindi"
+        ["translate", "to" | "into", ..] => is_language(2) && ends_at(3),
+        ["translate", _, "to" | "into", ..] => it(1) && is_language(3) && ends_at(4),
+        // "fix the grammar", "fix spelling", "fix the typos"
+        ["fix", "the", "grammar" | "spelling" | "typos" | "punctuation", ..]
+        | ["fix", "grammar" | "spelling" | "typos" | "punctuation", ..] => true,
+        // "turn this into a list", "change it to past tense"
+        [verb, _, "into" | "to", ..] if INTO.contains(verb) => it(1),
+        // "expand on this"
+        ["expand", "on", ..] => it(2),
+        // "rewrite it as bullet points", "summarize this in two sentences", "clean it up"
+        [verb, ..] if VERBS.contains(verb) => it(1),
+        // "as bullet points", "as a list"
+        ["as", "bullet", "points" | "point"] | ["as", "a", "list" | "bulleted" | "numbered", ..] => true,
+        ["bullet", "points"] => true,
+        [word] | [word, "please"] => ALONE.contains(word),
+        _ => false,
+    };
+    edit.then(|| said.trim().trim_end_matches(['.', '!', '?', ',']).trim().to_owned())
 }
 
 /// Programs where Ctrl+C with nothing selected stops what's running, by file name.
