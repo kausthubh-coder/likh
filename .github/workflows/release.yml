@@ -1,8 +1,8 @@
 name: Release
 
 # Pushing a tag like v0.1.0-alpha.5 builds the Windows installer, signs it for
-# likh's updater, and publishes both as a prerelease. Every likh already
-# installed finds it within a day (app/src/update).
+# likh's updater, and publishes both as a prerelease, then adds the macOS DMG.
+# Every likh already installed finds it within a day (app/src/update).
 on:
   push:
     tags: ["v*"]
@@ -42,3 +42,51 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $title = "likh " + ($tag.TrimStart("v") -replace "-", " " -replace "\.(?=\d+$)", " ")
           gh release create $tag target/installer/likh-setup-windows-x64.exe target/installer/likh-setup-windows-x64.exe.sig --prerelease --title $title --generate-notes
+
+  # The macOS app, added to the release the Windows job published. With the
+  # MAC_* secrets it's Developer ID signed and notarized; without them it's
+  # ad hoc signed and macOS asks people to confirm it the first time.
+  macos:
+    needs: windows
+    runs-on: macos-latest
+    env:
+      SIGNED: ${{ secrets.MAC_CERTIFICATE != '' }}
+      NOTARIZED: ${{ secrets.MAC_NOTARY_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99"
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Import the Developer ID certificate
+        if: env.SIGNED == 'true'
+        env:
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$MAC_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p likh build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p likh build.keychain
+          security import certificate.p12 -k build.keychain -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k likh build.keychain
+          rm certificate.p12
+      - name: Build likh.app and the DMG
+        env:
+          MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
+        run: scripts/build-mac-app.sh
+      - name: Notarize
+        if: env.NOTARIZED == 'true'
+        env:
+          MAC_NOTARY_APPLE_ID: ${{ secrets.MAC_NOTARY_APPLE_ID }}
+          MAC_NOTARY_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
+          MAC_NOTARY_PASSWORD: ${{ secrets.MAC_NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool submit target/macos/likh-macos.dmg --apple-id "$MAC_NOTARY_APPLE_ID" \
+            --team-id "$MAC_NOTARY_TEAM_ID" --password "$MAC_NOTARY_PASSWORD" --wait
+          xcrun stapler staple target/macos/likh-macos.dmg
+      - name: Add it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" target/macos/likh-macos.dmg

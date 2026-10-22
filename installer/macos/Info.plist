@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- likh.app's Info.plist. scripts/build-mac-app.sh fills in __VERSION__ and __SHORT_VERSION__. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>app.likh</string>
+  <key>CFBundleName</key>
+  <string>likh</string>
+  <key>CFBundleDisplayName</key>
+  <string>likh</string>
+  <key>CFBundleExecutable</key>
+  <string>likh</string>
+  <key>CFBundleIconFile</key>
+  <string>likh</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>__SHORT_VERSION__</string>
+  <key>CFBundleVersion</key>
+  <string>__VERSION__</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.0</string>
+  <!-- A menu bar app: no Dock icon, no app menu. -->
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <!-- What macOS shows when it asks for the microphone. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>likh listens while you hold its key, and only then, to type what you say.</string>
+</dict>
+</plist>

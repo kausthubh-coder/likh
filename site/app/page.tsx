@@ -5,10 +5,12 @@ import { FlockMark } from "./flock-mark";
 
 const REPO = "https://github.com/kausthubh-coder/likh";
 /** The published build. Bump with each release; the page reads everything else from here. */
-const RELEASE = {
+const RELEASE: { version: string; windows: string; size: string; mac: string | null } = {
   version: "0.1.0-alpha.11",
   windows: `${REPO}/releases/download/v0.1.0-alpha.11/likh-setup-windows-x64.exe`,
   size: "5.1 MB",
+  // The DMG's link, from the first release that has one (ship-likh sets it). Until then: build from source.
+  mac: null,
 };
 
 /** Measured on the release build, idle, Windows 11 (docs/plan.md, Measured so far). */
@@ -138,7 +140,10 @@ export default function Home() {
                 Windows 10 and 11 · {RELEASE.size} · v{RELEASE.version}
               </p>
             </div>
-            <DownloadButton />
+            <div className="flex flex-wrap gap-3">
+              <DownloadButton />
+              {RELEASE.mac && <DownloadButton href={RELEASE.mac} label="Download for Mac" secondary />}
+            </div>
           </div>
           <div className="mt-8 grid gap-6 text-[15px] leading-[22px] text-text-muted sm:grid-cols-3">
             <p>
@@ -153,11 +158,21 @@ export default function Home() {
               Run anyway.
             </p>
             <p>
-              <span className="text-text">3.</span> Hold Ctrl + Space anywhere. On a Mac,{" "}
-              <a href={REPO} className="text-text underline-offset-4 hover:underline">
-                build from source
-              </a>{" "}
-              (alpha).
+              <span className="text-text">3.</span> Hold Ctrl + Space anywhere.{" "}
+              {RELEASE.mac ? (
+                <>
+                  On a Mac, open the DMG, drag likh to Applications, right-click it and pick Open the first time, then
+                  allow Accessibility and the microphone when it asks.
+                </>
+              ) : (
+                <>
+                  On a Mac,{" "}
+                  <a href={REPO} className="text-text underline-offset-4 hover:underline">
+                    build from source
+                  </a>{" "}
+                  (alpha).
+                </>
+              )}
             </p>
           </div>
         </section>
@@ -276,11 +291,23 @@ function Compare() {
   );
 }
 
-function DownloadButton({ className = "" }: { className?: string }) {
+function DownloadButton({
+  className = "",
+  href = RELEASE.windows,
+  label = "Download for Windows",
+  secondary = false,
+}: {
+  className?: string;
+  href?: string;
+  label?: string;
+  secondary?: boolean;
+}) {
+  // One peach button per screen: the Mac download sits beside it on the elevated surface.
+  const look = secondary ? "bg-elevated text-text hover:bg-elevated/80" : "bg-accent text-on-accent hover:bg-accent/90";
   return (
     <a
-      href={RELEASE.windows}
-      className={`inline-flex items-center gap-2 rounded-[10px] bg-accent px-5 py-3 text-[15px] font-medium text-on-accent transition-transform duration-100 ease-(--ease-snappy) hover:bg-accent/90 active:scale-[0.97] ${className}`}
+      href={href}
+      className={`inline-flex items-center gap-2 rounded-[10px] px-5 py-3 text-[15px] font-medium transition-transform duration-100 ease-(--ease-snappy) active:scale-[0.97] ${look} ${className}`}
     >
       <svg
         width="16"
@@ -295,7 +322,7 @@ function DownloadButton({ className = "" }: { className?: string }) {
       >
         <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" />
       </svg>
-      Download for Windows
+      {label}
     </a>
   );
 }

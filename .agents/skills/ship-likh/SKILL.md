@@ -8,7 +8,7 @@ description: Take verified likh work to production through a PR, the Vercel site
 likh is public (`kausthubh-coder/likh`), so work lands through a PR with CI. Two things reach people:
 
 - **The site** (`getlikh.vercel.app`): Vercel builds every push to `main`. Merging deploys it.
-- **The app**: only a `v<version>` tag ships it. `release.yml` builds, signs and publishes a prerelease, and every installed likh finds it within a day. When the change touches what goes into the app (`app/src/`, `app/assets/`, the dependencies in `app/Cargo.toml`, `installer/`), the release is part of the ship: do it in steps 1 and 4, don't ask about it at the end. Skip it only when I say so ("no release"), and say in the report that it was skipped. Tooling, docs, skills and site-only changes have no release.
+- **The app**: only a `v<version>` tag ships it. `release.yml` builds, signs and publishes a prerelease with the Windows installer, then adds the macOS DMG (`scripts/build-mac-app.sh`), and every installed likh finds it within a day. When the change touches what goes into the app (`app/src/`, `app/assets/`, the dependencies in `app/Cargo.toml`, `installer/`), the release is part of the ship: do it in steps 1 and 4, don't ask about it at the end. Skip it only when I say so ("no release"), and say in the report that it was skipped. Tooling, docs, skills and site-only changes have no release.
 
 ## Rules
 
@@ -35,7 +35,7 @@ A cloud session (Linux VM, see `## Cloud sessions` in AGENTS.md) ships the same 
 - `bun run check` passes.
 - Every changed feature was driven with `verify-likh`, with evidence in `.agents/qa/`. Site changes: a screenshot from `bun run dev:site`.
 - `git log --oneline origin/main..HEAD` is what's going out.
-- **Release** (app changed, on Windows): in this branch, bump `version` in `app/Cargo.toml` to the next `0.1.0-alpha.N` and run `cargo build -p likh` so `Cargo.lock` follows. Then update `RELEASE` in `site/app/page.tsx` (`version`, the `windows` URL, and `size` from `bun run build:installer`, the size of `target/installer/likh-setup-windows-x64.exe` in MB). Commit, and rerun `bun run check`.
+- **Release** (app changed, on Windows): in this branch, bump `version` in `app/Cargo.toml` to the next `0.1.0-alpha.N` and run `cargo build -p likh` so `Cargo.lock` follows. Then update `RELEASE` in `site/app/page.tsx` (`version`, the `windows` URL, `size` from `bun run build:installer`, the size of `target/installer/likh-setup-windows-x64.exe` in MB, and `mac`: `${REPO}/releases/download/v<version>/likh-macos.dmg`). Commit, and rerun `bun run check`.
 
 ## 2. Rollback, written down before anything moves
 
@@ -80,12 +80,12 @@ git fetch origin && git rev-parse origin/main    # <merge sha>
   gh run list --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId'
   gh run watch <run id> --exit-status
   ```
-  The workflow fails if the tag doesn't match `app/Cargo.toml`. If it fails on this change, fix it through a new PR (steps 1 to 3) and tag the next alpha; a published tag is never moved.
+  Watch both jobs: `windows` publishes, then `macos` adds the DMG. The macOS app is Developer ID signed and notarized only when the `MAC_CERTIFICATE`, `MAC_CERTIFICATE_PASSWORD`, `MAC_SIGNING_IDENTITY`, `MAC_NOTARY_APPLE_ID`, `MAC_NOTARY_TEAM_ID` and `MAC_NOTARY_PASSWORD` secrets exist; without them it's ad hoc signed and the release notes should say Mac users right-click, Open the first time. The workflow fails if the tag doesn't match `app/Cargo.toml`. If it fails on this change, fix it through a new PR (steps 1 to 3) and tag the next alpha; a published tag is never moved.
 
 ## 5. Check production, read-only
 
 - Site: `curl -s https://getlikh.vercel.app` returns 200 and contains the shipped change (after a release, `v<version>` in the download link).
-- Release: `gh release view v<version> --json isPrerelease,assets` lists `likh-setup-windows-x64.exe` and its `.sig`, and `curl -s "https://api.github.com/repos/kausthubh-coder/likh/releases?per_page=1"` (what the updater reads) leads with `v<version>`.
+- Release: `gh release view v<version> --json isPrerelease,assets` lists `likh-setup-windows-x64.exe`, its `.sig` and `likh-macos.dmg`, and `curl -s "https://api.github.com/repos/kausthubh-coder/likh/releases?per_page=1"` (what the updater reads) leads with `v<version>`.
 - Never install it. I update my own likh ("Restart to update").
 
 ## 6. Update the main checkout
