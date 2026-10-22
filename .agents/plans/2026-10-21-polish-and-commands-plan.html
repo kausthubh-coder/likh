@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Free plan dictates; cleanup has a monthly cap</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfaf8; --text: #1d1c1a; --soft: #5a564f; --rule: #e0dcd5; --cap: #f0ede8; --cap-edge: #c9c2b8;
+    --accent: #1f5fae; --good: #2b6b38; --bad: #a3321f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141519; --text: #ebebef; --soft: #aeadb6; --rule: #33343b; --cap: #222329; --cap-edge: #474851; --accent: #8db8f0; --good: #86cf96; --bad: #f29a86; }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); color: var(--text); }
+  body { margin: 0; font: 400 1.0625rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 50rem; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+  h1 { font-size: 2rem; line-height: 1.15; margin: 0 0 0.75rem; text-wrap: balance; }
+  h2 { font-size: 1.3rem; line-height: 1.3; margin: 2.75rem 0 0.6rem; }
+  p, li { max-width: 62ch; text-wrap: pretty; }
+  p { margin: 0 0 0.75rem; }
+  .soft { color: var(--soft); }
+  ol, ul { padding-left: 1.3rem; }
+  li { margin-bottom: 0.45rem; }
+  ol.asks li::marker { color: var(--accent); font-weight: 600; }
+  code { font: 0.88em ui-monospace, "Cascadia Code", Consolas, monospace; }
+  kbd { font: 500 0.88em ui-monospace, "Cascadia Code", Consolas, monospace; white-space: nowrap; padding: 0.05em 0.4em; border: 1px solid var(--cap-edge); border-bottom-width: 2px; border-radius: 5px; background: var(--cap); }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.95rem; line-height: 1.4; }
+  th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.9rem 0.55rem 0; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 600; }
+  td { font-variant-numeric: tabular-nums; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .good { color: var(--good); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; }
+  details { border-top: 1px solid var(--rule); margin-top: 1rem; }
+  details:last-of-type { border-bottom: 1px solid var(--rule); }
+  summary { cursor: pointer; font-weight: 600; padding: 0.75rem 0; min-height: 44px; }
+  details > :not(summary) { margin-bottom: 1rem; }
+  pre { font: 0.85rem/1.45 ui-monospace, "Cascadia Code", Consolas, monospace; white-space: pre-wrap; word-break: break-word; margin: 0 0 1rem; padding-left: 0.8rem; border-left: 1px solid var(--rule); color: var(--soft); }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media print {
+    :root { color-scheme: light; --bg: #fff; --text: #111; --soft: #444; --rule: #ccc; --cap: #f3f3f3; --cap-edge: #999; --accent: #174a88; --good: #225a2d; --bad: #8a2716; }
+    table, pre { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<main>
+<h1>Free plan dictates; cleanup has a monthly cap</h1>
+<p>Your ChatGPT Free sign-in transcribed a 6.5 s recording in 0.91 s today. The cleanup call was refused: Free's Codex allowance is used up until 17 November.</p>
+<div class="wrap">
+<table>
+  <thead><tr><th scope="col">On ChatGPT Free</th><th scope="col">Result, 21 Oct</th><th scope="col">What uses it</th></tr></thead>
+  <tbody>
+    <tr><td>Transcription</td><td><span class="good">Works</span>, 0.91 s</td><td>Every dictation</td></tr>
+    <tr><td>ChatGPT model calls</td><td><span class="bad">Refused</span>, monthly cap</td><td>Clean up, name fixing, picking an action, and every planned AI feature</td></tr>
+  </tbody>
+</table>
+</div>
+<p>So plain dictation is free. Cleanup and every planned AI feature stop once a Free user's monthly allowance runs out.</p>
+<ol class="asks">
+  <li><b>"The new cloud things":</b> did you mean (a) ChatGPT understanding commands in your own words, (b) commands that start Codex or Claude cloud tasks, or something else?</li>
+  <li><b>Tagline:</b> "Free dictation with any ChatGPT account", with cleanup as a bonus that can run out?</li>
+  <li><b>"delete that":</b> keep it, but undo only in the app where the last paste landed?</li>
+  <li><b>Go on A?</b> Everything in it you already agreed to.</li>
+</ol>
+
+<h2>Five PRs, smallest first</h2>
+<div class="wrap">
+<table>
+  <thead><tr><th scope="col">PR</th><th scope="col">What changes for the user</th></tr></thead>
+  <tbody>
+    <tr><td>A. Polish</td><td>Setup explains Codex as free with any ChatGPT account. A taken shortcut says so and offers a new one on the spot. The last setup screen shows <kbd>Esc</kbd> and paste last. Start with Windows is on. A failed dictation keeps its audio with a Retry button. Hands-free with 10 s of silence stops itself. The Groq card switches only once a key is saved.</td></tr>
+    <tr><td>B. Cap handling</td><td>When ChatGPT reports the cap, likh stops asking until it resets, pastes the plain text, and says when cleanup resumes.</td></tr>
+    <tr><td>C. Commands</td><td>One Commands tab: built-in phrases plus yours. Add one in the panel without a file: paste text, open a link, press keys, ask ChatGPT. The action key becomes the command key.</td></tr>
+    <tr><td>D. Voice editing</td><td>Select text, hold <kbd>Ctrl</kbd> <kbd>Space</kbd>, say "make it shorter" or "in Hindi". Covers translate too.</td></tr>
+    <tr><td>E. Styles per app</td><td>Email, chat and code tones, picked from the app in front.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="soft">Mac and release follow, as planned on 15 October. C, D and E use capped calls, so they wait on ask 1 and B.</p>
+
+<details>
+<summary>Evidence: the two calls made today, and the sign-in plan</summary>
+<pre>likh status
+likh 0.1.0-alpha.11 · Connected through Codex · k•••@gmail.com · ChatGPT Free
+
+one dictation, spoken WAV (6.54 s), real Codex sign-in, paste logged to a file
+pasted: "Testing like on a free ChatGPT plan. Send the launch notes to the team by Friday."
+transcribe 909.6 ms, engine codex · whole dictation 913.1 ms
+
+cargo test -p likh cleanup_live -- --ignored
+ChatGPT said 429: usage_limit_reached, plan_type "free",
+limit_window_minutes 43200, resets_at 1795025828 (17 Nov 2026, 18:17 UTC)
+both tests failed: cleanup fell back to the raw text, as designed</pre>
+<p>"likh" came back as "like". A dictionary word fixes that, but only through the capped cleanup call.</p>
+</details>
+
+<details>
+<summary>Why "delete that" is narrower than the audit said</summary>
+<p>It acts in two cases only. Said as the whole dictation, likh presses <kbd>Ctrl</kbd> <kbd>Z</kbd> in the app in front. Said as its own sentence after others, it drops the sentence before it. "Delete that file" inside a sentence is typed as words.</p>
+<p>The real risk is the first case after you switch apps: <kbd>Ctrl</kbd> <kbd>Z</kbd> lands in the new app. likh already knows which window it pasted into, so it can skip the undo there and say "Nothing to undo here".</p>
+</details>
+
+<details>
+<summary>Not checked</summary>
+<p>Whether transcription itself has a Free cap: one dictation worked and no limit was reported. Whether Groq's free key could run cleanup for Free users when the cap is hit. Anything on a Mac.</p>
+</details>
+</main>
+</body>
+</html>
