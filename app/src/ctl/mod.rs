@@ -69,7 +69,11 @@ pub fn serve(
     ui: iced::futures::channel::mpsc::UnboundedSender<crate::tray::Pick>,
     updates: crate::update::Updates,
 ) -> std::io::Result<()> {
-    let listener = ListenerOptions::new().name(name()?).create_sync()?;
+    // On macOS the name is a socket file, and quitting leaves it behind: the
+    // next launch failed with "Address already in use" and `likh ctl` never
+    // answered (found 2026-10-22). `run` hands off to a likh that's still
+    // running before it gets here, so a file left now is stale.
+    let listener = ListenerOptions::new().name(name()?).try_overwrite(true).create_sync()?;
     std::thread::Builder::new().name("likh-ctl".into()).spawn(move || {
         for connection in listener.incoming().filter_map(Result::ok) {
             let mut connection = BufReader::new(connection);
