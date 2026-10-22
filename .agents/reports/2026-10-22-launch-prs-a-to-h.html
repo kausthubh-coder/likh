@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>likh launch PRs A to H</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f7f6f3; --surface: #ffffff; --text: #1d1c1a; --muted: #5d5a54; --rule: #dedbd4;
+  --peach: #a8451c; --good: #1f6b3a; --mixed: #8a5a00; --bad: #a12b2b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141417; --surface: #1c1c21; --text: #ebeae6; --muted: #a9a6a0; --rule: #33333a;
+    --peach: #f2a07c; --good: #7fd19b; --mixed: #e5b45a; --bad: #f08a8a;
+  }
+}
+html { background: var(--bg); color: var(--text); }
+body { margin: 0; font: 1.0625rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 64rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 0.5rem; text-wrap: balance; }
+h2 { font-size: 1.3rem; margin: 2.75rem 0 0.75rem; text-wrap: balance; }
+p, li { max-width: 62ch; text-wrap: pretty; }
+.lede { color: var(--muted); margin: 0 0 1.5rem; }
+code { font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; }
+a { color: var(--peach); }
+ol.asks { padding-left: 1.4rem; }
+ol.asks li { margin-bottom: 0.45rem; }
+ol.asks strong { color: var(--peach); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 46rem; font-size: 0.95rem; }
+caption { text-align: left; color: var(--muted); padding-bottom: 0.5rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.75rem 0.55rem 0; border-bottom: 1px solid var(--rule); }
+th { font-weight: 600; }
+td.pr { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pass { color: var(--good); font-weight: 600; }
+.mixed { color: var(--mixed); font-weight: 600; }
+.none { color: var(--bad); font-weight: 600; }
+details { border-top: 1px solid var(--rule); }
+details:last-of-type { border-bottom: 1px solid var(--rule); }
+summary { padding-block: 0.75rem; cursor: pointer; font-weight: 600; }
+details > :not(summary) { margin-top: 0; }
+details ol, details ul { padding-left: 1.3rem; }
+details li { margin-bottom: 0.35rem; }
+pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 0.75rem; overflow-x: auto; font-size: 0.85rem; }
+@media print {
+  :root { color-scheme: light; --bg: #fff; --text: #000; --muted: #444; --peach: #8a3510; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; }
+  table, pre { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Eight PRs, A to H, all green</h1>
+<p class="lede">Tested here and on Devin's Mac, except H: Devin ran out of quota. Nothing merged or released.</p>
+
+<ol class="asks">
+  <li><strong>Run the Windows checklist</strong> below on <code>t3/h-mac-pill</code>, which holds all eight. About 45 minutes.</li>
+  <li><strong>Top up Devin, or open H on a Mac.</strong> No one has seen the macOS pill yet.</li>
+  <li><strong>Apple Developer, yes or no?</strong> $99 a year signs and notarizes the DMG; without it, Mac users right-click Open once.</li>
+  <li><strong>Mac shortcut:</strong> Ctrl+Space overrides the input-source switch. Keep it as the Mac default?</li>
+  <li><strong>Say ship when ready:</strong> merge #20, then #21 to #28. The release, with the first DMG, is owed.</li>
+</ol>
+
+<h2>What each PR gives a user</h2>
+<div class="scroll">
+<table>
+<caption>Linux: fmt, clippy and tests, plus the real app driven by <code>likh ctl</code>. CI is green on Windows and macOS for all eight.</caption>
+<thead><tr><th scope="col">PR</th><th scope="col">What changes for a user</th><th scope="col">Tests on Linux</th><th scope="col">Devin, macOS</th></tr></thead>
+<tbody>
+<tr><td class="pr"><a href="https://github.com/kausthubh-coder/likh/pull/21">A #21</a></td><td>Free-with-ChatGPT setup, taken-shortcut fix, Retry, silent tap stops at 10 s, "scratch that" only where it pasted</td><td>286 pass</td><td><a class="pass" href="https://github.com/kausthubh-coder/likh/pull/21#issuecomment-6332076648">Pass</a></td></tr>
+<tr><td class="pr"><a href="https://github.com/kausthubh-coder/likh/pull/22">B #22</a></td><td>Free's monthly cap: no calls until reset, says when cleanup is back</td><td>295 pass</td><td><a class="pass" href="https://github.com/kausthubh-coder/likh/pull/22#issuecomment-6332262305">Pass</a> after one fix</td></tr>
+<tr><td class="pr"><a href="https://github.com/kausthubh-coder/likh/pull/23">C #23</a></td><td>One Commands tab, the command key, everyday starters</td><td>299 pass</td><td><a class="pass" href="https://github.com/kausthubh-coder/likh/pull/23#issuecomment-6332233073">Pass</a></td></tr>
+<tr><td class="pr"><a href="https://github.com/kausthubh-coder/likh/pull/24">D #24</a></td><td>Select text, say "make it shorter" or "in Hindi"</td><td>307 pass</td><td><a class="pass" href="https://github.com/kausthubh-coder/likh/pull/24#issuecomment-6332751026">Pass</a> after one fix</td></tr>
+<tr><td class="pr"><a href="https://github.com/kausthubh-coder/likh/pull/25">E #25</a></td><td>Clean up "By app": email, chat, notes, code</td><td>311 pass</td><td><a class="pass" href="https://github.com/kausthubh-coder/likh/pull/25#issuecomment-6332708286">Pass</a> after one fix</td></tr>
+<tr><td class="pr"><a href="https://github.com/kausthubh-coder/likh/pull/26">F #26</a></td><td>Mac keys, Esc, Accessibility step, open at login</td><td>315 pass</td><td><a class="pass" href="https://github.com/kausthubh-coder/likh/pull/26#issuecomment-6332798151">Pass</a></td></tr>
+<tr><td class="pr"><a href="https://github.com/kausthubh-coder/likh/pull/27">G #27</a></td><td>likh.app, a DMG, a Mac dictation in CI</td><td>315 pass</td><td><a class="mixed" href="https://github.com/kausthubh-coder/likh/pull/27#issuecomment-6332948132">Fail, fixed</a>, not retested</td></tr>
+<tr><td class="pr"><a href="https://github.com/kausthubh-coder/likh/pull/28">H #28</a></td><td>The Mac pill (no clicks yet), Option and Cmd</td><td>316 pass</td><td><span class="none">Not tested</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Windows checklist, per PR</h2>
+<p><code>git checkout t3/h-mac-pill</code>, <code>bun run setup</code>, <code>bun run dev</code>. Set the fakes each item names first.</p>
+
+<details><summary>A: 8 checks, Retry to setup</summary>
+<ol>
+<li>Let another program take Ctrl+Space (PowerToys, or start your installed likh first), then start this one: the pill says "Another app has Ctrl + Space, so likh can't hear it." Click Change keys: likh opens Dictation, listening. Press Ctrl+Alt+Space; it works. The tray line says another app has the keys until then.</li>
+<li>History: with Alt+Shift+Z taken by Wispr Flow or similar, the Paste last row says "Another app has these keys. Change them."</li>
+<li><code>$env:LIKH_TRANSCRIBER="flaky:Send the deck by Friday."</code>: dictate once. The pill shows "Can't reach ChatGPT…" with a Retry button. Click Retry: it pastes. Again: Alt+Shift+Z after a failure also retries.</li>
+<li>Tap Ctrl+Space once, stay quiet: after about 10 s the pill says "No voice heard" and nothing pastes. With Stop after quiet on Never, it stays open.</li>
+<li>Notepad: dictate, then say "scratch that": undone. Dictate in Notepad, click into another app, say "scratch that": the pill says "Nothing to undo here" and nothing is undone.</li>
+<li>Transcription: click the Groq card with no key saved: ChatGPT stays picked and the header says "Save a key to switch to Groq."</li>
+<li>Delete the checkout's <code>onboarded</code> file and run setup: welcome says "Free dictation with any ChatGPT account", Done shows the shortcut, Esc and Alt+Shift+Z.</li>
+<li>Start with Windows: only from your installed build after the release (a <code>LIKH_HOME</code> run never writes the Run key). A new install should start after a reboot.</li>
+</ol>
+</details>
+
+<details><summary>B: 1 check, the pill note</summary>
+<ol><li>Clean up on, <code>$env:LIKH_ALLOWANCE_OUT</code> set to a Unix time a week ahead, delete <code>allowance.json</code> in the checkout's home: one dictation shows "Clean up is off until …: ChatGPT's allowance ran out." once in the pill, then never again.</li></ol>
+</details>
+
+<details><summary>C: 3 checks, real commands</summary>
+<ol>
+<li>Hold Ctrl+Shift+Space, say "search for flights to Lisbon": the browser opens the search. "open gmail" opens Gmail.</li>
+<li>A command with a <code>run</code> step: the pill's Review opens Commands on "With the command key", at Review.</li>
+<li>New command: Tab moves from Name to When I say.</li>
+</ol>
+</details>
+
+<details><summary>D: 3 checks, real ChatGPT (paid plan)</summary>
+<ol>
+<li>Select a sentence in Notepad or Word, hold Ctrl+Space, say "make it shorter": it's replaced with a shorter one, and your clipboard is what it was.</li>
+<li>Select text and say "in Hindi": it's translated in place.</li>
+<li>Windows Terminal with nothing selected and a command running: say "make it shorter". It's typed, and the running command is not interrupted.</li>
+</ol>
+</details>
+
+<details><summary>E: 2 checks, real tones</summary>
+<ol>
+<li>Clean up By app. Dictate a greeting and sign-off into Outlook or Gmail, a sentence into Slack, and a file name into VS Code. Read the result, and <code>logs/trace.ndjson</code>'s cleanup span style: email, chat, code.</li>
+<li>Judge the tone of each. This is the first real look at what ChatGPT writes in each style.</li>
+</ol>
+</details>
+
+<details><summary>F to H: 3 checks, nothing broke</summary>
+<ol>
+<li>Change the shortcut, paste last and the command key in likh's window; each works at once.</li>
+<li>Key caps still say Alt and Win on Windows; App still says "Start with Windows".</li>
+<li>Everything above uses your real mic at least once, since no test here or on Devin's Mac had one.</li>
+</ol>
+</details>
+
+<h2>Not checked anywhere</h2>
+<ul>
+<li>A real mic, real speech and a real ChatGPT answer: all runs used WAVs and fakes.</li>
+<li>The Mac pill on screen, and the Mac mic prompt (Devin's VM has no input).</li>
+<li>Mac pill buttons don't click: that needs <code>unsafe</code> outside the two files AGENTS.md allows.</li>
+</ul>
+
+<details><summary>Method, and 8 choices you might question</summary>
+<ul>
+<li>likh now runs on Linux without a tray icon, so this machine drove real dictations with <code>likh ctl</code>, <code>LIKH_AUDIO</code> (espeak WAVs) and <code>LIKH_PASTE</code>. verify-likh's "On Linux" has the recipes.</li>
+<li>New fakes: <code>flaky:</code> (Retry), <code>LIKH_ALLOWANCE_OUT</code> (B), <code>LIKH_WINDOW</code> (E, scratch that).</li>
+<li>CI's macOS job now runs one dictation in the built app on every PR, using the macOS voice. It pasted the exact text, with 2.28 s of audio and 4 ms from stop to paste.</li>
+<li>Devin found five bugs, all fixed: the macOS <code>likh ctl</code> restart bug, Tab in New command, sentences mistaken for edits, a three-line Clean up caption, and CoreAudio's raw error text.</li>
+<li>"Delete that" stays, and undoes only in the app the last paste landed in, as you asked. It's in A.</li>
+<li>Commands are still "actions" in code, the folder and <code>likh actions</code>, so no existing setup or script breaks. AGENTS.md says so.</li>
+<li>Fixes found later went to the lowest PR they belong in, then were merged up the stack with merge commits. Nothing was force-pushed.</li>
+<li>Panel renders on the brand board are now Linux renders, so their font rasterising differs slightly from the Windows ones.</li>
+</ul>
+</details>
+</main>
+<script>
+addEventListener("beforeprint", () => document.querySelectorAll("details").forEach((d) => { d.dataset.wasOpen = d.open; d.open = true; }));
+addEventListener("afterprint", () => document.querySelectorAll("details").forEach((d) => (d.open = d.dataset.wasOpen === "true")));
+</script>
+</body>
+</html>
