@@ -90,8 +90,8 @@ const ROWS: [&[(&str, f32)]; 5] = [
     ],
     &[
         ("Ctrl", 1.25),
-        ("Win", 1.25),
-        ("Alt", 1.25),
+        (crate::hotkey::WIN, 1.25),
+        (crate::hotkey::ALT, 1.25),
         ("Space", 6.25),
         ("Right Alt", 1.25),
         ("Right Win", 1.25),

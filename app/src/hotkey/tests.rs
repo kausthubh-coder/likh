@@ -14,8 +14,17 @@ fn the_default_is_ctrl_space() {
 fn a_saved_shortcut_reads_back_the_same() {
     for text in ["Ctrl+Space", "Ctrl+Alt+D", "Ctrl+Shift+Win+F9", "F8"] {
         let binding = parse(text).expect(text);
-        assert_eq!(String::from(binding), text);
+        // Saved with the platform's own names: Option and Cmd on a Mac.
+        assert_eq!(String::from(binding), text.replace("Alt", super::ALT).replace("Win", super::WIN));
+        assert_eq!(parse(&String::from(binding)), Ok(binding), "{text}");
     }
+}
+
+#[test]
+fn mac_names_and_windows_names_read_as_the_same_keys() {
+    assert_eq!(parse("Option+Shift+Z"), parse("Alt+Shift+Z"));
+    assert_eq!(parse("Cmd+K"), parse("Win+K"));
+    assert_eq!(parse("Command+K"), parse("Win+K"));
 }
 
 #[test]
@@ -26,8 +35,8 @@ fn reading_is_forgiving_about_case_and_spaces() {
 
 #[test]
 fn a_shortcut_that_typing_could_trigger_is_refused_with_a_reason() {
-    assert_eq!(parse("Space"), Err("Add Ctrl, Alt or Win, so typing never sets it off.".to_string()));
-    assert_eq!(parse("Shift+A"), Err("Add Ctrl, Alt or Win, so typing never sets it off.".to_string()));
+    assert_eq!(parse("Space"), Err(super::NEEDS_MODIFIER.to_string()));
+    assert_eq!(parse("Shift+A"), Err(super::NEEDS_MODIFIER.to_string()));
     // Function keys aren't typed, so they may stand alone.
     assert!(parse("F8").is_ok());
 }
@@ -41,7 +50,7 @@ fn nonsense_is_refused() {
 #[test]
 fn key_caps_follow_the_usual_order() {
     let binding = Binding::new(true, true, true, true, KeyName("K")).expect("valid");
-    assert_eq!(binding.parts(), vec!["Ctrl", "Alt", "Shift", "Win", "K"]);
+    assert_eq!(binding.parts(), vec!["Ctrl", super::ALT, "Shift", super::WIN, "K"]);
 }
 
 #[test]
@@ -71,7 +80,7 @@ mod capturing {
     fn holding_modifiers_shows_them_until_a_key_locks_it_in() {
         let held = Modifiers::CTRL | Modifiers::ALT;
         assert_eq!(on_event(&keyboard::Event::ModifiersChanged(held), Modifiers::empty()), Outcome::Waiting(held));
-        assert_eq!(held_parts(held), vec!["Ctrl", "Alt"]);
+        assert_eq!(held_parts(held), vec!["Ctrl", super::ALT]);
         // Pressing the modifier keys themselves keeps waiting.
         assert_eq!(on_event(&press(Code::AltLeft, held), held), Outcome::Waiting(held));
         let chosen = on_event(&press(Code::KeyD, held), held);
@@ -87,7 +96,7 @@ mod capturing {
     fn a_bare_letter_is_refused_with_the_reason() {
         assert_eq!(
             on_event(&press(Code::KeyD, Modifiers::empty()), Modifiers::empty()),
-            Outcome::Refused("Add Ctrl, Alt or Win, so typing never sets it off.")
+            Outcome::Refused(super::NEEDS_MODIFIER)
         );
     }
 

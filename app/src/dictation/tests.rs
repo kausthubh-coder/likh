@@ -735,3 +735,13 @@ fn an_ordinary_sentence_pastes_without_any_edit() {
         vec![Effect::Pill(Show::Done), paste("Longer meetings mean less focus.")]
     );
 }
+
+#[test]
+fn kept_audio_survives_the_trip_to_16_bit_and_back() {
+    let samples = [0.0, 0.5, -0.5, 1.0, -1.0, 0.25];
+    let back = to_f32(&to_i16(&samples));
+    for (before, after) in samples.iter().zip(&back) {
+        assert!((before - after).abs() < 1.0 / 16_000.0, "{before} came back as {after}");
+    }
+    assert_eq!(to_i16(&[2.0, -3.0]), vec![i16::MAX, -i16::MAX], "out of range clamps");
+}

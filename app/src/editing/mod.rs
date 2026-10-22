@@ -164,6 +164,13 @@ pub fn is_terminal(app: &str) -> bool {
     TERMINALS.contains(&app.to_ascii_lowercase().as_str())
 }
 
+/// What VS Code, Cursor, JetBrains and Sublime copy on Ctrl+C with nothing
+/// selected: the line the cursor is on, with its line break. A selection
+/// rarely ends that way, so in a code editor it means nothing was selected.
+pub fn is_a_copied_line(copied: &str) -> bool {
+    copied.ends_with('\n') && copied.trim_end_matches(['\r', '\n']).lines().count() <= 1
+}
+
 /// What goes to ChatGPT besides the role: the instruction, then the selection.
 pub fn request(instruction: &str, selection: &str) -> String {
     format!("Instruction: {instruction}\n\nSelected text:\n{selection}")

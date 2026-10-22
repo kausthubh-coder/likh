@@ -978,7 +978,10 @@ fn shortcut<'a>(p: &Palette, binding: Binding, practice: &'a Practice, in_app: b
             art: art.into(),
             title: "Press your shortcut",
             body: "Hold the modifiers, then press the key. Esc keeps the one you have.".into(),
-            note: note.or(Some(("Ctrl, Alt or Win, plus a letter, number or Space.".to_string(), p.text_subtle))),
+            note: note.or(Some((
+                format!("Ctrl, {} or {}, plus a letter, number or Space.", hotkey::ALT, hotkey::WIN),
+                p.text_subtle,
+            ))),
             actions: vec![Action::Secondary("Keep current", Message::KeepShortcut)],
         };
     }
@@ -998,7 +1001,7 @@ fn shortcut<'a>(p: &Palette, binding: Binding, practice: &'a Practice, in_app: b
     }
     if hotkey::shortcut_taken() {
         let note = practice.notice.clone().map_or_else(
-            || ("Pick keys no other app uses, like Ctrl + Alt + Space.".to_string(), p.text_subtle),
+            || (format!("Pick keys no other app uses, like Ctrl + {} + Space.", hotkey::ALT), p.text_subtle),
             |(words, t)| (words, tone(t)),
         );
         return Page {

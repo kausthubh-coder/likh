@@ -187,7 +187,7 @@ fn changing_the_shortcut_shows_the_keys_as_they_go_down() {
 
     let held = keyboard::Modifiers::CTRL | keyboard::Modifiers::ALT;
     let _ = app.update(Message::Key(keyboard::Event::ModifiersChanged(held)));
-    assert!(shows(&app, "Ctrl") && shows(&app, "Alt"));
+    assert!(shows(&app, "Ctrl") && shows(&app, hotkey::ALT));
 
     // A bare letter is refused, with the reason, and capturing goes on.
     let bare = keyboard::Event::KeyPressed {
@@ -200,7 +200,7 @@ fn changing_the_shortcut_shows_the_keys_as_they_go_down() {
         repeat: false,
     };
     let _ = app.update(Message::Key(bare));
-    assert!(shows(&app, "Add Ctrl, Alt or Win, so typing never sets it off."));
+    assert!(shows(&app, hotkey::NEEDS_MODIFIER));
     assert!(shows(&app, "Press your shortcut"));
 
     // "Keep current" backs out to the practice.

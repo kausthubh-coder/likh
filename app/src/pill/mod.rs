@@ -3,11 +3,14 @@
 //!
 //! `Look` is the whole animation as plain state stepped by time, and `draw`
 //! paints it into a pixmap. Both are platform-free and tested here. The
-//! window that shows the pixmap lives in `windows.rs`; it never takes focus,
-//! lets clicks through, and draws nothing while the pill is hidden.
+//! window that shows the pixmap lives in `windows.rs` and `macos.rs`; it never
+//! takes focus, lets clicks through, and draws nothing while the pill is hidden.
 #![cfg_attr(
     not(target_os = "windows"),
-    allow(dead_code, reason = "macOS (alpha) has no pill window yet; the drawing is tested on every platform")
+    allow(
+        dead_code,
+        reason = "only the Windows pill takes clicks; Linux has no pill; the drawing is tested everywhere"
+    )
 )]
 
 use crate::shared::spring::{self, Spring};
@@ -20,6 +23,8 @@ use tiny_skia::{
     Transform,
 };
 
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
@@ -62,7 +67,11 @@ pub fn animations_off() -> bool {
     {
         !windows::animations_on()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        !macos::animations_on()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         false
     }
@@ -236,9 +245,22 @@ impl Pill {
                 }
             }
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         {
-            // macOS alpha: dictation works, the overlay comes later (docs/plan.md).
+            // The macOS pill shows every state but takes no clicks (pill/macos.rs).
+            let _ = (dictation, ui);
+            let (tx, rx) = std::sync::mpsc::channel();
+            match macos::spawn(rx) {
+                Ok(()) => Self { commands: Some(tx) },
+                Err(reason) => {
+                    crate::diagnostics::error("pill", format!("no pill on screen: {reason}"));
+                    Self::none()
+                }
+            }
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            // Linux is for agents and tests: no pill window.
             let _ = (dictation, ui);
             Self::none()
         }

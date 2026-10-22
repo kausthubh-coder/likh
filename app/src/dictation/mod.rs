@@ -441,11 +441,21 @@ impl Ears {
 
 /// A piece of a long dictation on its way: its audio comes back with its text,
 /// so a failed dictation can keep all of it for Retry.
-type Piece = std::thread::JoinHandle<(Vec<f32>, Result<String, Failure>)>;
+type Piece = std::thread::JoinHandle<(Vec<i16>, Result<String, Failure>)>;
 
 /// The audio of the last dictation that failed in a way that may pass. Filled
-/// by the thread that transcribed it, before it reports the failure.
-type Kept = Arc<Mutex<Option<Vec<f32>>>>;
+/// by the thread that transcribed it, before it reports the failure. Kept as
+/// 16-bit samples, what the upload holds anyway: a 30-minute dictation is
+/// about 58 MB, half of what f32 took.
+type Kept = Arc<Mutex<Option<Vec<i16>>>>;
+
+fn to_i16(samples: &[f32]) -> Vec<i16> {
+    samples.iter().map(|s| (s.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16).collect()
+}
+
+fn to_f32(samples: &[i16]) -> Vec<f32> {
+    samples.iter().map(|s| f32::from(*s) / f32::from(i16::MAX)).collect()
+}
 
 /// Transcribes one piece of a long dictation. A piece with no voice in it is
 /// skipped (silence can come back as made-up words), and a dropped connection
@@ -472,8 +482,8 @@ fn transcribe_piece(
 /// Turns a recording into text on its own thread and sends `Input::Transcribed`:
 /// the pieces sent while you talked, then `samples`, then one cleanup over the
 /// whole text so it reads as one dictation. A short dictation is one upload; a
-/// retried long one goes up in pieces again, cut every `PIECE`. A failure that
-/// may pass leaves all the audio in `kept` first.
+/// retried long one goes up in pieces again, cut every `PIECE`, all at once like
+/// a live one's. A failure that may pass leaves all the audio in `kept` first.
 #[expect(clippy::too_many_arguments, reason = "one recording and everything its text depends on")]
 fn send_off(
     transcriber: Arc<Transcriber>,
@@ -497,10 +507,16 @@ fn send_off(
         if heard.is_empty() && samples.len() <= piece_len {
             heard.push(transcriber.transcribe(&samples, &words, language));
         } else {
-            heard
-                .extend(samples.chunks(piece_len).map(|chunk| transcribe_piece(&transcriber, chunk, &words, language)));
+            let uploads: Vec<_> = samples
+                .chunks(piece_len)
+                .map(|chunk| {
+                    let (chunk, transcriber, words) = (chunk.to_vec(), transcriber.clone(), words.clone());
+                    std::thread::spawn(move || transcribe_piece(&transcriber, &chunk, &words, language))
+                })
+                .collect();
+            heard.extend(uploads.into_iter().map(|upload| upload.join().unwrap_or(Err(Failure::Unreadable))));
         }
-        audio.extend(samples);
+        audio.extend(to_i16(&samples));
         let heard = join_pieces(heard).map(|text| crate::cleanup::run(&text, &pass));
         if let Err(failure) = &heard
             && failure.retryable()
@@ -722,7 +738,7 @@ fn run(
             let words = chosen.dictionary.clone();
             running.pieces.push(std::thread::spawn(move || {
                 let text = transcribe_piece(&transcriber, &piece, &words, language);
-                (piece, text)
+                (to_i16(&piece), text)
             }));
         }
         let choices = Choices {
@@ -798,11 +814,17 @@ fn run(
                     let tx = tx.clone();
                     let window = crate::hotkey::foreground();
                     std::thread::spawn(move || {
-                        let edited = if window.is_some_and(|w| crate::editing::is_terminal(&w.app)) {
+                        let edited = if window.as_ref().is_some_and(|w| crate::editing::is_terminal(&w.app)) {
                             // A Ctrl+C there would stop what's running: these are words to type.
                             Ok(Edited::Dictate(said))
                         } else {
+                            let code =
+                                window.as_ref().and_then(crate::styles::Style::of) == Some(crate::styles::Style::Code);
                             match crate::paste::selection() {
+                                // Code editors copy the whole line when nothing is selected: that's no selection.
+                                Ok(Some(line)) if code && crate::editing::is_a_copied_line(&line) => {
+                                    Ok(Edited::Dictate(said))
+                                }
                                 Ok(Some(selection)) => crate::editing::edit(&said, &selection).map(Edited::Replace),
                                 Ok(None) => Ok(Edited::Dictate(said)),
                                 Err(reason) => Err(format!("It couldn't read the selection: {reason}")),
@@ -812,7 +834,8 @@ fn run(
                     });
                 }
                 Effect::Retry => {
-                    let samples = kept.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+                    let samples =
+                        kept.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take().map(|s| to_f32(&s));
                     let Some(samples) = samples else {
                         let _ = tx.send(Input::Transcribed(Ok(String::new())));
                         continue;

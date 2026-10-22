@@ -198,19 +198,31 @@ impl KeyName {
     }
 }
 
+/// Alt and Win as the keyboard in front of the user calls them: Option and Cmd on a Mac.
+/// Shown, and saved: every name parses on every platform.
+pub const ALT: &str = if cfg!(target_os = "macos") { "Option" } else { "Alt" };
+pub const WIN: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Win" };
+
+/// Why a shortcut without a modifier is refused.
+pub const NEEDS_MODIFIER: &str = if cfg!(target_os = "macos") {
+    "Add Ctrl, Option or Cmd, so typing never sets it off."
+} else {
+    "Add Ctrl, Alt or Win, so typing never sets it off."
+};
+
 impl Binding {
     /// Builds a shortcut from what was pressed, or says why it can't be one.
     pub fn new(ctrl: bool, alt: bool, shift: bool, win: bool, key: KeyName) -> Result<Self, &'static str> {
         let binding = Self { ctrl, alt, shift, win, key };
         if !(ctrl || alt || win) && !key.is_function_key() {
-            return Err("Add Ctrl, Alt or Win, so typing never sets it off.");
+            return Err(NEEDS_MODIFIER);
         }
         Ok(binding)
     }
 
     /// The keys in the order people say them, for key caps.
     pub fn parts(self) -> Vec<&'static str> {
-        [(self.ctrl, "Ctrl"), (self.alt, "Alt"), (self.shift, "Shift"), (self.win, "Win")]
+        [(self.ctrl, "Ctrl"), (self.alt, ALT), (self.shift, "Shift"), (self.win, WIN)]
             .into_iter()
             .filter_map(|(on, name)| on.then_some(name))
             .chain([self.key.0])
@@ -239,9 +251,9 @@ impl TryFrom<String> for Binding {
         for part in text.split('+').map(str::trim) {
             match part.to_ascii_lowercase().as_str() {
                 "ctrl" | "control" => ctrl = true,
-                "alt" => alt = true,
+                "alt" | "option" | "opt" => alt = true,
                 "shift" => shift = true,
-                "win" | "super" | "cmd" => win = true,
+                "win" | "super" | "cmd" | "command" => win = true,
                 _ => key = Some(KeyName::find(part).ok_or_else(|| format!("unknown key {part:?}"))?),
             }
         }

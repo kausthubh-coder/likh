@@ -34,7 +34,7 @@ pub fn on_event(event: &keyboard::Event, held: Modifiers) -> Outcome {
 
 /// What the key caps say while waiting: the modifiers held so far.
 pub fn held_parts(held: Modifiers) -> Vec<&'static str> {
-    [(held.control(), "Ctrl"), (held.alt(), "Alt"), (held.shift(), "Shift"), (held.logo(), "Win")]
+    [(held.control(), "Ctrl"), (held.alt(), super::ALT), (held.shift(), "Shift"), (held.logo(), super::WIN)]
         .into_iter()
         .filter_map(|(on, name)| on.then_some(name))
         .collect()

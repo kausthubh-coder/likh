@@ -198,8 +198,16 @@ fn run(skip_onboarding: bool) -> ExitCode {
             // Holding the keys would do nothing and say nothing. Setup says so on its own
             // shortcut step; any other launch says so now, with the way to fix it.
             if first_run.is_none() {
-                let text = format!("Another app has {shortcut}, so likh can't hear it.");
-                pill.show(pill::Show::Problem { text, fix: pill::Fix::Shortcut });
+                // macOS: no key works until likh has Accessibility, and the macOS pill takes no clicks.
+                let show = if cfg!(target_os = "macos") {
+                    pill::Show::Error(format!(
+                        "Allow Accessibility for likh to hear {shortcut}. It's in likh's window."
+                    ))
+                } else {
+                    let text = format!("Another app has {shortcut}, so likh can't hear it.");
+                    pill::Show::Problem { text, fix: pill::Fix::Shortcut }
+                };
+                pill.show(show);
             }
         }
     }

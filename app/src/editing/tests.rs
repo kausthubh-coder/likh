@@ -64,3 +64,13 @@ fn terminals_never_get_a_ctrl_c() {
 fn chatgpt_gets_the_instruction_then_the_selection() {
     assert_eq!(request("In Hindi", "See you at nine."), "Instruction: In Hindi\n\nSelected text:\nSee you at nine.");
 }
+
+#[test]
+fn a_code_editors_whole_line_copy_is_no_selection() {
+    // VS Code with nothing selected copies the cursor's line, line break and all.
+    assert!(is_a_copied_line("let total = items.len();\n"));
+    assert!(is_a_copied_line("    return total;\r\n"));
+    // What people select: part of a line, or several lines.
+    assert!(!is_a_copied_line("items.len()"));
+    assert!(!is_a_copied_line("fn main() {\n    run();\n}\n"));
+}
