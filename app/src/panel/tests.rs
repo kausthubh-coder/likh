@@ -902,3 +902,14 @@ fn when_chatgpts_allowance_ran_out_clean_up_and_names_say_until_when() {
     f.panel.allowance = Some(resets_at);
     assert!(shows(&f.panel, &line));
 }
+
+#[test]
+fn tab_and_shift_tab_move_between_fields() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let tab = |modifiers| key(keyboard::key::Code::Tab, modifiers);
+    // Each answers with a focus move rather than nothing; Esc still closes.
+    assert!(f.panel.update(Message::Key(tab(keyboard::Modifiers::empty()))).units() > 0);
+    assert!(f.panel.update(Message::Key(tab(keyboard::Modifiers::SHIFT))).units() > 0);
+    assert!(f.panel.update(Message::Key(key(keyboard::key::Code::KeyA, keyboard::Modifiers::empty()))).units() == 0);
+}
