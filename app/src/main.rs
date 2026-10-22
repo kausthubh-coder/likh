@@ -10,6 +10,7 @@ mod ctl;
 mod diagnostics;
 mod dictation;
 mod dictionary;
+mod editing;
 mod history;
 mod hotkey;
 mod media;

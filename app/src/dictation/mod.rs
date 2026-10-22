@@ -79,6 +79,18 @@ pub enum Input {
     Unspoken,
     /// The pill's Retry, or `likh ctl retry`: send the last failed recording again.
     Retry,
+    /// A voice edit came back (`editing/`): text to paste over the selection,
+    /// the words to paste as said when nothing was selected, or why it failed.
+    Edited(Result<Edited, String>),
+}
+
+/// What became of an instruction said as a dictation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Edited {
+    /// The selection, rewritten: pasted over it.
+    Replace(String),
+    /// Nothing was selected, so the words were a dictation after all.
+    Dictate(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,6 +110,11 @@ pub enum Effect {
     PasteLast,
     /// Send the kept audio of the last failed dictation to the transcriber again.
     Retry,
+    /// What was said reads like an edit (`editing::instruction`): read the
+    /// selection and have ChatGPT rewrite it, or paste the words if none.
+    Edit {
+        said: String,
+    },
     /// Hand what was said to the action runner.
     Act {
         said: String,
@@ -125,6 +142,8 @@ pub enum Phase {
     /// Recording with nothing held, until a tap or the stop button.
     HandsFree,
     Transcribing,
+    /// ChatGPT is rewriting the selection.
+    Editing,
 }
 
 /// The parts of the settings a dictation decides with.
@@ -322,6 +341,13 @@ impl Dictation {
                             Action::Paste { text, then: None } if text.is_empty() => {
                                 vec![Effect::Pill(Show::Cancelled)]
                             }
+                            // "Make it shorter" with text selected: the thinking pill stays while ChatGPT edits.
+                            Action::Paste { text, then: None }
+                                if self.lost_mic.is_none() && crate::editing::instruction(&text).is_some() =>
+                            {
+                                self.phase = Phase::Editing;
+                                vec![Effect::Edit { said: text }]
+                            }
                             Action::Paste { text, then } => {
                                 let show = match self.lost_mic.take() {
                                     Some(device) => {
@@ -349,6 +375,19 @@ impl Dictation {
                         Effect::Pill(Show::Problem { text: failure.message(), fix: Fix::Retry }),
                     ],
                     Err(failure) => vec![Effect::Sound(Cue::Error), Effect::Pill(Show::Error(failure.message()))],
+                }
+            }
+            (Phase::Editing, Input::Edited(result)) => {
+                self.phase = Phase::Idle;
+                match result {
+                    Ok(Edited::Replace(text) | Edited::Dictate(text)) => {
+                        vec![Effect::Pill(Show::Done), Effect::Paste { text, then: None }]
+                    }
+                    // The selection stays as it was.
+                    Err(reason) => vec![
+                        Effect::Sound(Cue::Error),
+                        Effect::Pill(Show::Error(format!("likh couldn't edit that. {reason}"))),
+                    ],
                 }
             }
             // Holding again while the last one is still transcribing, a release
@@ -745,6 +784,23 @@ fn run(
                     }
                     let pass = cleanup_pass(dictation.kind(), &chosen);
                     send_off(transcriber, pieces, samples, chosen.dictionary.clone(), language, pass, kept.clone(), tx);
+                }
+                Effect::Edit { said } => {
+                    let tx = tx.clone();
+                    let window = crate::hotkey::foreground();
+                    std::thread::spawn(move || {
+                        let edited = if window.is_some_and(|w| crate::editing::is_terminal(&w.app)) {
+                            // A Ctrl+C there would stop what's running: these are words to type.
+                            Ok(Edited::Dictate(said))
+                        } else {
+                            match crate::paste::selection() {
+                                Ok(Some(selection)) => crate::editing::edit(&said, &selection).map(Edited::Replace),
+                                Ok(None) => Ok(Edited::Dictate(said)),
+                                Err(reason) => Err(format!("It couldn't read the selection: {reason}")),
+                            }
+                        };
+                        let _ = tx.send(Input::Edited(edited));
+                    });
                 }
                 Effect::Retry => {
                     let samples = kept.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
