@@ -59,6 +59,9 @@ fn is_modifier(code: Code) -> bool {
 pub fn key_for(code: Code) -> Option<KeyName> {
     let name = match code {
         Code::Space => "Space",
+        // Other systems can't hold it (`hotkey`), so there it stays a key that can't be picked.
+        #[cfg(target_os = "windows")]
+        Code::CapsLock => "Caps Lock",
         Code::Enter => "Enter",
         Code::Tab => "Tab",
         Code::Backspace => "Backspace",

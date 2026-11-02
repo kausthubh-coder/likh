@@ -79,6 +79,7 @@ const SETUP_INDENT: f32 = space::S4 + 16.0 + space::S3 + 36.0 + space::S3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
+    Shortcuts,
     Dictation,
     Transcription,
     Commands,
@@ -106,11 +107,20 @@ pub enum CommandsView {
 }
 
 impl Tab {
-    const ALL: [Tab; 7] =
-        [Tab::Dictation, Tab::Transcription, Tab::Commands, Tab::Dictionary, Tab::History, Tab::App, Tab::Diagnostics];
+    const ALL: [Tab; 8] = [
+        Tab::Shortcuts,
+        Tab::Dictation,
+        Tab::Transcription,
+        Tab::Commands,
+        Tab::Dictionary,
+        Tab::History,
+        Tab::App,
+        Tab::Diagnostics,
+    ];
 
     fn name(self) -> &'static str {
         match self {
+            Tab::Shortcuts => "Shortcuts",
             Tab::Dictation => "Dictation",
             Tab::Transcription => "Transcription",
             Tab::Commands => "Commands",
@@ -123,6 +133,7 @@ impl Tab {
 
     fn icon(self) -> Shape {
         match self {
+            Tab::Shortcuts => Shape::Keys,
             Tab::Dictation => Shape::Mic,
             Tab::Transcription => Shape::Wave,
             Tab::Commands => Shape::Spark,
@@ -139,6 +150,8 @@ pub enum Message {
     Tab(Tab),
     ChangeShortcut,
     KeepShortcut,
+    /// Caps Lock as the shortcut, or back to the usual keys.
+    CapsLock(bool),
     /// Pick new keys for paste last.
     ChangePasteLast,
     /// Paste last on these keys, or off.
@@ -345,11 +358,11 @@ impl Panel {
         files: Files,
     ) -> Self {
         let shortcut = settings.read().map(|s| s.shortcut).unwrap_or_default();
-        // It opens on Dictation, where the Microphone list is.
+        // Ready for Dictation's Microphone list.
         let (mics, default_mic) = (files.mics)();
         Self {
             window,
-            tab: Tab::Dictation,
+            tab: Tab::Shortcuts,
             settings,
             dictation,
             updates,
@@ -467,7 +480,7 @@ impl Panel {
                         self.sampler = Some(sampler);
                         self.diagnose()
                     }
-                    Tab::Dictation | Tab::App => Task::none(),
+                    Tab::Shortcuts | Tab::Dictation | Tab::App => Task::none(),
                 };
                 // Each tab starts at its top.
                 return Task::batch([read, operation::snap_to(BODY, scrollable::RelativeOffset::START)]);
@@ -493,6 +506,17 @@ impl Panel {
             Message::KeepShortcut => {
                 self.stop_capturing();
                 self.keys = Keys::at_rest(&self.chosen().shortcut.parts());
+            }
+            Message::CapsLock(on) => {
+                self.stop_capturing();
+                self.picking = Picking::Shortcut;
+                self.notice = None;
+                let binding = if on { hotkey::CAPS_LOCK } else { Binding::default() };
+                if self.taken(binding) {
+                    self.notice = Some(("Those keys already do something in likh. Pick others.".into(), Tone::Danger));
+                } else {
+                    self.use_shortcut(binding);
+                }
             }
             Message::Microphone(option) => {
                 self.change(|s| s.microphone = option.choice);
@@ -535,6 +559,11 @@ impl Panel {
                         self.notice =
                             Some(("Those keys already do something in likh. Pick others.".into(), Tone::Danger));
                     }
+                    capture::Outcome::Chosen(binding)
+                        if binding.is_caps_lock() && self.picking != Picking::Shortcut =>
+                    {
+                        self.notice = Some(("Caps Lock can only start a dictation. Pick others.".into(), Tone::Danger));
+                    }
                     capture::Outcome::Chosen(binding) if self.picking == Picking::ActionKey => {
                         match hotkey::set_action_key(Some(binding)) {
                             Ok(()) => {
@@ -553,15 +582,7 @@ impl Panel {
                             Err(reason) => self.notice = Some((reason, Tone::Danger)),
                         }
                     }
-                    capture::Outcome::Chosen(binding) => match hotkey::rebind(binding) {
-                        Ok(()) => {
-                            self.change(|s| s.shortcut = binding);
-                            self.stop_capturing();
-                            self.keys.chosen(&binding.parts());
-                            self.saved = true;
-                        }
-                        Err(reason) => self.notice = Some((reason, Tone::Danger)),
-                    },
+                    capture::Outcome::Chosen(binding) => self.use_shortcut(binding),
                 },
                 // Esc closes the window when nothing else wants it.
                 None if is_escape(&event) => return window::close(self.window),
@@ -744,6 +765,19 @@ impl Panel {
         Task::none()
     }
 
+    /// Makes these keys the dictation shortcut, or says why not and keeps the old ones.
+    fn use_shortcut(&mut self, binding: Binding) {
+        match hotkey::rebind(binding) {
+            Ok(()) => {
+                self.change(|s| s.shortcut = binding);
+                self.stop_capturing();
+                self.keys.chosen(&binding.parts());
+                self.saved = true;
+            }
+            Err(reason) => self.notice = Some((reason, Tone::Danger)),
+        }
+    }
+
     /// Another of likh's shortcuts already uses these keys.
     fn taken(&self, binding: Binding) -> bool {
         let chosen = self.chosen();
@@ -879,6 +913,7 @@ impl Panel {
     pub fn view(&self) -> Element<'_, Message> {
         let p = palette();
         let content = match self.tab {
+            Tab::Shortcuts => self.shortcuts_tab(&p),
             Tab::Dictation => self.dictation_tab(&p),
             Tab::Transcription => self.transcription(&p),
             Tab::Commands => self.commands_tab(&p),
@@ -1066,14 +1101,16 @@ impl Panel {
         .into()
     }
 
-    fn dictation_tab(&self, p: &Palette) -> Element<'_, Message> {
+    /// Every key and mouse button, in one place.
+    fn shortcuts_tab(&self, p: &Palette) -> Element<'_, Message> {
         let chosen = self.chosen();
+        let mode = chosen.mode;
         // The shortcut: its caps and the little keyboard, with a line under the caps and Change at its end.
         let picking_shortcut = self.capturing.filter(|_| self.picking == Picking::Shortcut);
         let (line, tone, change): (String, Tone, Element<'_, Message>) = match picking_shortcut {
             Some(_) => ("Press your new shortcut.".into(), Tone::Neutral, link(p, "Cancel", Message::KeepShortcut)),
             None if self.saved => (
-                format!("Saved. Hold {} to talk.", chosen.shortcut),
+                format!("Saved. {} {} to talk.", if mode.holds() { "Hold" } else { "Tap" }, chosen.shortcut),
                 Tone::Success,
                 link(p, "Change", Message::ChangeShortcut),
             ),
@@ -1087,7 +1124,14 @@ impl Panel {
             None if hotkey::shortcut_taken() => {
                 (hotkey::why_unheard().into(), Tone::Danger, link(p, "Change", Message::ChangeShortcut))
             }
-            None => ("Hold to talk, in any app.".into(), Tone::Neutral, link(p, "Change", Message::ChangeShortcut)),
+            None => {
+                let how = match mode {
+                    Mode::HoldOrTap => "Hold to talk, or tap to start.",
+                    Mode::Hold => "Hold to talk, in any app.",
+                    Mode::Tap => "Tap to start, in any app.",
+                };
+                (how.into(), Tone::Neutral, link(p, "Change", Message::ChangeShortcut))
+            }
         };
         let art = canvas_widget(self.keys.art(p)).width(Length::Fill).height(shortcut::KEYBOARD.height);
         let under = column![
@@ -1099,8 +1143,45 @@ impl Panel {
         let hero = container(stack![art, under]).padding([space::S1, 0.0]).width(Length::Fill);
 
         let mouse_options = MouseTrigger::ALL.map(|trigger| (trigger, trigger.name()));
-        let mode_options = Mode::ALL.map(|mode| (mode, mode.name()));
+        let mut dictate = vec![Line::custom(hero.into())];
+        if hotkey::CAPS_LOCK_WORKS {
+            let on = chosen.shortcut.is_caps_lock();
+            dictate.push(
+                Line::plain(named(p, "Use Caps Lock", Some("Shift + Caps Lock still turns on capitals.")), switch(on))
+                    .press(Message::CapsLock(!on)),
+            );
+        }
+        dictate
+            .push(Line::plain(named(p, "Mouse button", None), segmented(&mouse_options, chosen.mouse, Message::Mouse)));
+
+        let mut others = self.command_key_lines(p);
+        others.push(self.paste_last_line(p));
+        column![group(p, dictate), column![label(p, "Other shortcuts"), group(p, others)].spacing(space::S2)]
+            .spacing(space::S4)
+            .into()
+    }
+
+    /// How a dictation starts and stops, whichever key or button started it, and what it listens with.
+    fn dictation_tab(&self, p: &Palette) -> Element<'_, Message> {
+        let chosen = self.chosen();
+        let mode = chosen.mode;
         let quiet_options = SilenceStop::ALL.map(|after| (after, after.name()));
+        let mut how = vec![
+            Line::plain(
+                named(p, "Hold to talk", Some("Talk while you hold it. Let go to paste.")),
+                switch(mode.holds()),
+            )
+            .press(Message::Mode(mode.flip_hold())),
+            Line::plain(named(p, "Tap to start", Some("Tap once, talk, tap again to paste.")), switch(mode.taps()))
+                .press(Message::Mode(mode.flip_tap())),
+        ];
+        // Only a tap can run on with nothing held, so with taps off there's nothing to stop.
+        if mode.taps() {
+            how.push(Line::plain(
+                named(p, "Stop when you go quiet", Some("After a tap, pastes by itself.")),
+                segmented(&quiet_options, chosen.silence_stop, Message::SilenceStop),
+            ));
+        }
         let mut talk = vec![
             self.microphone_line(p),
             Line::plain(named(p, "Sounds", None), switch(chosen.sounds)).press(Message::Sounds(!chosen.sounds)),
@@ -1112,36 +1193,14 @@ impl Panel {
             );
         }
         column![
-            group(
-                p,
-                vec![
-                    Line::custom(hero.into()),
-                    Line::plain(
-                        named(p, "Mouse button", None),
-                        segmented(&mouse_options, chosen.mouse, Message::Mouse)
-                    ),
-                ]
-            ),
-            group(
-                p,
-                vec![
-                    Line::plain(
-                        named(p, "Mode", Some(chosen.mode.explain())),
-                        segmented(&mode_options, chosen.mode, Message::Mode)
-                    ),
-                    Line::plain(
-                        named(p, "Stop after quiet", Some("Hands-free only")),
-                        segmented(&quiet_options, chosen.silence_stop, Message::SilenceStop)
-                    ),
-                ]
-            ),
+            column![group(p, how), hint(p, "The same for every key and mouse button.")].spacing(space::S2),
             group(p, talk),
         ]
         .spacing(space::S4)
         .into()
     }
 
-    /// Paste last, under Keep history: its keys with Change and Turn off, or Turn on when it's off.
+    /// Paste last: its keys with Change and Turn off, or Turn on when it's off.
     fn paste_last_line(&self, p: &Palette) -> Line<'_> {
         let picking = self.capturing.is_some() && self.picking == Picking::PasteLast;
         let (what, control): (&str, Element<'_, Message>) = match self.chosen().paste_last {
@@ -1150,16 +1209,10 @@ impl Panel {
                 if hotkey::paste_last_taken() {
                     "Another app has these keys. Change them."
                 } else {
-                    "Missed a paste? Puts it in again. After a failed one, tries it again."
+                    "Pastes it again, or retries a failed one."
                 },
                 row![
-                    // The keys as one small mono chip: full key caps belong to the dictation shortcut.
-                    container(text(String::from(keys)).size(size::SMALL).font(theme::MONO).color(p.text))
-                        .padding([space::S1, space::S3])
-                        .style({
-                            let fill = p.elevated;
-                            move |_| pill_fill(fill)
-                        }),
+                    key_chip(p, keys),
                     link(p, "Change", Message::ChangePasteLast),
                     link(p, "Turn off", Message::PasteLast(None)),
                 ]
@@ -1475,7 +1528,6 @@ impl Panel {
                     switch(chosen.history),
                 )
                 .press(Message::KeepHistory(!chosen.history)),
-                self.paste_last_line(p),
             ],
         );
         if self.history.is_empty() {
@@ -1896,6 +1948,15 @@ fn named_owned<'a>(p: &Palette, name: &'a str, what: String) -> Element<'a, Mess
         text(what).size(size::SMALL).line_height(theme::line_height(size::SMALL)).color(p.text_muted),
     ]
     .into()
+}
+
+/// Keys as one small mono chip: full key caps belong to the dictation shortcut.
+fn key_chip<'a>(p: &Palette, keys: Binding) -> Element<'a, Message> {
+    let fill = p.elevated;
+    container(text(String::from(keys)).size(size::SMALL).font(theme::MONO).color(p.text))
+        .padding([space::S1, space::S3])
+        .style(move |_| pill_fill(fill))
+        .into()
 }
 
 /// A small heading over a panel, on the panel's text edge.

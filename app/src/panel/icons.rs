@@ -11,6 +11,8 @@ use iced::{Color, Padding, Point, Radians, Rectangle, Renderer, Theme, Vector, b
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Shape {
+    /// A small keyboard: the shortcuts.
+    Keys,
     Mic,
     Wave,
     /// A four-point spark: commands, the same spark the pill shows for the command key.
@@ -82,6 +84,15 @@ impl<M> canvas::Program<M> for Icon {
             });
         };
         let path = match self.shape {
+            Shape::Keys => Path::new(|b| {
+                b.rounded_rectangle(at(1.5, 3.5), iced::Size::new(13.0 * unit, 9.0 * unit), border::radius(2.0 * unit));
+                for x in [4.5, 8.0, 11.5] {
+                    b.move_to(at(x, 6.5));
+                    b.line_to(at(x + 0.25, 6.5));
+                }
+                b.move_to(at(5.5, 9.75));
+                b.line_to(at(10.5, 9.75));
+            }),
             Shape::Mic => Path::new(|b| {
                 b.rounded_rectangle(at(5.5, 1.5), iced::Size::new(5.0 * unit, 8.0 * unit), border::radius(2.5 * unit));
                 b.move_to(at(3.0, 7.5));

@@ -1,11 +1,10 @@
-//! The Commands tab's command-key half: the command key and its mouse button,
-//! every command in the folder as its file says (with a switch each), what's
+//! The Commands tab's command-key half: every command in the folder as its file says (with a switch each), what's
 //! broken and where, Review and Approve for scripts, and a form that writes
-//! simple commands. Inside likh a command is an action (`actions/`): one file
+//! simple commands. The command key's own row for Shortcuts is here too. Inside likh a command is an action (`actions/`): one file
 //! each in the `actions` folder. It reads the folder each time the tab opens;
 //! it never watches it.
 
-use super::{Line, Panel, Picking, group, hint, label, link, named, small_button, tone_color};
+use super::{Line, Panel, Picking, group, hint, key_chip, label, link, named, small_button, tone_color};
 use crate::actions::trust::{self, Trust};
 use crate::actions::{Action, Catalog, Context, Draft, DraftKind, Output, Step};
 use crate::hotkey::{self, MouseTrigger};
@@ -206,7 +205,8 @@ impl Panel {
         }
     }
 
-    fn actions_list(&self, p: &Palette) -> Element<'_, super::Message> {
+    /// The command key and its mouse button, on Shortcuts.
+    pub(super) fn command_key_lines(&self, p: &Palette) -> Vec<Line<'_>> {
         let chosen = self.chosen();
         let picking = self.capturing.is_some() && self.picking == Picking::ActionKey;
         let (what, control): (&str, Element<'_, super::Message>) = match chosen.action_key {
@@ -215,15 +215,10 @@ impl Panel {
                 if hotkey::action_key_taken() {
                     "Another app has these keys. Change them."
                 } else {
-                    "Hold it and say a command."
+                    "Hold and say a command."
                 },
                 row![
-                    container(text(String::from(keys)).size(size::SMALL).font(theme::MONO).color(p.text))
-                        .padding([space::S1, space::S3])
-                        .style({
-                            let fill = p.elevated;
-                            move |_| pill_fill(fill)
-                        }),
+                    key_chip(p, keys),
                     link(p, "Change", act(Message::ChangeKey)),
                     link(p, "Turn off", act(Message::Key(None))),
                 ]
@@ -234,16 +229,33 @@ impl Panel {
             None => ("Off", link(p, "Turn on", act(Message::Key(Some(hotkey::ACTION_KEY))))),
         };
         let mouse_options = MouseTrigger::ALL.map(|trigger| (trigger, trigger.name()));
-        let keys = group(
-            p,
-            vec![
-                Line::plain(named(p, "Command key", Some(what)), control),
-                Line::plain(
-                    named(p, "Mouse button", Some("Works like the command key.")),
-                    segmented(&mouse_options, chosen.action_mouse, |t| act(Message::Mouse(t))),
-                ),
-            ],
-        );
+        vec![
+            Line::plain(named(p, "Command key", Some(what)), control),
+            Line::plain(
+                named(p, "Its mouse button", None),
+                segmented(&mouse_options, chosen.action_mouse, |t| act(Message::Mouse(t))),
+            ),
+        ]
+    }
+
+    fn actions_list(&self, p: &Palette) -> Element<'_, super::Message> {
+        let chosen = self.chosen();
+        // Changing it lives on Shortcuts, with every other key.
+        let (what, control): (&str, Element<'_, super::Message>) = match chosen.action_key {
+            Some(keys) => (
+                if hotkey::action_key_taken() {
+                    "Another app has these keys. Change them."
+                } else {
+                    "Hold it and say a command."
+                },
+                row![key_chip(p, keys), link(p, "Change", super::Message::Tab(super::Tab::Shortcuts))]
+                    .spacing(space::S3)
+                    .align_y(Alignment::Center)
+                    .into(),
+            ),
+            None => ("Off", link(p, "Turn on", super::Message::Tab(super::Tab::Shortcuts))),
+        };
+        let keys = group(p, vec![Line::plain(named(p, "Command key", Some(what)), control)]);
         let top = row![
             label(p, "Your commands"),
             Space::new().width(Length::Fill),

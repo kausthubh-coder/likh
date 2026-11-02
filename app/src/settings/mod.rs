@@ -26,23 +26,29 @@ pub enum Mode {
 }
 
 impl Mode {
-    pub const ALL: [Mode; 3] = [Mode::HoldOrTap, Mode::Hold, Mode::Tap];
+    /// Holding the keys talks until you let go.
+    pub fn holds(self) -> bool {
+        self != Mode::Tap
+    }
 
-    /// Short enough for the three to sit side by side.
-    pub fn name(self) -> &'static str {
+    /// A quick tap starts talking until the next tap.
+    pub fn taps(self) -> bool {
+        self != Mode::Hold
+    }
+
+    /// Hold to talk switched. Off when it's the only one on moves to tap: one always stays on.
+    pub fn flip_hold(self) -> Mode {
         match self {
-            Mode::HoldOrTap => "Hold or tap",
-            Mode::Hold => "Hold",
-            Mode::Tap => "Toggle",
+            Mode::HoldOrTap | Mode::Hold => Mode::Tap,
+            Mode::Tap => Mode::HoldOrTap,
         }
     }
 
-    /// What it does, in one line, under the pick.
-    pub fn explain(self) -> &'static str {
+    /// Tap to start switched. Off when it's the only one on moves to hold: one always stays on.
+    pub fn flip_tap(self) -> Mode {
         match self {
-            Mode::HoldOrTap => "Hold to talk. Tap once for hands-free.",
-            Mode::Hold => "Hold to talk, let go to paste.",
-            Mode::Tap => "Tap to start, tap again to paste.",
+            Mode::HoldOrTap | Mode::Tap => Mode::Hold,
+            Mode::Hold => Mode::HoldOrTap,
         }
     }
 }

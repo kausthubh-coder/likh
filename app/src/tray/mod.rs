@@ -178,7 +178,11 @@ impl App {
                 }
             }
             Message::Tray(pick @ (Pick::Microphone | Pick::Actions | Pick::Shortcut)) => {
-                let tab = if pick == Pick::Actions { panel::Tab::Commands } else { panel::Tab::Dictation };
+                let tab = match pick {
+                    Pick::Actions => panel::Tab::Commands,
+                    Pick::Shortcut => panel::Tab::Shortcuts,
+                    _ => panel::Tab::Dictation,
+                };
                 let opened = self.open_panel();
                 match &mut self.panel {
                     Some((id, panel)) => {

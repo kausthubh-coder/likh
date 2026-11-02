@@ -42,6 +42,44 @@ fn a_shortcut_that_typing_could_trigger_is_refused_with_a_reason() {
 }
 
 #[test]
+fn caps_lock_stands_alone_and_reads_back_the_same() {
+    assert_eq!(parse("Caps Lock"), Ok(CAPS_LOCK));
+    assert_eq!(String::from(CAPS_LOCK), "Caps Lock");
+    assert_eq!(CAPS_LOCK.to_string(), "Caps Lock");
+    assert_eq!(parse("Ctrl+Caps Lock"), Err(CAPS_LOCK_ALONE.to_string()));
+    assert_eq!(parse("Shift+Caps Lock"), Err(CAPS_LOCK_ALONE.to_string()));
+    assert_eq!(KeyName("Caps Lock").virtual_key(), 0x14);
+}
+
+#[test]
+fn a_held_caps_lock_starts_one_dictation_and_ends_it_once() {
+    let (held, answer) = caps_event(CapsKey::Up, true, false);
+    assert_eq!(answer, CapsAnswer::Pressed);
+    // The key repeating while held must not press again: hands-free would stop at the first repeat.
+    let (held, answer) = caps_event(held, true, false);
+    assert_eq!(answer, CapsAnswer::Swallow);
+    assert_eq!(caps_event(held, false, false), (CapsKey::Up, CapsAnswer::Released));
+}
+
+#[test]
+fn shift_caps_lock_still_reaches_windows_all_the_way_up() {
+    let (held, answer) = caps_event(CapsKey::Up, true, true);
+    assert_eq!(answer, CapsAnswer::Pass);
+    // Shift let go first: it's still Windows' press, so no dictation appears from nowhere.
+    let (held, answer) = caps_event(held, true, false);
+    assert_eq!(answer, CapsAnswer::Pass);
+    assert_eq!(caps_event(held, false, false), (CapsKey::Up, CapsAnswer::Pass));
+}
+
+#[test]
+fn caps_lock_pressed_to_pick_it_doesnt_start_a_dictation() {
+    let (held, answer) = caps_event(CapsKey::Settling, true, false);
+    assert_eq!(answer, CapsAnswer::Swallow);
+    assert_eq!(caps_event(held, false, false), (CapsKey::Up, CapsAnswer::Swallow));
+    assert_eq!(caps_event(CapsKey::Up, false, false), (CapsKey::Up, CapsAnswer::Pass));
+}
+
+#[test]
 fn nonsense_is_refused() {
     assert_eq!(parse("Ctrl+Banana"), Err("unknown key \"Banana\"".to_string()));
     assert_eq!(parse("Ctrl+Alt"), Err("\"Ctrl+Alt\" has no key besides modifiers".to_string()));
@@ -105,5 +143,21 @@ mod capturing {
         assert!(matches!(on_event(&press(Code::CapsLock, Modifiers::CTRL), Modifiers::CTRL), Outcome::Refused(_)));
         assert_eq!(key_for(Code::Space).map(|k| k.0), Some("Space"));
         assert_eq!(key_for(Code::Digit7).map(|k| k.0), Some("7"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn caps_lock_can_be_picked_by_pressing_it() {
+        let chosen = on_event(&press(Code::CapsLock, Modifiers::empty()), Modifiers::empty());
+        assert_eq!(chosen, Outcome::Chosen(super::super::CAPS_LOCK));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn caps_lock_cant_be_picked_where_it_cant_be_held() {
+        assert!(matches!(
+            on_event(&press(Code::CapsLock, Modifiers::empty()), Modifiers::empty()),
+            Outcome::Refused(_)
+        ));
     }
 }
