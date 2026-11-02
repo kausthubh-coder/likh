@@ -322,7 +322,7 @@ pub fn spawn(dictation: Sender<Input>, triggers: Triggers) -> Result<(), String>
 /// them does nothing until they change. Onboarding, the Dictation tab and the
 /// pill say so; only the trace knew before.
 static SHORTCUT_TAKEN: AtomicBool = AtomicBool::new(false);
-/// The same for paste last (the History tab says so).
+/// The same for paste last (the Shortcuts tab says so).
 static PASTE_LAST_TAKEN: AtomicBool = AtomicBool::new(false);
 /// Another app already had the action key's keys when likh started, so it does nothing until changed.
 static ACTION_KEY_TAKEN: AtomicBool = AtomicBool::new(false);
