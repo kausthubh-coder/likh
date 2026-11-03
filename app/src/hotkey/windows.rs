@@ -36,8 +36,9 @@ use std::time::Instant;
 use windows::Win32::Foundation::{CloseHandle, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{
-    GetCurrentThread, GetCurrentThreadId, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-    QueryFullProcessImageNameW, SetThreadPriority, THREAD_PRIORITY_HIGHEST, THREAD_PRIORITY_NORMAL,
+    AttachThreadInput, GetCurrentThread, GetCurrentThreadId, OpenProcess, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, SetThreadPriority, THREAD_PRIORITY_HIGHEST,
+    THREAD_PRIORITY_NORMAL,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyState, HOT_KEY_MODIFIERS, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT,
@@ -46,9 +47,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetForegroundWindow, GetMessageW, GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, HHOOK,
-    KBDLLHOOKSTRUCT, KillTimer, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PostThreadMessageW, SetTimer, SetWindowsHookExW,
-    UnhookWindowsHookEx, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_HOTKEY, WM_KEYDOWN, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_SYSKEYDOWN, WM_TIMER, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
+    KBDLLHOOKSTRUCT, KillTimer, LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PostThreadMessageW, SetTimer,
+    SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_HOTKEY, WM_KEYDOWN, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_SYSKEYDOWN, WM_TIMER, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
 };
 use windows::core::PWSTR;
 
@@ -67,8 +68,6 @@ const HOOK_DOWN: u32 = WM_APP + 5;
 const HOOK_UP: u32 = WM_APP + 6;
 const DICTATE: usize = 0;
 const ACT: usize = 1;
-/// Marks the Caps Lock press likh sends to turn capitals off, so its own hook lets it by.
-const OWN_CAPS_PRESS: usize = 0x6C69_6B68;
 
 /// The picked mouse buttons, as `mouse_code`; read by the hook on every mouse event.
 static MOUSE: AtomicU8 = AtomicU8::new(0);
@@ -234,7 +233,8 @@ unsafe extern "system" fn caps_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -
     if code == HC_ACTION as i32 {
         // SAFETY: for WH_KEYBOARD_LL with HC_ACTION, lparam points at a KBDLLHOOKSTRUCT Windows owns for this call.
         let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-        if info.vkCode == u32::from(VK_CAPITAL.0) && info.dwExtraInfo != OWN_CAPS_PRESS {
+        // Injected presses (remapping tools, macros, likh's own in `capitals_off`) pass through untouched.
+        if info.vkCode == u32::from(VK_CAPITAL.0) && info.flags.0 & LLKHF_INJECTED.0 == 0 {
             let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
             let other_modifier = [VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN].into_iter().any(is_down);
             let (next, answer) = caps_event(CAPS_KEY.get(), down, other_modifier);
@@ -291,15 +291,27 @@ fn unhook_caps() {
 
 /// Presses Caps Lock once if capitals are on.
 fn capitals_off() {
+    // GetKeyState answers from the calling thread's own copy of the keyboard,
+    // and this thread never reads typing, so its copy can be stale. Sharing the
+    // front window's input for the read makes it the copy the user is typing into.
+    // SAFETY: no arguments; a handle we only pass on.
+    let front = unsafe { GetWindowThreadProcessId(GetForegroundWindow(), None) };
+    // SAFETY: no arguments.
+    let me = unsafe { GetCurrentThreadId() };
+    // SAFETY: joins two threads' input state by id; undone below.
+    let attached = front != 0 && front != me && unsafe { AttachThreadInput(me, front, true) }.as_bool();
     // SAFETY: reads the key's toggle state; no pointers.
-    if unsafe { GetKeyState(i32::from(VK_CAPITAL.0)) } & 1 == 0 {
+    let on = unsafe { GetKeyState(i32::from(VK_CAPITAL.0)) } & 1 != 0;
+    if attached {
+        // SAFETY: undoes the join above.
+        let _ = unsafe { AttachThreadInput(me, front, false) };
+    }
+    if !on {
         return;
     }
     let press = |flags: KEYBD_EVENT_FLAGS| INPUT {
         r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT { wVk: VK_CAPITAL, wScan: 0, dwFlags: flags, time: 0, dwExtraInfo: OWN_CAPS_PRESS },
-        },
+        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VK_CAPITAL, wScan: 0, dwFlags: flags, time: 0, dwExtraInfo: 0 } },
     };
     // SAFETY: a slice of two fully built keyboard inputs, and their true size.
     unsafe { SendInput(&[press(KEYBD_EVENT_FLAGS(0)), press(KEYEVENTF_KEYUP)], size_of::<INPUT>() as i32) };
