@@ -233,7 +233,8 @@ unsafe extern "system" fn caps_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -
     if code == HC_ACTION as i32 {
         // SAFETY: for WH_KEYBOARD_LL with HC_ACTION, lparam points at a KBDLLHOOKSTRUCT Windows owns for this call.
         let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-        // Injected presses (remapping tools, macros, likh's own in `capitals_off`) pass through untouched.
+        // Injected presses pass through untouched: a remapping tool or macro sending Caps Lock means capitals,
+        // not a dictation, and `capitals_off`'s own press has to reach Windows to turn them off.
         if info.vkCode == u32::from(VK_CAPITAL.0) && info.flags.0 & LLKHF_INJECTED.0 == 0 {
             let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
             let other_modifier = [VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN].into_iter().any(is_down);
