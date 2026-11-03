@@ -16,13 +16,19 @@
 //! runs at high priority while it's installed, and it's only installed while
 //! a button is picked.
 //!
+//! Caps Lock as the shortcut needs a low-level keyboard hook on this thread too,
+//! with the same rules and the same reason to exist only while it's picked: no
+//! system hotkey stops the key toggling capitals. Windows doesn't update a key's
+//! state for a key a hook swallows, so its going up comes from the hook, not the timer.
+//!
 //! It also reads which window is in front (`foreground`), for actions.
 //!
 //! This and `pill/windows.rs` are the only places allowed `unsafe` (AGENTS.md, Rules).
 #![allow(unsafe_code, reason = "Win32 hotkeys, key state and the window in front; see the module docs")]
 
-use super::{Binding, MouseTrigger, Triggers, Window};
+use super::{Binding, CapsAnswer, CapsKey, MouseTrigger, Triggers, Window, caps_event};
 use crate::dictation::Input;
+use std::cell::Cell;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, OnceLock};
@@ -30,18 +36,20 @@ use std::time::Instant;
 use windows::Win32::Foundation::{CloseHandle, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{
-    GetCurrentThread, GetCurrentThreadId, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-    QueryFullProcessImageNameW, SetThreadPriority, THREAD_PRIORITY_HIGHEST, THREAD_PRIORITY_NORMAL,
+    AttachThreadInput, GetCurrentThread, GetCurrentThreadId, OpenProcess, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, SetThreadPriority, THREAD_PRIORITY_HIGHEST,
+    THREAD_PRIORITY_NORMAL,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, RegisterHotKey,
-    UnregisterHotKey, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    GetAsyncKeyState, GetKeyState, HOT_KEY_MODIFIERS, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT,
+    KEYEVENTF_KEYUP, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, RegisterHotKey, SendInput,
+    UnregisterHotKey, VIRTUAL_KEY, VK_CAPITAL, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetForegroundWindow, GetMessageW, GetWindowTextW, GetWindowThreadProcessId, HC_ACTION, HHOOK,
-    KillTimer, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PostThreadMessageW, SetTimer, SetWindowsHookExW,
-    UnhookWindowsHookEx, WH_MOUSE_LL, WM_APP, WM_HOTKEY, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_TIMER, WM_XBUTTONDOWN,
-    WM_XBUTTONUP, XBUTTON1, XBUTTON2,
+    KBDLLHOOKSTRUCT, KillTimer, LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, PostThreadMessageW, SetTimer,
+    SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_HOTKEY, WM_KEYDOWN, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_SYSKEYDOWN, WM_TIMER, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
 };
 use windows::core::PWSTR;
 
@@ -55,15 +63,21 @@ const REBIND: u32 = WM_APP + 2;
 const PAUSE: u32 = WM_APP + 3;
 /// wparam: which job (`DICTATE` or `ACT`); lparam: the button's `mouse_code`.
 const SET_MOUSE: u32 = WM_APP + 4;
-/// wparam: which job the button does.
-const MOUSE_DOWN: u32 = WM_APP + 5;
-const MOUSE_UP: u32 = WM_APP + 6;
+/// A hook heard a mouse button or Caps Lock. wparam: which job it does.
+const HOOK_DOWN: u32 = WM_APP + 5;
+const HOOK_UP: u32 = WM_APP + 6;
 const DICTATE: usize = 0;
 const ACT: usize = 1;
 
 /// The picked mouse buttons, as `mouse_code`; read by the hook on every mouse event.
 static MOUSE: AtomicU8 = AtomicU8::new(0);
 static ACTION_MOUSE: AtomicU8 = AtomicU8::new(0);
+
+// The hook runs on the thread that installed it, so these need no locks.
+thread_local! {
+    static CAPS_HOOK: Cell<Option<HHOOK>> = const { Cell::new(None) };
+    static CAPS_KEY: Cell<CapsKey> = const { Cell::new(CapsKey::Up) };
+}
 
 /// The hotkey thread's id, for posting it commands.
 static THREAD: OnceLock<u32> = OnceLock::new();
@@ -175,7 +189,7 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) 
             && info.flags & LLMHF_INJECTED == 0
         {
             let down = matches!(message, WM_MBUTTONDOWN | WM_XBUTTONDOWN);
-            let _ = post(if down { MOUSE_DOWN } else { MOUSE_UP }, job, 0);
+            let _ = post(if down { HOOK_DOWN } else { HOOK_UP }, job, 0);
             // Swallowed, so the click doesn't also go back a page or open a link.
             return LRESULT(1);
         }
@@ -205,11 +219,103 @@ fn hook_mouse(hook: &mut Option<HHOOK>) {
             // SAFETY: the hook this thread installed above.
             let _ = unsafe { UnhookWindowsHookEx(installed) };
             *hook = None;
-            // SAFETY: back to normal once nothing time-critical runs here.
-            let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL) };
+            if CAPS_HOOK.get().is_none() {
+                // SAFETY: back to normal once nothing time-critical runs here.
+                let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL) };
+            }
         }
         _ => {}
     }
+}
+
+/// Runs on this thread for every key press while Caps Lock is the shortcut. It must answer fast.
+unsafe extern "system" fn caps_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        // SAFETY: for WH_KEYBOARD_LL with HC_ACTION, lparam points at a KBDLLHOOKSTRUCT Windows owns for this call.
+        let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+        // Injected presses pass through untouched: a remapping tool or macro sending Caps Lock means capitals,
+        // not a dictation, and `capitals_off`'s own press has to reach Windows to turn them off.
+        if info.vkCode == u32::from(VK_CAPITAL.0) && info.flags.0 & LLKHF_INJECTED.0 == 0 {
+            let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+            let other_modifier = [VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN].into_iter().any(is_down);
+            let (next, answer) = caps_event(CAPS_KEY.get(), down, other_modifier);
+            CAPS_KEY.set(next);
+            match answer {
+                CapsAnswer::Pass => {}
+                CapsAnswer::Swallow => return LRESULT(1),
+                CapsAnswer::Pressed => {
+                    let _ = post(HOOK_DOWN, DICTATE, 0);
+                    return LRESULT(1);
+                }
+                CapsAnswer::Released => {
+                    let _ = post(HOOK_UP, DICTATE, 0);
+                    return LRESULT(1);
+                }
+            }
+        }
+    }
+    // SAFETY: passes the event on unchanged, as every hook must.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+/// Starts listening for Caps Lock, with capitals off: once it's the shortcut nothing else would turn them off.
+fn hook_caps() -> Result<(), String> {
+    if CAPS_HOOK.get().is_some() {
+        return Ok(());
+    }
+    CAPS_KEY.set(if is_down(VK_CAPITAL) { CapsKey::Settling } else { CapsKey::Up });
+    capitals_off();
+    // SAFETY: our own module handle; the hook proc lives as long as the program.
+    let module = unsafe { GetModuleHandleW(None) }.ok().map(Into::into);
+    // SAFETY: a global low-level hook owned by this thread, which pumps messages in `run`.
+    let installed = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(caps_hook), module, 0) }
+        .map_err(|error| format!("likh can't listen for Caps Lock: {error}"))?;
+    CAPS_HOOK.set(Some(installed));
+    // SAFETY: changes this thread's own priority, so a busy machine doesn't time the hook out.
+    let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST) };
+    Ok(())
+}
+
+fn unhook_caps() {
+    let Some(installed) = CAPS_HOOK.take() else { return };
+    // SAFETY: the hook this thread installed in `hook_caps`.
+    let _ = unsafe { UnhookWindowsHookEx(installed) };
+    // Its coming up can't be heard any more, so a dictation it held ends now.
+    if CAPS_KEY.replace(CapsKey::Up) == CapsKey::Ours {
+        let _ = post(HOOK_UP, DICTATE, 0);
+    }
+    if MOUSE.load(Ordering::SeqCst) == 0 && ACTION_MOUSE.load(Ordering::SeqCst) == 0 {
+        // SAFETY: back to normal once nothing time-critical runs here.
+        let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL) };
+    }
+}
+
+/// Presses Caps Lock once if capitals are on.
+fn capitals_off() {
+    // GetKeyState answers from the calling thread's own copy of the keyboard,
+    // and this thread never reads typing, so its copy can be stale. Sharing the
+    // front window's input for the read makes it the copy the user is typing into.
+    // SAFETY: no arguments; a handle we only pass on.
+    let front = unsafe { GetWindowThreadProcessId(GetForegroundWindow(), None) };
+    // SAFETY: no arguments.
+    let me = unsafe { GetCurrentThreadId() };
+    // SAFETY: joins two threads' input state by id; undone below.
+    let attached = front != 0 && front != me && unsafe { AttachThreadInput(me, front, true) }.as_bool();
+    // SAFETY: reads the key's toggle state; no pointers.
+    let on = unsafe { GetKeyState(i32::from(VK_CAPITAL.0)) } & 1 != 0;
+    if attached {
+        // SAFETY: undoes the join above.
+        let _ = unsafe { AttachThreadInput(me, front, false) };
+    }
+    if !on {
+        return;
+    }
+    let press = |flags: KEYBD_EVENT_FLAGS| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VK_CAPITAL, wScan: 0, dwFlags: flags, time: 0, dwExtraInfo: 0 } },
+    };
+    // SAFETY: a slice of two fully built keyboard inputs, and their true size.
+    unsafe { SendInput(&[press(KEYBD_EVENT_FLAGS(0)), press(KEYEVENTF_KEYUP)], size_of::<INPUT>() as i32) };
 }
 
 pub fn pause(paused: bool) {
@@ -271,12 +377,18 @@ fn modifiers(binding: Binding) -> HOT_KEY_MODIFIERS {
 }
 
 fn register(id: i32, binding: Binding) -> Result<(), String> {
+    if id == SHORTCUT && binding.is_caps_lock() {
+        return hook_caps();
+    }
     // SAFETY: registers a hotkey for this thread; plain values only.
     unsafe { RegisterHotKey(None, id, modifiers(binding), u32::from(binding.key.virtual_key())) }
         .map_err(|_| format!("{binding} is already used by another app. Pick other keys."))
 }
 
 fn unregister(id: i32) {
+    if id == SHORTCUT {
+        unhook_caps();
+    }
     // SAFETY: unregisters this thread's own hotkey; harmless if it wasn't registered.
     let _ = unsafe { UnregisterHotKey(None, id) };
 }
@@ -373,10 +485,10 @@ fn run(dictation: Sender<Input>, triggers: Triggers) {
                 let _ = unsafe { KillTimer(None, timer) };
                 let _ = dictation.send(Input::Release(Instant::now()));
             }
-            MOUSE_DOWN if held.is_none() => {
+            HOOK_DOWN if held.is_none() => {
                 let _ = dictation.send(if msg.wParam.0 == ACT { Input::ActionHold } else { Input::Hold });
             }
-            MOUSE_UP if held.is_none() => {
+            HOOK_UP if held.is_none() => {
                 let _ = dictation.send(Input::Release(Instant::now()));
             }
             SET_MOUSE => {

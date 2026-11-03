@@ -1,13 +1,14 @@
 # Settings
 
-The likh window, opened from the tray (`Open likh`, or a double click on the icon). It's borderless, 720 x 580, with seven tabs down the left and the version and update button at their foot. Every setting is one row in a panel, and every tab fits without scrolling except a long History and Diagnostics. Every change saves at once to `settings.json` in likh's data folder, and the next dictation uses it.
+The likh window, opened from the tray (`Open likh`, or a double click on the icon). It's borderless, 720 x 580, with eight tabs down the left and the version and update button at their foot. Every setting is one row in a panel, and every tab fits without scrolling except a long History and Diagnostics. Every change saves at once to `settings.json` in likh's data folder, and the next dictation uses it.
 
 ## Sub-features
 
-- `set-shortcut` Dictation: the shortcut as key caps beside a small keyboard with its keys lit. `Change` listens: each key you press lights on the keyboard and flies into a slot as a cap; the saved shortcut pulses once and the line under it turns green. `Cancel` or Esc keeps the old one. It asks for frames only while a cap is moving.
-- `set-mouse` Dictation: a mouse button picked from Off · Middle · Back · Forward works like the shortcut. Off by default. Picking one installs the mouse hook; Off removes it.
-- `set-mode` Dictation: Hold or tap · Hold · Toggle, with one line under `Mode` saying what the picked one does.
-- `set-silence` Dictation: Stop after quiet, picked from Never · 3 s · 5 s · 10 s (5 s by default). Hands-free only.
+- `set-shortcut` Shortcuts: the shortcut as key caps beside a small keyboard with its keys lit. `Change` listens: each key you press lights on the keyboard and flies into a slot as a cap; the saved shortcut pulses once and the line under it turns green. `Cancel` or Esc keeps the old one. It asks for frames only while a cap is moving.
+- `set-caps` Shortcuts, Windows only: Use Caps Lock makes Caps Lock alone the shortcut (saved as `Caps Lock`), turning capitals off if they were on; off goes back to Ctrl+Space. Pressing Caps Lock while picking does the same; with other keys it's refused. It doesn't toggle capitals while it's the shortcut, but Shift + Caps Lock still does. A low-level keyboard hook, installed only while it's the shortcut and removed while picking keys. It can't be the command key or paste last. Injected presses (`SendInput`, remapping tools, macros) pass through as plain Caps Lock, so only a real key press can prove it dictates.
+- `set-mouse` Shortcuts: a mouse button picked from Off · Middle · Back · Forward works like the shortcut. Off by default. Picking one installs the mouse hook; Off removes it. The command key has its own row.
+- `set-mode` Dictation: two switches, Hold to talk and Tap to start, saved as `mode` (`hold_or_tap`, `hold`, `tap`). Switching off the only one that's on moves to the other. The line under the shortcut's caps says what's on.
+- `set-silence` Dictation: Stop when you go quiet, picked from Never · 3 s · 5 s · 10 s (5 s by default). Shows only while Tap to start is on.
 - `set-switches` Dictation: Sounds, Pause music and videos (Windows only). History: Keep history. App: Start with Windows (on by default on Windows, applied when setup finishes, never from a `LIKH_HOME` instance), Check for updates automatically. The whole row flips its switch.
 - `set-engines` Transcription: one panel per engine (ChatGPT, Groq), each always showing its own setup under its name: the Codex sign-in, or the Groq key field. Picking one moves only the peach edge, radio and glyph; nothing else moves. Groq switches only once a key is saved: clicking it without one keeps ChatGPT, focuses the key field and says "Save a key to switch to Groq."; saving a key then switches. Remove on Groq's key while Groq is picked goes back to ChatGPT. Opening the tab checks Codex. Under the engines, one panel: Clean up (a switch, off by default; its line says it needs Codex when Codex isn't signed in) and Language.
 - `set-groq` Transcription, Groq's panel: a hidden key field and `Save key` (peach while Groq is picked; refuses anything not starting `gsk_`, otherwise asks Groq, then saves it to the credential store) and `Get a free key`. Once saved: `Use another key` and `Remove`. Its messages show in the header.
@@ -37,7 +38,7 @@ Logical coordinates in the 720 x 580 window:
 - **Change** (Dictation): (405, 150).
 - After each click, wait about 600 ms, then `scripts/screenshot-window.ps1 -ProcessId <pid> -Out .agents/qa/settings/<tab>.png`.
 - **Saved?** Read `$LIKH_HOME/settings.json`: `engine`, `mouse`, `mode`, `silence_stop` (`"off"`, `"3s"`, `"5s"`, `"10s"`), `pause_media`, `command_groups`, `shortcut`.
-- **Compare** with `docs/brand/panel/*.png`, rendered from the same views by `cargo test -p likh brand_board_panel -- --ignored` (including `dictation-picking` and `dictation-saved`).
+- **Compare** with `docs/brand/panel/*.png`, rendered from the same views by `cargo test -p likh brand_board_panel -- --ignored` (including `shortcuts-picking` and `shortcuts-saved`).
 
 ## Gotchas
 

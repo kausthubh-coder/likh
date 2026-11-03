@@ -11,6 +11,11 @@
 //! low-level mouse hook, which wakes likh on every mouse move, so it is
 //! installed only while a button is picked; with none picked nothing runs.
 //!
+//! Caps Lock can be the shortcut too, on Windows only. No system hotkey stops it
+//! toggling capitals, so it takes the keyboard hook above after all: installed
+//! only while Caps Lock is the shortcut, with the risk that note describes. macOS
+//! reports its on/off state rather than the key, so it can't be held there.
+//!
 //! The action key (`ACTION_KEY`, and its own mouse button) works the same way
 //! but sends `Input::ActionHold`: what's said next runs an action (`actions/`).
 //! It's Windows only for now.
@@ -122,8 +127,9 @@ impl MouseTrigger {
 pub struct KeyName(pub &'static str);
 
 /// Every key a shortcut can end on, with its Windows virtual-key code.
-pub const KEYS: [(&str, u16); 58] = [
+pub const KEYS: [(&str, u16); 59] = [
     ("Space", 0x20),
+    ("Caps Lock", 0x14),
     ("Enter", 0x0D),
     ("Tab", 0x09),
     ("Backspace", 0x08),
@@ -183,6 +189,12 @@ pub const KEYS: [(&str, u16); 58] = [
     ("F12", 0x7B),
 ];
 
+/// Caps Lock on its own, as the dictation shortcut.
+pub const CAPS_LOCK: Binding = Binding { ctrl: false, alt: false, shift: false, win: false, key: KeyName("Caps Lock") };
+
+/// Only Windows lets likh hold Caps Lock back from turning on capitals (module docs).
+pub const CAPS_LOCK_WORKS: bool = cfg!(target_os = "windows");
+
 impl KeyName {
     pub fn find(name: &str) -> Option<Self> {
         KEYS.iter().find(|(known, _)| known.eq_ignore_ascii_case(name)).map(|(known, _)| KeyName(known))
@@ -203,6 +215,9 @@ impl KeyName {
 pub const ALT: &str = if cfg!(target_os = "macos") { "Option" } else { "Alt" };
 pub const WIN: &str = if cfg!(target_os = "macos") { "Cmd" } else { "Win" };
 
+/// Why Caps Lock with other keys is refused: Shift + Caps Lock is how you still get capitals.
+pub const CAPS_LOCK_ALONE: &str = "Caps Lock works on its own. Press it without other keys.";
+
 /// Why a shortcut without a modifier is refused.
 pub const NEEDS_MODIFIER: &str = if cfg!(target_os = "macos") {
     "Add Ctrl, Option or Cmd, so typing never sets it off."
@@ -214,10 +229,17 @@ impl Binding {
     /// Builds a shortcut from what was pressed, or says why it can't be one.
     pub fn new(ctrl: bool, alt: bool, shift: bool, win: bool, key: KeyName) -> Result<Self, &'static str> {
         let binding = Self { ctrl, alt, shift, win, key };
+        if binding.is_caps_lock() {
+            return if binding == CAPS_LOCK { Ok(binding) } else { Err(CAPS_LOCK_ALONE) };
+        }
         if !(ctrl || alt || win) && !key.is_function_key() {
             return Err(NEEDS_MODIFIER);
         }
         Ok(binding)
+    }
+
+    pub fn is_caps_lock(self) -> bool {
+        self.key == CAPS_LOCK.key
     }
 
     /// The keys in the order people say them, for key caps.
@@ -300,7 +322,7 @@ pub fn spawn(dictation: Sender<Input>, triggers: Triggers) -> Result<(), String>
 /// them does nothing until they change. Onboarding, the Dictation tab and the
 /// pill say so; only the trace knew before.
 static SHORTCUT_TAKEN: AtomicBool = AtomicBool::new(false);
-/// The same for paste last (the History tab says so).
+/// The same for paste last (the Shortcuts tab says so).
 static PASTE_LAST_TAKEN: AtomicBool = AtomicBool::new(false);
 /// Another app already had the action key's keys when likh started, so it does nothing until changed.
 static ACTION_KEY_TAKEN: AtomicBool = AtomicBool::new(false);
@@ -424,6 +446,49 @@ pub fn pause(paused: bool) {
     windows::pause(paused);
     #[cfg(not(target_os = "windows"))]
     other::pause(paused);
+}
+
+/// Where Caps Lock is, to the keyboard hook that holds it back from Windows.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows hooks Caps Lock"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CapsKey {
+    Up,
+    /// Down and likh's: it started a dictation, and its coming up belongs to that.
+    Ours,
+    /// Down with another modifier: Windows' own, so Shift + Caps Lock still gives capitals.
+    Theirs,
+    /// Already down when the hook went in (picking it by pressing it): not a new press.
+    Settling,
+}
+
+/// What the keyboard hook does with one Caps Lock event.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows hooks Caps Lock"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CapsAnswer {
+    /// Let Windows have it.
+    Pass,
+    /// Keep it from Windows and do nothing: the key repeating while held.
+    Swallow,
+    /// Keep it from Windows, and it's the shortcut going down.
+    Pressed,
+    /// Keep it from Windows, and it's the shortcut coming up.
+    Released,
+}
+
+/// One Caps Lock event: down or up, and whether another modifier is held.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, reason = "only Windows hooks Caps Lock"))]
+fn caps_event(was: CapsKey, down: bool, other_modifier: bool) -> (CapsKey, CapsAnswer) {
+    match (was, down) {
+        (CapsKey::Up, true) if other_modifier => (CapsKey::Theirs, CapsAnswer::Pass),
+        (CapsKey::Up, true) => (CapsKey::Ours, CapsAnswer::Pressed),
+        (CapsKey::Up, false) => (CapsKey::Up, CapsAnswer::Pass),
+        (CapsKey::Ours, true) => (CapsKey::Ours, CapsAnswer::Swallow),
+        (CapsKey::Ours, false) => (CapsKey::Up, CapsAnswer::Released),
+        (CapsKey::Theirs, true) => (CapsKey::Theirs, CapsAnswer::Pass),
+        (CapsKey::Theirs, false) => (CapsKey::Up, CapsAnswer::Pass),
+        (CapsKey::Settling, true) => (CapsKey::Settling, CapsAnswer::Swallow),
+        (CapsKey::Settling, false) => (CapsKey::Up, CapsAnswer::Swallow),
+    }
 }
 
 /// Who wants Esc right now: a recording that can be cancelled, an action that can be stopped.

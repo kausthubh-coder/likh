@@ -29,7 +29,7 @@ pub const WARN_AFTER: Duration = Duration::from_secs(29 * 60);
 /// upload comes near the Codex app's own 9m55s cap (docs/codex.md) and the
 /// wait after you stop is only the last piece's.
 pub const PIECE: Duration = Duration::from_secs(180);
-/// A press shorter than this is a tap: hands-free in "Hold or tap", dropped in "Hold only".
+/// A press shorter than this is a tap: hands-free with Tap to start on, dropped with only Hold to talk on.
 pub const TAP: Duration = Duration::from_millis(300);
 /// Hands-free shows its quiet countdown only after this much quiet, so the
 /// pauses between sentences don't make the ring flicker.
@@ -288,7 +288,7 @@ impl Dictation {
                 vec![Effect::Pill(if phase == Phase::HandsFree { Show::HandsFree } else { Show::Listening })]
             }
             (_, Input::Tick) if recording && held >= LONGEST => self.transcribe(),
-            // A stray tap: hands-free that never heard a voice. "Never" in Stop after quiet leaves it open.
+            // A stray tap: hands-free that never heard a voice. "Never" in Stop when you go quiet leaves it open.
             (Phase::HandsFree, Input::Unspoken) if held >= NO_VOICE_AFTER && choices.silence_stop.is_some() => {
                 self.stop(Effect::Discard, Show::Note(Failure::NoVoice.message()))
             }

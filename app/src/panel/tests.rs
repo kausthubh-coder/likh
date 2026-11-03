@@ -52,16 +52,25 @@ fn shows(panel: &Panel, words: &str) -> bool {
 }
 
 #[test]
-fn dictation_shows_the_shortcut_and_every_mode() {
+fn shortcuts_open_first_with_every_key_and_button() {
     let _ui = test_ui::lock();
     let f = panel();
     // The caps themselves are drawn on a canvas; the line under them and Change are widgets.
-    assert!(shows(&f.panel, "Hold to talk, in any app.") && shows(&f.panel, "Change"));
+    assert!(shows(&f.panel, "Hold to talk, or tap to start.") && shows(&f.panel, "Change"));
     assert!(!f.panel.keys.moving(), "at rest the shortcut asks for no frames");
-    for mode in Mode::ALL {
-        assert!(shows(&f.panel, mode.name()), "{mode:?}");
+    for row in ["Mouse button", "Command key", "Its mouse button", "Paste last dictation"] {
+        assert!(shows(&f.panel, row), "{row}");
     }
-    assert!(shows(&f.panel, Mode::HoldOrTap.explain()), "the picked mode says what it does");
+}
+
+#[test]
+fn dictation_says_how_it_starts_and_stops() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Dictation");
+    for row in ["Hold to talk", "Tap to start", "Stop when you go quiet", "Microphone", "Sounds"] {
+        assert!(shows(&f.panel, row), "{row}");
+    }
 }
 
 #[test]
@@ -94,7 +103,7 @@ fn changing_the_shortcut_flies_the_keys_in_then_stops_drawing() {
 
     // Cancel puts the old shortcut back.
     press(&mut f.panel, "Cancel");
-    assert!(shows(&f.panel, "Hold to talk, in any app."));
+    assert!(shows(&f.panel, "Hold to talk, or tap to start."));
     assert_eq!(f.settings.read().expect("settings").shortcut, Binding::default());
 }
 
@@ -111,12 +120,58 @@ fn a_saved_shortcut_pulses_once_and_then_stays_still() {
 }
 
 #[test]
-fn picking_a_mode_saves_it() {
+fn hold_and_tap_switch_apart_and_one_always_stays_on() {
     let _ui = test_ui::lock();
     let mut f = panel();
-    press(&mut f.panel, "Toggle");
-    assert_eq!(f.settings.read().expect("settings").mode, Mode::Tap);
-    assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).mode, Mode::Tap);
+    // Each press, what it leaves on, and what Shortcuts' line then says.
+    let steps = [
+        ("Tap to start", Mode::Hold, "Hold to talk, in any app."),
+        ("Tap to start", Mode::HoldOrTap, "Hold to talk, or tap to start."),
+        ("Hold to talk", Mode::Tap, "Tap to start, in any app."),
+        ("Hold to talk", Mode::HoldOrTap, "Hold to talk, or tap to start."),
+        // Hold alone, then its own switch off: tap takes over rather than nothing starting a dictation.
+        ("Tap to start", Mode::Hold, "Hold to talk, in any app."),
+        ("Hold to talk", Mode::Tap, "Tap to start, in any app."),
+        // Tap alone, the same the other way.
+        ("Tap to start", Mode::Hold, "Hold to talk, in any app."),
+    ];
+    for (row, mode, line) in steps {
+        press(&mut f.panel, "Dictation");
+        press(&mut f.panel, row);
+        assert_eq!(f.settings.read().expect("settings").mode, mode, "{row}");
+        assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).mode, mode, "{row}");
+        press(&mut f.panel, "Shortcuts");
+        assert!(shows(&f.panel, line), "{line}");
+    }
+}
+
+#[test]
+fn stopping_by_itself_only_shows_while_a_tap_can_start_a_dictation() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    press(&mut f.panel, "Dictation");
+    assert!(shows(&f.panel, "Stop when you go quiet"));
+    press(&mut f.panel, "Tap to start");
+    assert!(!shows(&f.panel, "Stop when you go quiet"), "holding always ends when you let go");
+    press(&mut f.panel, "Tap to start");
+    assert!(shows(&f.panel, "Stop when you go quiet"));
+}
+
+#[test]
+fn caps_lock_is_offered_only_where_it_can_be_held() {
+    let _ui = test_ui::lock();
+    let f = panel();
+    assert_eq!(shows(&f.panel, "Use Caps Lock"), hotkey::CAPS_LOCK_WORKS);
+}
+
+#[test]
+fn caps_lock_cant_do_a_job_other_than_dictating() {
+    let _ui = test_ui::lock();
+    let mut f = panel();
+    let _ = f.panel.update(Message::ChangePasteLast);
+    let _ = f.panel.update(Message::Key(key(keyboard::key::Code::CapsLock, keyboard::Modifiers::empty())));
+    assert_eq!(f.settings.read().expect("settings").paste_last, Some(hotkey::PASTE_LAST));
+    assert!(shows(&f.panel, "Press the new keys."), "still picking");
 }
 
 #[test]
@@ -279,6 +334,7 @@ fn brand_board_panel() {
         expires_at: None,
     });
     let shots = [
+        ("shortcuts", Tab::Shortcuts, Engine::Codex),
         ("dictation", Tab::Dictation, Engine::Codex),
         ("transcription", Tab::Transcription, Engine::Codex),
         ("transcription-groq", Tab::Transcription, Engine::Groq),
@@ -303,11 +359,11 @@ fn brand_board_panel() {
         snap(&out, name, &f.panel);
     }
     // Picking a shortcut, mid-flight and once it's saved, for the board.
-    let _ = f.panel.update(Message::Tab(Tab::Dictation));
+    let _ = f.panel.update(Message::Tab(Tab::Shortcuts));
     let _ = f.panel.update(Message::ChangeShortcut);
     let _ = f.panel.update(Message::Key(keyboard::Event::ModifiersChanged(keyboard::Modifiers::CTRL)));
     f.panel.keys.step(1.0);
-    snap(&out, "dictation-picking", &f.panel);
+    snap(&out, "shortcuts-picking", &f.panel);
     f.panel.stop_capturing();
     f.panel.capturing = None;
     f.panel.keys.chosen(&["Ctrl", crate::hotkey::ALT, "D"]);
@@ -315,9 +371,10 @@ fn brand_board_panel() {
     f.panel.saved = true;
     f.settings.write().expect("settings").shortcut =
         Binding::new(true, true, false, false, crate::hotkey::KeyName("D")).expect("a valid shortcut");
-    snap(&out, "dictation-saved", &f.panel);
+    snap(&out, "shortcuts-saved", &f.panel);
     // The headset picked and being tested: the meter, Stop, and the Bluetooth line.
     f.panel.saved = false;
+    let _ = f.panel.update(Message::Tab(Tab::Dictation));
     let (options, _) = f.panel.mic_options();
     let _ = f.panel.update(Message::Microphone(options[2].clone()));
     f.panel.testing = true;
@@ -325,8 +382,9 @@ fn brand_board_panel() {
     snap(&out, "dictation-microphone", &f.panel);
     f.panel.testing = false;
     // Another app has the shortcut: the line under the caps says so, in red.
+    let _ = f.panel.update(Message::Tab(Tab::Shortcuts));
     let taken = hotkey::pretend_taken(true, false);
-    snap(&out, "dictation-taken", &f.panel);
+    snap(&out, "shortcuts-taken", &f.panel);
     drop(taken);
     // Actions: the list, Review on the unapproved script, and the form.
     seed_actions(&f);
@@ -391,9 +449,9 @@ fn picking_an_engine_saves_it_and_both_keep_their_setup() {
 }
 
 #[test]
-fn a_shortcut_another_app_holds_says_so_on_dictation_and_paste_last_on_history() {
+fn keys_another_app_holds_say_so_on_shortcuts() {
     let _ui = test_ui::lock();
-    let mut f = panel();
+    let f = panel();
     let taken = hotkey::pretend_taken(true, true);
     // macOS has no taken keys: there, no key works without the Accessibility permission.
     let (line, tray_line) = if cfg!(target_os = "macos") {
@@ -401,10 +459,9 @@ fn a_shortcut_another_app_holds_says_so_on_dictation_and_paste_last_on_history()
     } else {
         ("Another app has these keys.", "Another app has Ctrl + Space. Open likh to change it.")
     };
-    assert!(shows(&f.panel, line), "Dictation says why the shortcut does nothing");
+    assert!(shows(&f.panel, line), "Shortcuts says why the shortcut does nothing");
     assert_eq!(hold_to_talk(Binding::default()), tray_line);
-    press(&mut f.panel, "History");
-    assert!(shows(&f.panel, "Another app has these keys. Change them."), "History says another app has paste last");
+    assert!(shows(&f.panel, "Another app has these keys. Change them."), "and that another app has paste last");
     drop(taken);
     assert_eq!(hold_to_talk(Binding::default()), "Hold Ctrl + Space to talk");
 }
@@ -438,6 +495,7 @@ fn a_key_groq_turns_down_is_not_kept() {
 fn hands_free_quiet_stop_is_picked_and_saved() {
     let _ui = test_ui::lock();
     let mut f = panel();
+    press(&mut f.panel, "Dictation");
     press(&mut f.panel, "10 s");
     assert_eq!(Settings::load_from(&f.dir.path().join("settings.json")).silence_stop, SilenceStop::Long);
     press(&mut f.panel, "Never");
@@ -544,6 +602,7 @@ fn app_says_when_likh_is_newest_and_the_sidebar_checks_again() {
 fn a_switch_flips_from_anywhere_on_its_row() {
     let _ui = test_ui::lock();
     let mut f = panel();
+    press(&mut f.panel, "Dictation");
     // Its name, not the switch itself.
     press(&mut f.panel, "Sounds");
     assert!(!Settings::load_from(&f.dir.path().join("settings.json")).sounds);
@@ -571,12 +630,11 @@ fn key(code: keyboard::key::Code, modifiers: keyboard::Modifiers) -> keyboard::E
 }
 
 #[test]
-fn history_shows_paste_last_on_its_keys_and_can_turn_it_off() {
+fn shortcuts_show_paste_last_on_its_keys_and_can_turn_it_off() {
     let _ui = test_ui::lock();
-    let mut f = panel();
-    let _ = f.panel.update(Message::Tab(Tab::History));
+    let f = panel();
     assert!(shows(&f.panel, "Paste last dictation"));
-    assert!(shows(&f.panel, "Missed a paste? Puts it in again. After a failed one, tries it again."));
+    assert!(shows(&f.panel, "Pastes it again, or retries a failed one."));
     let keys = String::from(crate::hotkey::PASTE_LAST);
     assert!(shows(&f.panel, &keys) && shows(&f.panel, "Turn off"));
     // With paste last off, the row offers it back on its usual keys.
@@ -588,7 +646,6 @@ fn history_shows_paste_last_on_its_keys_and_can_turn_it_off() {
 fn picking_paste_last_keys_leaves_the_dictation_shortcut_alone_and_refuses_its_keys() {
     let _ui = test_ui::lock();
     let mut f = panel();
-    let _ = f.panel.update(Message::Tab(Tab::History));
     let _ = f.panel.update(Message::ChangePasteLast);
     assert!(shows(&f.panel, "Press the new keys.") && shows(&f.panel, "Cancel"));
     let _ = f.panel.update(Message::Key(keyboard::Event::ModifiersChanged(keyboard::Modifiers::CTRL)));
@@ -613,6 +670,7 @@ fn the_microphone_list_starts_on_windows_default_and_saves_a_pick() {
     let labels: Vec<String> = options.iter().map(ToString::to_string).collect();
     assert_eq!(labels, ["Default \u{b7} Microphone Array", "Microphone Array", "WH-1000XM4"]);
     assert_eq!(picked, options[0]);
+    let _ = f.panel.update(Message::Tab(Tab::Dictation));
     // The list draws its own label, out of the simulator's reach; the row's words are widgets.
     assert!(shows(&f.panel, "Microphone") && shows(&f.panel, "Test"));
 
@@ -626,6 +684,7 @@ fn a_bluetooth_pick_warns_about_call_quality() {
     let _ui = test_ui::lock();
     let mut f = panel();
     let (options, _) = f.panel.mic_options();
+    let _ = f.panel.update(Message::Tab(Tab::Dictation));
     let _ = f.panel.update(Message::Microphone(options[2].clone()));
     assert!(shows(&f.panel, "Bluetooth headsets drop to call quality while you talk."));
 }
@@ -633,7 +692,8 @@ fn a_bluetooth_pick_warns_about_call_quality() {
 #[test]
 fn a_picked_mic_thats_unplugged_stays_listed_and_says_whats_used_instead() {
     let _ui = test_ui::lock();
-    let f = panel();
+    let mut f = panel();
+    let _ = f.panel.update(Message::Tab(Tab::Dictation));
     f.settings.write().expect("settings").microphone =
         Some(Choice { id: "wasapi:yeti".into(), name: "Yeti Stereo Microphone".into() });
     let (options, picked) = f.panel.mic_options();
@@ -647,6 +707,7 @@ fn the_mic_opens_only_while_testing_and_closes_when_you_leave_the_tab() {
     let _ui = test_ui::lock();
     let mut f = panel();
     assert!(!f.panel.testing, "opening the window never opens the mic");
+    let _ = f.panel.update(Message::Tab(Tab::Dictation));
     let _ = f.panel.update(Message::TestMic(true));
     assert!(shows(&f.panel, "Stop"));
     for level in [0.2, 0.9, 0.5] {
